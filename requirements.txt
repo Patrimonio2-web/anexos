@@ -1,2 +1,10 @@
-Flask
-psycopg2-binary
+Flask==2.2.5
+Flask-Cors==3.0.10
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.0.5
+Flask-WTF==1.1.1
+gunicorn==23.0.0
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.38
+Werkzeug==2.2.3
+WTForms==3.0.1
