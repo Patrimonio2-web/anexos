@@ -50,9 +50,9 @@ class Mobiliario(db.Model):
 
 # RUTAS
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+#@app.route('/')
+#def index():
+ #   return render_template('index.html')
 
 
 # --- ANEXOS ---
