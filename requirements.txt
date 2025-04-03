@@ -5,6 +5,10 @@ psycopg2-binary==2.9.9
 SQLAlchemy==2.0.38
 gunicorn==23.0.0
 
+# Nuevas dependencias
+cloudinary==1.37.0
+python-dotenv==1.0.1
+
 # Opcionales si luego querés migraciones o formularios
 Flask-Migrate==4.0.4
 Flask-WTF==1.1.1
