@@ -10,6 +10,12 @@ CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Configuración Cloudinary
+cloudinary.config(
+    cloud_name="deokbrzem",
+    api_key="628521442744972",
+    api_secret="UI7D6jgGKoAzjB_NLAgTi1XAwXQ"
+)
 db = SQLAlchemy(app)
 
 # MODELOS
@@ -27,9 +33,8 @@ class Subdependencia(db.Model):
 
 class Mobiliario(db.Model):
     __tablename__ = 'mobiliario'
-
     id = db.Column(db.String(50), primary_key=True)
-    ubicacion_id = db.Column(db.Integer, db.ForeignKey('subdependencias.id', ondelete="SET NULL"))
+    ubicacion_id = db.Column(db.Integer)
     descripcion = db.Column(db.Text)
     resolucion = db.Column(db.Text)
     fecha_resolucion = db.Column(db.Date)
@@ -48,11 +53,72 @@ class Mobiliario(db.Model):
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_actualizacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-# RUTAS
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-#@app.route('/')
-#def index():
- #   return render_template('index.html')
+def upload_to_cloudinary(filepath):
+    result = cloudinary.uploader.upload(filepath, folder="mobiliario")
+    return result.get("secure_url")
+
+@app.route('/uploads', methods=['POST'])
+def subir_imagen():
+    if 'foto' not in request.files:
+        return jsonify({"error": "No se envió la imagen"}), 400
+
+    file = request.files['foto']
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join('temp', filename)
+        os.makedirs('temp', exist_ok=True)
+        file.save(filepath)
+
+        try:
+            url = upload_to_cloudinary(filepath)
+            os.remove(filepath)
+            return jsonify({"url": url})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Formato de archivo no permitido"}), 400
+
+@app.route('/api/mobiliario', methods=['POST'])
+def registrar_mobiliario():
+    try:
+        data = request.json
+        print("📸 URL recibida del frontend:", data.get("foto_url"))
+
+        if not data.get("id") or not data.get("resolucion_numero") or not data.get("resolucion_tipo"):
+            return jsonify({"error": "Campos obligatorios faltantes"}), 400
+
+        tipo = data.get("resolucion_tipo").upper()
+        if tipo == "PSA":
+            tipo = "P.S.A"
+        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}"
+
+        nuevo = Mobiliario(
+            id=data.get("id"),
+            ubicacion_id=data.get("ubicacion_id"),
+            descripcion=data.get("descripcion"),
+            resolucion=resolucion_texto,
+            fecha_resolucion=data.get("fecha_resolucion"),
+            estado_conservacion=data.get("estado_conservacion"),
+            no_dado=data.get("no_dado", False),
+            para_reparacion=data.get("reparacion", False),
+            para_baja=data.get("para_baja", False),
+            faltante=data.get("faltante", False),
+            sobrante=data.get("sobrante", False),
+            problema_etiqueta=data.get("etiqueta", False),
+            comentarios=data.get("comentarios"),
+            foto_url=data.get("foto_url", "")
+        )
+
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({"mensaje": "Registro guardado exitosamente"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # --- ANEXOS ---
