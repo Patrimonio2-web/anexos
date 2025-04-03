@@ -2,6 +2,9 @@ from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime
+import cloudinary
+import cloudinary.uploader
+
 
 app = Flask(__name__)
 CORS(app)
