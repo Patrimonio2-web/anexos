@@ -68,7 +68,7 @@ def upload_to_cloudinary(filepath):
     result = cloudinary.uploader.upload(filepath, folder="mobiliario")
     return result.get("secure_url")
 
-@app.route('/api/uploads', methods=['POST'])
+@app.route('/uploads', methods=['POST'])
 def subir_imagen():
     if 'foto' not in request.files:
         return jsonify({"error": "No se envió la imagen"}), 400
@@ -166,6 +166,47 @@ def listar_mobiliario():
             "foto_url": r.foto_url
         })
     return jsonify(resultado)
+# Eliminar patrimonio (mobiliario)
+@app.route('/api/patrimonio/<int:id>', methods=['DELETE'])
+def eliminar_patrimonio(id):
+    try:
+        registro = db.session.get(id)
+        if not registro:
+            return jsonify({'error': 'Registro no encontrado'}), 404
+        db.session.delete(registro)
+        db.session.commit()
+        return jsonify({'mensaje': 'Registro eliminado exitosamente'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Eliminar anexo
+@app.route('/api/anexos/<int:id>', methods=['DELETE'])
+def eliminar_anexo(id):
+    try:
+        anexo = db.session.get(Anexo, id)
+        if not anexo:
+            return jsonify({'error': 'Anexo no encontrado'}), 404
+        db.session.delete(anexo)
+        db.session.commit()
+        return jsonify({'mensaje': 'Anexo eliminado correctamente'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Eliminar subdependencia
+@app.route('/api/subdependencias/<int:id>', methods=['DELETE'])
+def eliminar_subdependencia(id):
+    try:
+        sub = db.session.get(Subdependencia, id)
+        if not sub:
+            return jsonify({'error': 'Subdependencia no encontrada'}), 404
+        db.session.delete(sub)
+        db.session.commit()
+        return jsonify({'mensaje': 'Subdependencia eliminada correctamente'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 # EJECUCIÓN
 if __name__ == '__main__':
