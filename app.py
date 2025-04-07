@@ -87,8 +87,9 @@ def subir_imagen():
 
 
 #eliminar mobiliario ---------------------------------------------------------------
-@app.route('/api/mobiliario/<int:id>', methods=['DELETE'])
+@app.route('/api/mobiliario/<string:id>', methods=['DELETE'])
 def eliminar_mobiliario(id):
+    mobiliario = Mobiliario.query.get_or_404(id)
     try:
         mobiliario = Mobiliario.query.get_or_404(id)
         db.session.delete(mobiliario)
@@ -198,8 +199,9 @@ def eliminar_patrimonio(id):
         return jsonify({'error': str(e)}), 500
         
 #--------- editar mobiliario -----------------------------------------------------
-@app.route('/api/mobiliario/<int:id>', methods=['PUT'])
+@app.route('/api/mobiliario/<string:id>', methods=['PUT'])
 def editar_mobiliario(id):
+    mobiliario = Mobiliario.query.get_or_404(id)
     try:
         mobiliario = Mobiliario.query.get_or_404(id)
         data = request.json
