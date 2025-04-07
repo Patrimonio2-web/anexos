@@ -85,6 +85,23 @@ def subir_imagen():
             return jsonify({"error": str(e)}), 500
     return jsonify({"error": "Formato de archivo no permitido"}), 400
 
+
+#eliminar mobiliario ---------------------------------------------------------------
+@app.route('/api/mobiliario/<int:id>', methods=['DELETE'])
+def eliminar_mobiliario(id):
+    try:
+        mobiliario = Mobiliario.query.get_or_404(id)
+        db.session.delete(mobiliario)
+        db.session.commit()
+        return jsonify({"mensaje": "Registro eliminado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+
 @app.route('/api/mobiliario', methods=['POST'])
 def registrar_mobiliario():
     try:
