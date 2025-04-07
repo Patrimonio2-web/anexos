@@ -150,7 +150,7 @@ def obtener_subdependencias(id_anexo):
     subdependencias = Subdependencia.query.filter_by(id_anexo=id_anexo).all()
     return jsonify([{'id': sub.id, 'nombre': sub.nombre} for sub in subdependencias])
 
-# --- MOBILIARIO ---
+# --- nuevo MOBILIARIO ------------------------------------
 @app.route('/api/mobiliario', methods=['GET'])
 def listar_mobiliario():
     registros = Mobiliario.query.all()
@@ -179,8 +179,43 @@ def eliminar_patrimonio(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+        
+#--------- editar mobiliario -----------------------------------------------------
+@app.route('/api/mobiliario/<int:id>', methods=['PUT'])
+def editar_mobiliario(id):
+    try:
+        mobiliario = Mobiliario.query.get_or_404(id)
+        data = request.json
 
-# Eliminar anexo
+        tipo = data.get("resolucion_tipo", "").upper()
+        if tipo == "PSA":
+            tipo = "P.S.A"
+        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}"
+
+        mobiliario.ubicacion_id = data.get("ubicacion_id", mobiliario.ubicacion_id)
+        mobiliario.descripcion = data.get("descripcion", mobiliario.descripcion)
+        mobiliario.resolucion = resolucion_texto
+        mobiliario.fecha_resolucion = data.get("fecha_resolucion", mobiliario.fecha_resolucion)
+        mobiliario.estado_conservacion = data.get("estado_conservacion", mobiliario.estado_conservacion)
+        mobiliario.no_dado = data.get("no_dado", mobiliario.no_dado)
+        mobiliario.para_reparacion = data.get("reparacion", mobiliario.para_reparacion)
+        mobiliario.para_baja = data.get("para_baja", mobiliario.para_baja)
+        mobiliario.faltante = data.get("faltante", mobiliario.faltante)
+        mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
+        mobiliario.problema_etiqueta = data.get("etiqueta", mobiliario.problema_etiqueta)
+        mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
+        mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
+
+        db.session.commit()
+        return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+# Eliminar anexo------------------------------------------------------
 @app.route('/api/anexos/<int:id>', methods=['DELETE'])
 def eliminar_anexo(id):
     try:
@@ -194,7 +229,7 @@ def eliminar_anexo(id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-# Eliminar subdependencia
+# Eliminar subdependencia---------------------------------------------
 @app.route('/api/subdependencias/<int:id>', methods=['DELETE'])
 def eliminar_subdependencia(id):
     try:
