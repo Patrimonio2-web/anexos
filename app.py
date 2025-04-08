@@ -128,7 +128,6 @@ def clases_por_rubro():
             clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
             rubro_seleccionado = Rubro.query.get(rubro_id)
 
-    return render_template('clases_por_rubro.html', rubros=rubros, clases=clases, rubro_seleccionado=rubro_seleccionado)
 
 @app.route('/api/clases', methods=['GET'])
 def ver_clases():
@@ -139,7 +138,7 @@ def ver_clases():
     if rubro_id:
         clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
 
-    return render_template("clases_por_rubro.html", rubros=rubros, clases=clases, rubro_id=rubro_id)
+
 
 
 @app.route('/api/mobiliario', methods=['POST'])
