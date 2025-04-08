@@ -173,6 +173,40 @@ def registrar_mobiliario():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+#---------busca por impresora
+@app.route('/api/buscar-clase', methods=['GET'])
+def buscar_clase():
+    query = request.args.get('query', '', type=str)
+
+    if not query:
+        return jsonify({'error': 'Falta el parámetro query'}), 400
+
+    clases = ClaseBien.query.filter(ClaseBien.descripcion.ilike(f'%{query}%')).order_by(ClaseBien.descripcion).all()
+
+    data = [{
+        'id_clase': c.id_clase,
+        'descripcion': c.descripcion,
+        'id_rubro': c.id_rubro
+    } for c in clases]
+
+    return jsonify(data)
+#-------busca por id clase 109
+@app.route('/api/clase/<int:id_clase>', methods=['GET'])
+def obtener_clase_por_id(id_clase):
+    clase = ClaseBien.query.get(id_clase)
+
+    if not clase:
+        return jsonify({'error': 'Clase no encontrada'}), 404
+
+    rubro = Rubro.query.get(clase.id_rubro)
+
+    return jsonify({
+        'id_clase': clase.id_clase,
+        'descripcion': clase.descripcion,
+        'id_rubro': clase.id_rubro,
+        'rubro': rubro.nombre if rubro else 'Sin rubro'
+    })
+
 
 # --- ANEXOS ---
 @app.route('/api/anexos', methods=['POST'])
