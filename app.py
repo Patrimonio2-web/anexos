@@ -115,28 +115,24 @@ def eliminar_mobiliario(id):
 
 
 
-## Ruta para consultar clases por rubro
-@app.route('/api/clases-por-rubro', methods=['GET', 'POST'])
+# API para obtener todos los rubros ordenados por ID
+@app.route('/api/rubros', methods=['GET'])
+def obtener_rubros():
+    rubros = Rubro.query.order_by(Rubro.id_rubro).all()
+    data = [{'id_rubro': r.id_rubro, 'nombre': r.nombre} for r in rubros]
+    return jsonify(data)
+
+# API para obtener clases por rubro
+@app.route('/api/clases-por-rubro', methods=['GET'])
 def clases_por_rubro():
-    rubros = Rubro.query.order_by(Rubro.id_rubro).all()  # Ordenar por ID
-    clases = []
-    rubro_seleccionado = None
-
-    if request.method == 'POST':
-        rubro_id = request.form.get('rubro_id')
-        if rubro_id:
-            clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
-            rubro_seleccionado = Rubro.query.get(rubro_id)
-
-
-@app.route('/api/clases', methods=['GET'])
-def ver_clases():
-    rubros = Rubro.query.order_by(Rubro.id_rubro).all()  # Ordenar por ID
     rubro_id = request.args.get('rubro_id', type=int)
-    clases = []
+    if not rubro_id:
+        return jsonify({'error': 'Falta el parámetro rubro_id'}), 400
 
-    if rubro_id:
-        clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
+    clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
+    data = [{'id_clase': c.id_clase, 'descripcion': c.descripcion, 'id_rubro': c.id_rubro} for c in clases]
+    return jsonify(data)
+
 
 
 
