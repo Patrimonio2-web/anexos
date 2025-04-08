@@ -26,6 +26,18 @@ cloudinary.config(
 db = SQLAlchemy(app)
 
 # MODELOS
+# Modelos
+class Rubro(db.Model):
+    __tablename__ = 'rubros'
+    id_rubro = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.Text, nullable=False)
+
+class ClaseBien(db.Model):
+    __tablename__ = 'clases_bienes'
+    id_clase = db.Column(db.Integer, primary_key=True)
+    id_rubro = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))
+    descripcion = db.Column(db.Text, nullable=False)
+
 class Anexo(db.Model):
     __tablename__ = 'anexos'
     id = db.Column(db.Integer, primary_key=True)
@@ -101,6 +113,33 @@ def eliminar_mobiliario(id):
         return jsonify({"error": str(e)}), 500
 
 
+
+
+## Ruta para consultar clases por rubro
+@app.route('/api/clases-por-rubro', methods=['GET', 'POST'])
+def clases_por_rubro():
+    rubros = Rubro.query.order_by(Rubro.id_rubro).all()  # Ordenar por ID
+    clases = []
+    rubro_seleccionado = None
+
+    if request.method == 'POST':
+        rubro_id = request.form.get('rubro_id')
+        if rubro_id:
+            clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
+            rubro_seleccionado = Rubro.query.get(rubro_id)
+
+    return render_template('clases_por_rubro.html', rubros=rubros, clases=clases, rubro_seleccionado=rubro_seleccionado)
+
+@app.route('/api/clases', methods=['GET'])
+def ver_clases():
+    rubros = Rubro.query.order_by(Rubro.id_rubro).all()  # Ordenar por ID
+    rubro_id = request.args.get('rubro_id', type=int)
+    clases = []
+
+    if rubro_id:
+        clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
+
+    return render_template("clases_por_rubro.html", rubros=rubros, clases=clases, rubro_id=rubro_id)
 
 
 @app.route('/api/mobiliario', methods=['POST'])
