@@ -80,7 +80,7 @@ def upload_to_cloudinary(filepath):
     result = cloudinary.uploader.upload(filepath, folder="mobiliario")
     return result.get("secure_url")
 
-@app.route('/uploads', methods=['POST'])
+@app.route('/api/uploads', methods=['POST'])
 def subir_imagen():
     if 'foto' not in request.files:
         return jsonify({"error": "No se envió la imagen"}), 400
