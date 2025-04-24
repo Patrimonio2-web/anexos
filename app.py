@@ -135,7 +135,7 @@ def clases_por_rubro():
 
 
 #ruta para buscar por id_Subdependencia ejpemlo 905
-@app.route('/api/mobiliario/<int:subdependencia_id>', methods=['GET'])
+@app.route('/api/mobiliario2/<int:subdependencia_id>', methods=['GET'])
 def get_mobiliario_por_subdependencia(subdependencia_id):
     conn = get_db_connection()
     cur = conn.cursor()
