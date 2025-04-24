@@ -137,44 +137,42 @@ def clases_por_rubro():
 #ruta para buscar por id_Subdependencia ejpemlo 905
 @app.route('/api/mobiliario2/<int:subdependencia_id>', methods=['GET'])
 def get_mobiliario_por_subdependencia(subdependencia_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
+    resultados = db.session.query(
+        Mobiliario,
+        Subdependencia.nombre.label('subdependencia'),
+        Anexo.nombre.label('anexo')
+    ).join(
+        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
+    ).join(
+        Anexo, Subdependencia.id_anexo == Anexo.id
+    ).filter(
+        Subdependencia.id == subdependencia_id
+    ).all()
 
-    query = """
-        SELECT
-            m.id AS mobiliario_id,
-            m.descripcion,
-            m.estado_conservacion,
-            m.no_dado,
-            m.para_reparacion,
-            m.para_baja,
-            m.faltante,
-            m.sobrante,
-            m.problema_etiqueta,
-            m.comentarios,
-            m.fecha_resolucion,
-            m.resolucion,
-            m.foto_url,
-            m.fecha_creacion,
-            m.fecha_actualizacion,
-            s.nombre AS subdependencia,
-            a.nombre AS anexo
-        FROM
-            mobiliario m
-        JOIN
-            subdependencias s ON m.ubicacion_id = s.id
-        JOIN
-            anexos a ON s.id_anexo = a.id
-        WHERE
-            s.id = %s;
-    """
+    data = []
+    for m, sub_nombre, anexo_nombre in resultados:
+        data.append({
+            "mobiliario_id": m.id,
+            "descripcion": m.descripcion,
+            "estado_conservacion": m.estado_conservacion,
+            "no_dado": m.no_dado,
+            "para_reparacion": m.para_reparacion,
+            "para_baja": m.para_baja,
+            "faltante": m.faltante,
+            "sobrante": m.sobrante,
+            "problema_etiqueta": m.problema_etiqueta,
+            "comentarios": m.comentarios,
+            "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
+            "resolucion": m.resolucion,
+            "foto_url": m.foto_url,
+            "fecha_creacion": m.fecha_creacion.isoformat() if m.fecha_creacion else None,
+            "fecha_actualizacion": m.fecha_actualizacion.isoformat() if m.fecha_actualizacion else None,
+            "subdependencia": sub_nombre,
+            "anexo": anexo_nombre
+        })
 
-    cur.execute(query, (subdependencia_id,))
-    resultados = cur.fetchall()
-    cur.close()
-    conn.close()
+    return jsonify(data)
 
-    return jsonify(resultados)
 
 @app.route('/api/mobiliario', methods=['POST'])
 def registrar_mobiliario():
