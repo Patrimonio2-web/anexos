@@ -134,8 +134,47 @@ def clases_por_rubro():
     return jsonify(data)
 
 
+#ruta para buscar por id_Subdependencia ejpemlo 905
+@app.route('/api/mobiliario/<int:subdependencia_id>', methods=['GET'])
+def get_mobiliario_por_subdependencia(subdependencia_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
 
+    query = """
+        SELECT
+            m.id AS mobiliario_id,
+            m.descripcion,
+            m.estado_conservacion,
+            m.no_dado,
+            m.para_reparacion,
+            m.para_baja,
+            m.faltante,
+            m.sobrante,
+            m.problema_etiqueta,
+            m.comentarios,
+            m.fecha_resolucion,
+            m.resolucion,
+            m.foto_url,
+            m.fecha_creacion,
+            m.fecha_actualizacion,
+            s.nombre AS subdependencia,
+            a.nombre AS anexo
+        FROM
+            mobiliario m
+        JOIN
+            subdependencias s ON m.ubicacion_id = s.id
+        JOIN
+            anexos a ON s.id_anexo = a.id
+        WHERE
+            s.id = %s;
+    """
 
+    cur.execute(query, (subdependencia_id,))
+    resultados = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify(resultados)
 
 @app.route('/api/mobiliario', methods=['POST'])
 def registrar_mobiliario():
