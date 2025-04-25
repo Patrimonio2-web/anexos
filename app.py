@@ -134,44 +134,6 @@ def clases_por_rubro():
     return jsonify(data)
 
 
-#ruta para buscar por id_Subdependencia ejpemlo 905
-@app.route('/api/mobiliario2/<int:subdependencia_id>', methods=['GET'])
-def get_mobiliario_por_subdependencia(subdependencia_id):
-    resultados = db.session.query(
-        Mobiliario,
-        Subdependencia.nombre.label('subdependencia'),
-        Anexo.nombre.label('anexo')
-    ).join(
-        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
-    ).join(
-        Anexo, Subdependencia.id_anexo == Anexo.id
-    ).filter(
-        Subdependencia.id == subdependencia_id
-    ).all()
-
-    data = []
-    for m, sub_nombre, anexo_nombre in resultados:
-        data.append({
-            "mobiliario_id": m.id,
-            "descripcion": m.descripcion,
-            "estado_conservacion": m.estado_conservacion,
-            "no_dado": m.no_dado,
-            "para_reparacion": m.para_reparacion,
-            "para_baja": m.para_baja,
-            "faltante": m.faltante,
-            "sobrante": m.sobrante,
-            "problema_etiqueta": m.problema_etiqueta,
-            "comentarios": m.comentarios,
-            "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
-            "resolucion": m.resolucion,
-            "foto_url": m.foto_url,
-            "fecha_creacion": m.fecha_creacion.isoformat() if m.fecha_creacion else None,
-            "fecha_actualizacion": m.fecha_actualizacion.isoformat() if m.fecha_actualizacion else None,
-            "subdependencia": sub_nombre,
-            "anexo": anexo_nombre
-        })
-
-    return jsonify(data)
 
 
 @app.route('/api/mobiliario', methods=['POST'])
@@ -274,21 +236,60 @@ def obtener_subdependencias(id_anexo):
     return jsonify([{'id': sub.id, 'nombre': sub.nombre} for sub in subdependencias])
 
 # --- nuevo MOBILIARIO ------------------------------------
+#  @app.route('/api/mobiliario', methods=['GET'])
+# def listar_mobiliario():
+#     registros = Mobiliario.query.all()
+#     resultado = []
+#     for r in registros:
+#         resultado.append({
+#             "id": r.id,
+#             "descripcion": r.descripcion,
+#             "resolucion": r.resolucion,
+#             "fecha_resolucion": r.fecha_resolucion.isoformat() if r.fecha_resolucion else None,
+#             "estado_conservacion": r.estado_conservacion,
+#             "comentarios": r.comentarios,
+#             "foto_url": r.foto_url
+#         })
+#     return jsonify(resultado) 
+
 @app.route('/api/mobiliario', methods=['GET'])
 def listar_mobiliario():
-    registros = Mobiliario.query.all()
-    resultado = []
-    for r in registros:
-        resultado.append({
-            "id": r.id,
-            "descripcion": r.descripcion,
-            "resolucion": r.resolucion,
-            "fecha_resolucion": r.fecha_resolucion.isoformat() if r.fecha_resolucion else None,
-            "estado_conservacion": r.estado_conservacion,
-            "comentarios": r.comentarios,
-            "foto_url": r.foto_url
+    # hacemos JOIN de mobiliario → subdependencia → anexo
+    resultados = db.session.query(
+        Mobiliario,
+        Subdependencia.nombre.label("subdependencia"),
+        Anexo.nombre.label("anexo")
+    ).join(
+        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
+    ).join(
+        Anexo, Subdependencia.id_anexo == Anexo.id
+    ).all()
+
+    salida = []
+    for m, sub_nombre, anexo_nombre in resultados:
+        salida.append({
+            "id": m.id,
+            "descripcion": m.descripcion,
+            "resolucion": m.resolucion,
+            "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
+            "estado_conservacion": m.estado_conservacion,
+            "comentarios": m.comentarios,
+            "foto_url": m.foto_url,
+            "ubicacion_id": m.ubicacion_id,
+            "subdependencia": sub_nombre,
+            "anexo": anexo_nombre,
+            # opcionales: no_dado, para_reparacion, etc.
+            "no_dado": m.no_dado,
+            "para_reparacion": m.para_reparacion,
+            "para_baja": m.para_baja,
+            "faltante": m.faltante,
+            "sobrante": m.sobrante,
+            "problema_etiqueta": m.problema_etiqueta,
+            "fecha_creacion": m.fecha_creacion.isoformat(),
+            "fecha_actualizacion": m.fecha_actualizacion.isoformat(),
         })
-    return jsonify(resultado)
+    return jsonify(salida)
+    
 # Eliminar patrimonio (mobiliario)
 @app.route('/api/patrimonio/<int:id>', methods=['DELETE'])
 def eliminar_patrimonio(id):
