@@ -304,44 +304,49 @@ def obtener_subdependencias(id_anexo):
 #         })
 #     return jsonify(resultado) 
 
+# api modificada
 @app.route('/api/mobiliario', methods=['GET'])
 def listar_mobiliario():
-    # hacemos JOIN de mobiliario → subdependencia → anexo
-    resultados = db.session.query(
-        Mobiliario,
-        Subdependencia.nombre.label("subdependencia"),
-        Anexo.nombre.label("anexo")
-    ).join(
-        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
-    ).join(
-        Anexo, Subdependencia.id_anexo == Anexo.id
-    ).all()
+    try:
+        resultados = db.session.query(
+            Mobiliario,
+            Subdependencia.nombre.label("subdependencia"),
+            Anexo.nombre.label("anexo")
+        ).join(
+            Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
+        ).join(
+            Anexo, Subdependencia.id_anexo == Anexo.id
+        ).all()
 
-    salida = []
-    for m, sub_nombre, anexo_nombre in resultados:
-        salida.append({
-            "id": m.id,
-            "descripcion": m.descripcion,
-            "resolucion": m.resolucion,
-            "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
-            "estado_conservacion": m.estado_conservacion,
-            "comentarios": m.comentarios,
-            "foto_url": m.foto_url,
-            "ubicacion_id": m.ubicacion_id,
-            "subdependencia": sub_nombre,
-            "anexo": anexo_nombre,
-            # opcionales: no_dado, para_reparacion, etc.
-            "no_dado": m.no_dado,
-            "para_reparacion": m.para_reparacion,
-            "para_baja": m.para_baja,
-            "faltante": m.faltante,
-            "sobrante": m.sobrante,
-            "problema_etiqueta": m.problema_etiqueta,
-            "fecha_creacion": m.fecha_creacion.isoformat(),
-            "fecha_actualizacion": m.fecha_actualizacion.isoformat(),
-        })
-    return jsonify(salida)
-    
+        salida = []
+        for m, sub_nombre, anexo_nombre in resultados:
+            salida.append({
+                "id": m.id,
+                "descripcion": m.descripcion,
+                "resolucion": m.resolucion,
+                "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
+                "estado_conservacion": m.estado_conservacion,
+                "comentarios": m.comentarios,
+                "foto_url": m.foto_url,
+                "ubicacion_id": m.ubicacion_id,
+                "subdependencia": sub_nombre,
+                "anexo": anexo_nombre,
+                "no_dado": m.no_dado,
+                "para_reparacion": m.para_reparacion,
+                "para_baja": m.para_baja,
+                "faltante": m.faltante,
+                "sobrante": m.sobrante,
+                "problema_etiqueta": m.problema_etiqueta,
+                "fecha_creacion": m.fecha_creacion.isoformat() if m.fecha_creacion else None,
+                "fecha_actualizacion": m.fecha_actualizacion.isoformat() if m.fecha_actualizacion else None,
+            })
+
+        return jsonify(salida)
+
+    except Exception as e:
+        print("🔴 Error en /api/mobiliario:", str(e))
+        return jsonify({"error": str(e)}), 500
+
 # Eliminar patrimonio (mobiliario)
 @app.route('/api/patrimonio/<int:id>', methods=['DELETE'])
 def eliminar_patrimonio(id):
