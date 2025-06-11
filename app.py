@@ -54,6 +54,7 @@ class Mobiliario(db.Model):
     __tablename__ = 'mobiliario'
     id = db.Column(db.String(50), primary_key=True)
     ubicacion_id = db.Column(db.Integer)
+    id_clase = db.Column(db.Integer, db.ForeignKey('clases_bienes.id_clase'))  # 👈 Nuevo
     descripcion = db.Column(db.Text)
     resolucion = db.Column(db.Text)
     fecha_resolucion = db.Column(db.Date)
@@ -133,7 +134,58 @@ def clases_por_rubro():
     data = [{'id_clase': c.id_clase, 'descripcion': c.descripcion, 'id_rubro': c.id_rubro} for c in clases]
     return jsonify(data)
 
+# API nueva: devuelva un solo mobiliario por su id y permitirá precargar rubro y clase en el formulario al editar
+@app.route('/api/mobiliario/<string:id>', methods=['GET'])
+def obtener_mobiliario_por_id(id):
+    resultado = db.session.query(
+        Mobiliario,
+        Subdependencia.nombre.label("subdependencia"),
+        Anexo.nombre.label("anexo"),
+        ClaseBien.id_clase,
+        ClaseBien.descripcion.label("clase"),
+        Rubro.id_rubro,
+        Rubro.nombre.label("rubro")
+    ).join(
+        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
+    ).join(
+        Anexo, Subdependencia.id_anexo == Anexo.id
+    ).outerjoin(
+        ClaseBien, ClaseBien.id_clase == Mobiliario.id_clase  # necesitas tener este campo en tu modelo
+    ).outerjoin(
+        Rubro, Rubro.id_rubro == ClaseBien.id_rubro
+    ).filter(
+        Mobiliario.id == id
+    ).first()
 
+    if not resultado:
+        return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+    m, sub_nombre, anexo_nombre, id_clase, clase_desc, id_rubro, rubro_nombre = resultado
+
+    return jsonify({
+        "id": m.id,
+        "descripcion": m.descripcion,
+        "resolucion": m.resolucion,
+        "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
+        "estado_conservacion": m.estado_conservacion,
+        "comentarios": m.comentarios,
+        "foto_url": m.foto_url,
+        "ubicacion_id": m.ubicacion_id,
+        "subdependencia": sub_nombre,
+        "anexo": anexo_nombre,
+        "no_dado": m.no_dado,
+        "para_reparacion": m.para_reparacion,
+        "para_baja": m.para_baja,
+        "faltante": m.faltante,
+        "sobrante": m.sobrante,
+        "problema_etiqueta": m.problema_etiqueta,
+        "fecha_creacion": m.fecha_creacion.isoformat(),
+        "fecha_actualizacion": m.fecha_actualizacion.isoformat(),
+        "id_clase": id_clase,
+        "clase": clase_desc,
+        "id_rubro": id_rubro,
+        "rubro": rubro_nombre
+    })
 
 
 @app.route('/api/mobiliario', methods=['POST'])
