@@ -425,6 +425,61 @@ def eliminar_subdependencia(id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+
+
+#ultima ruta nueva prueba
+@app.route('/api/mobiliario/ultimos', methods=['GET'])
+def ultimos_mobiliarios():
+    try:
+        query = """
+        SELECT 
+            m.id AS id_mobiliario,
+            m.descripcion,
+            m.estado_conservacion,
+            m.resolucion,
+            m.fecha_resolucion,
+            m.no_dado,
+            m.para_reparacion,
+            m.para_baja,
+            m.faltante,
+            m.sobrante,
+            m.problema_etiqueta,
+            m.comentarios,
+            m.foto_url,
+            m.fecha_creacion,
+            m.fecha_actualizacion,
+            m.estado_control,
+            m.historial_movimientos,
+            r.nombre AS rubro,
+            cb.descripcion AS clase_bien,
+            sd.nombre AS subdependencia,
+            sd.piso,
+            a.nombre AS anexo,
+            a.direccion AS direccion_anexo
+        FROM mobiliario m
+        LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
+        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.id_clase
+        LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
+        LEFT JOIN anexos a ON sd.id_anexo = a.id
+        ORDER BY m.fecha_creacion DESC
+        LIMIT 5;
+        """
+
+        conn = db.engine.raw_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        columns = [desc[0] for desc in cur.description]
+        results = [dict(zip(columns, row)) for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        return jsonify(results)
+
+    except Exception as e:
+        print("🔴 Error en /api/mobiliario/ultimos:", str(e))
+        return jsonify({'error': str(e)}), 500
+
+
 # EJECUCIÓN
 if __name__ == '__main__':
     app.run(debug=True)
