@@ -203,6 +203,7 @@ def registrar_mobiliario():
         nuevo = Mobiliario(
             id=data.get("id"),
             ubicacion_id=data.get("ubicacion_id"),
+            id_clase     = data.get("id_clase"), 
             descripcion=data.get("descripcion"),
             resolucion=resolucion_texto,
             fecha_resolucion=data.get("fecha_resolucion"),
@@ -433,7 +434,7 @@ def ultimos_mobiliarios():
     try:
         query = """
         SELECT 
-            m.id AS id_mobiliario,
+            m.id            AS id_mobiliario,
             m.descripcion,
             m.estado_conservacion,
             m.resolucion,
@@ -448,17 +449,15 @@ def ultimos_mobiliarios():
             m.foto_url,
             m.fecha_creacion,
             m.fecha_actualizacion,
-            m.estado_control,
-            m.historial_movimientos,
-            r.nombre AS rubro,
-            cb.descripcion AS clase_bien,
-            sd.nombre AS subdependencia,
+            r.nombre        AS rubro,
+            cb.descripcion  AS clase_bien,
+            sd.nombre       AS subdependencia,
             sd.piso,
-            a.nombre AS anexo,
-            a.direccion AS direccion_anexo
-        FROM mobiliario m
-        LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
-        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.id_clase
+            a.nombre        AS anexo,
+            a.direccion     AS direccion_anexo
+        FROM    mobiliario m
+        LEFT JOIN clases_bienes cb ON m.id_clase = cb.id_clase
+        LEFT JOIN rubros        r  ON cb.id_rubro = r.id_rubro
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
         ORDER BY m.fecha_creacion DESC
@@ -466,17 +465,15 @@ def ultimos_mobiliarios():
         """
 
         conn = db.engine.raw_connection()
-        cur = conn.cursor()
+        cur  = conn.cursor()
         cur.execute(query)
-        columns = [desc[0] for desc in cur.description]
-        results = [dict(zip(columns, row)) for row in cur.fetchall()]
-        cur.close()
-        conn.close()
+        columns  = [col[0] for col in cur.description]
+        results  = [dict(zip(columns, row)) for row in cur.fetchall()]
+        cur.close(); conn.close()
 
         return jsonify(results)
-
     except Exception as e:
-        print("🔴 Error en /api/mobiliario/ultimos:", str(e))
+        print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
 
 
