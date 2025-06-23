@@ -388,6 +388,7 @@ def editar_mobiliario(id):
         mobiliario.problema_etiqueta = data.get("etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
+        mobiliario.id_clase = data.get("id_clase", mobiliario.id_clase) # --- nuevo
 
         db.session.commit()
         return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
