@@ -29,30 +29,34 @@ db = SQLAlchemy(app)
 # MODELOS
 # Modelos
 class Rubro(db.Model):
-    _tablename_ = 'rubros'
+    __tablename__ = 'rubros'
     id_rubro = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.Text, nullable=False)
 
 class ClaseBien(db.Model):
-    _tablename_ = 'clases_bienes'
+    __tablename__ = 'clases_bienes'
     id_clase = db.Column(db.Integer, primary_key=True)
     id_rubro = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))
     descripcion = db.Column(db.Text, nullable=False)
 
 class Anexo(db.Model):
-    _tablename_ = 'anexos'
+    __tablename__ = 'anexos'  # ✅ corregido
+
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(255), nullable=False)
     direccion = db.Column(db.Text)
 
+
+
+
 class Subdependencia(db.Model):
-    _tablename_ = 'subdependencias'
+    __tablename__ = 'subdependencias'
     id = db.Column(db.Integer, primary_key=True)
     id_anexo = db.Column(db.Integer, db.ForeignKey('anexos.id', ondelete="CASCADE"), nullable=False)
     nombre = db.Column(db.String(255), nullable=False)
 
 class Mobiliario(db.Model):
-    _tablename_ = 'mobiliario'
+    __tablename__ = 'mobiliario'
     id = db.Column(db.String(50), primary_key=True)
     ubicacion_id = db.Column(db.Integer)
     id_clase = db.Column(db.Integer, db.ForeignKey('clases_bienes.id_clase'))  # 👈 Nuevo
