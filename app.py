@@ -35,7 +35,7 @@ class Rubro(db.Model):
 
 class ClaseBien(db.Model):
     __tablename__ = 'clases_bienes'
-    clase_bien_id = db.Column(db.Integer, primary_key=True)
+    id_clase = db.Column(db.Integer, primary_key=True)  # ⬅ CAMBIADO
     id_rubro = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))
     descripcion = db.Column(db.Text, nullable=False)
 
