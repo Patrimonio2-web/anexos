@@ -35,7 +35,7 @@ class Rubro(db.Model):
 
 class ClaseBien(db.Model):
     __tablename__ = 'clases_bienes'
-    id_clase = db.Column(db.Integer, primary_key=True)
+    clase_bien_id = db.Column(db.Integer, primary_key=True)
     id_rubro = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))
     descripcion = db.Column(db.Text, nullable=False)
 
@@ -59,7 +59,7 @@ class Mobiliario(db.Model):
     __tablename__ = 'mobiliario'
     id = db.Column(db.String(50), primary_key=True)
     ubicacion_id = db.Column(db.Integer)
-    id_clase = db.Column(db.Integer, db.ForeignKey('clases_bienes.id_clase'))  # 👈 Nuevo
+    clase_bien_id = db.Column(db.Integer, db.ForeignKey('clases_bienes.clase_bien_id'))  # 👈 Nuevo
     descripcion = db.Column(db.Text)
     resolucion = db.Column(db.Text)
     fecha_resolucion = db.Column(db.Date)
@@ -136,7 +136,7 @@ def clases_por_rubro():
         return jsonify({'error': 'Falta el parámetro rubro_id'}), 400
 
     clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
-    data = [{'id_clase': c.id_clase, 'descripcion': c.descripcion, 'id_rubro': c.id_rubro} for c in clases]
+    data = [{'clase_bien_id': c.clase_bien_id, 'descripcion': c.descripcion, 'id_rubro': c.id_rubro} for c in clases]
     return jsonify(data)
 
 # API nueva: devuelva un solo mobiliario por su id y permitirá precargar rubro y clase en el formulario al editar
@@ -146,7 +146,7 @@ def obtener_mobiliario_por_id(id):
         Mobiliario,
         Subdependencia.nombre.label("subdependencia"),
         Anexo.nombre.label("anexo"),
-        ClaseBien.id_clase,
+        ClaseBien.clase_bien_id,
         ClaseBien.descripcion.label("clase"),
         Rubro.id_rubro,
         Rubro.nombre.label("rubro")
@@ -155,7 +155,7 @@ def obtener_mobiliario_por_id(id):
     ).join(
         Anexo, Subdependencia.id_anexo == Anexo.id
     ).outerjoin(
-        ClaseBien, ClaseBien.id_clase == Mobiliario.id_clase  # necesitas tener este campo en tu modelo
+        ClaseBien, ClaseBien.clase_bien_id == Mobiliario.clase_bien_id  # necesitas tener este campo en tu modelo
     ).outerjoin(
         Rubro, Rubro.id_rubro == ClaseBien.id_rubro
     ).filter(
@@ -165,7 +165,7 @@ def obtener_mobiliario_por_id(id):
     if not resultado:
         return jsonify({"error": "Mobiliario no encontrado"}), 404
 
-    m, sub_nombre, anexo_nombre, id_clase, clase_desc, id_rubro, rubro_nombre = resultado
+    m, sub_nombre, anexo_nombre, clase_bien_id, clase_desc, id_rubro, rubro_nombre = resultado
 
     return jsonify({
         "id": m.id,
@@ -186,7 +186,7 @@ def obtener_mobiliario_por_id(id):
         "problema_etiqueta": m.problema_etiqueta,
         "fecha_creacion": m.fecha_creacion.isoformat(),
         "fecha_actualizacion": m.fecha_actualizacion.isoformat(),
-        "id_clase": id_clase,
+        "clase_bien_id": clase_bien_id,
         "clase": clase_desc,
         "id_rubro": id_rubro,
         "rubro": rubro_nombre
@@ -214,7 +214,7 @@ def registrar_mobiliario():
         nuevo = Mobiliario(
             id=data.get("id"),
             ubicacion_id=data.get("ubicacion_id"),
-            clase_bien_id=data.get("id_clase"),  # Nombre correcto de la columna en la BD
+            clase_bien_id=data.get("clase_bien_id"),  # Nombre correcto de la columna en la BD
             descripcion=data.get("descripcion"),
             resolucion=resolucion_texto,
             fecha_resolucion=data.get("fecha_resolucion"),
@@ -249,16 +249,16 @@ def buscar_clase():
     clases = ClaseBien.query.filter(ClaseBien.descripcion.ilike(f'%{query}%')).order_by(ClaseBien.descripcion).all()
 
     data = [{
-        'id_clase': c.id_clase,
+        'clase_bien_id': c.clase_bien_id,
         'descripcion': c.descripcion,
         'id_rubro': c.id_rubro
     } for c in clases]
 
     return jsonify(data)
 #-------busca por id clase 109
-@app.route('/api/clase/<int:id_clase>', methods=['GET'])
-def obtener_clase_por_id(id_clase):
-    clase = ClaseBien.query.get(id_clase)
+@app.route('/api/clase/<int:clase_bien_id>', methods=['GET'])
+def obtener_clase_por_id(clase_bien_id):
+    clase = ClaseBien.query.get(clase_bien_id)
 
     if not clase:
         return jsonify({'error': 'Clase no encontrada'}), 404
@@ -266,7 +266,7 @@ def obtener_clase_por_id(id_clase):
     rubro = Rubro.query.get(clase.id_rubro)
 
     return jsonify({
-        'id_clase': clase.id_clase,
+        'clase_bien_id': clase.clase_bien_id,
         'descripcion': clase.descripcion,
         'id_rubro': clase.id_rubro,
         'rubro': rubro.nombre if rubro else 'Sin rubro'
@@ -401,7 +401,7 @@ def editar_mobiliario(id):
         mobiliario.problema_etiqueta = data.get("etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
-        mobiliario.id_clase = data.get("id_clase", mobiliario.id_clase) # --- nuevo
+        mobiliario.clase_bien_id = data.get("clase_bien_id", mobiliario.clase_bien_id) # --- nuevo
 
         db.session.commit()
         return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
@@ -470,7 +470,7 @@ def ultimos_mobiliarios():
             a.nombre               AS anexo,
             a.direccion            AS direccion_anexo
         FROM    mobiliario m
-        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.id_clase
+        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.clase_bien_id
         LEFT JOIN rubros        r  ON m.rubro_id = r.id_rubro
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
