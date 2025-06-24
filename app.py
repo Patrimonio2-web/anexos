@@ -131,13 +131,24 @@ def obtener_rubros():
 # API para obtener clases por rubro
 @app.route('/api/clases-por-rubro', methods=['GET'])
 def clases_por_rubro():
-    rubro_id = request.args.get('rubro_id', type=int)
-    if not rubro_id:
-        return jsonify({'error': 'Falta el parámetro rubro_id'}), 400
+    try:
+        rubro_id = request.args.get('rubro_id', type=int)
+        if not rubro_id:
+            return jsonify({'error': 'Falta el parámetro rubro_id'}), 400
 
-    clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
-    data = [{'clase_bien_id': c.clase_bien_id, 'descripcion': c.descripcion, 'id_rubro': c.id_rubro} for c in clases]
-    return jsonify(data)
+        clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
+
+        data = [{
+            'clase_bien_id': c.clase_bien_id,
+            'descripcion': c.descripcion,
+            'id_rubro': c.id_rubro
+        } for c in clases]
+
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 # API nueva: devuelva un solo mobiliario por su id y permitirá precargar rubro y clase en el formulario al editar
 @app.route('/api/mobiliario/<string:id>', methods=['GET'])
