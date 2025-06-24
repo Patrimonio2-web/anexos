@@ -139,7 +139,7 @@ def clases_por_rubro():
         clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
 
         data = [{
-            'clase_bien_id': c.clase_bien_id,
+            'id_clase': c.id_clase,            # 👈 ya no usamos clase_bien_id
             'descripcion': c.descripcion,
             'id_rubro': c.id_rubro
         } for c in clases]
@@ -148,6 +148,7 @@ def clases_por_rubro():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 
 # API nueva: devuelva un solo mobiliario por su id y permitirá precargar rubro y clase en el formulario al editar
