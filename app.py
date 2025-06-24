@@ -11,6 +11,7 @@ import tempfile
 app = Flask(__name__)
 CORS(app)
 
+
 # Configuración de la base de datos PostgreSQL
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -489,5 +490,6 @@ def ultimos_mobiliarios():
 
 
 # EJECUCIÓN
-if _name_ == '_main_':
+if __name__ == '__main__':
     app.run(debug=True)
+
