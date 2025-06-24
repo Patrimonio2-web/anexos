@@ -463,7 +463,6 @@ def ultimos_mobiliarios():
             r.nombre               AS rubro,
             cb.descripcion         AS clase_bien,
             sd.nombre              AS subdependencia,
-            sd.piso,
             a.nombre               AS anexo,
             a.direccion            AS direccion_anexo
         FROM    mobiliario m
