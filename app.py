@@ -8,7 +8,7 @@ import cloudinary.uploader
 import os
 import tempfile
 
-app = Flask(_name_)
+app = Flask(__name__)
 CORS(app)
 
 # Configuración de la base de datos PostgreSQL
