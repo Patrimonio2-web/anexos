@@ -64,17 +64,17 @@ class Mobiliario(db.Model):
     resolucion = db.Column(db.Text)
     fecha_resolucion = db.Column(db.Date)
     estado_conservacion = db.Column(db.String(20))
-
+    estado_control = db.Column(db.String(20))  # ✅ nuevo
+    historial_movimientos = db.Column(db.Text)  # ✅ nuevo
+    rubro_id = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))  # ✅ nuevo
     no_dado = db.Column(db.Boolean, default=False)
     para_reparacion = db.Column(db.Boolean, default=False)
     para_baja = db.Column(db.Boolean, default=False)
     faltante = db.Column(db.Boolean, default=False)
     sobrante = db.Column(db.Boolean, default=False)
     problema_etiqueta = db.Column(db.Boolean, default=False)
-
     comentarios = db.Column(db.Text)
     foto_url = db.Column(db.String(255))
-
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_actualizacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -482,7 +482,7 @@ def ultimos_mobiliarios():
             a.nombre               AS anexo,
             a.direccion            AS direccion_anexo
         FROM    mobiliario m
-        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.clase_bien_id
+        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.id_clase
         LEFT JOIN rubros        r  ON m.rubro_id = r.id_rubro
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
@@ -501,6 +501,7 @@ def ultimos_mobiliarios():
     except Exception as e:
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
+
 
 
 
