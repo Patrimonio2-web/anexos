@@ -33,50 +33,57 @@ class Rubro(db.Model):
     id_rubro = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.Text, nullable=False)
 
+
 class ClaseBien(db.Model):
     __tablename__ = 'clases_bienes'
-    id_clase = db.Column(db.Integer, primary_key=True)  # ⬅ CAMBIADO
-    id_rubro = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))
+    id_clase = db.Column(db.Integer, primary_key=True)  # 👈 correcto
+    id_rubro = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'), nullable=False)
     descripcion = db.Column(db.Text, nullable=False)
 
-class Anexo(db.Model):
-    __tablename__ = 'anexos'  # ✅ corregido
 
+class Anexo(db.Model):
+    __tablename__ = 'anexos'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(255), nullable=False)
     direccion = db.Column(db.Text)
 
 
 
-
 class Subdependencia(db.Model):
     __tablename__ = 'subdependencias'
     id = db.Column(db.Integer, primary_key=True)
-    id_anexo = db.Column(db.Integer, db.ForeignKey('anexos.id', ondelete="CASCADE"), nullable=False)
+    id_anexo = db.Column(db.Integer, db.ForeignKey('anexos.id', ondelete='CASCADE'), nullable=False)
     nombre = db.Column(db.String(255), nullable=False)
+    piso = db.Column(db.Integer)  # 👈 este campo está en tu base (PDF), podés incluirlo si lo necesitás
+
 
 class Mobiliario(db.Model):
     __tablename__ = 'mobiliario'
     id = db.Column(db.String(50), primary_key=True)
-    ubicacion_id = db.Column(db.Integer)
-    clase_bien_id = db.Column(db.Integer, db.ForeignKey('clases_bienes.clase_bien_id'))  # 👈 Nuevo
+    ubicacion_id = db.Column(db.Integer, db.ForeignKey('subdependencias.id'))  # 👈 clave foránea correcta
+    clase_bien_id = db.Column(db.Integer, db.ForeignKey('clases_bienes.id_clase'))
+    rubro_id = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))
+
     descripcion = db.Column(db.Text)
     resolucion = db.Column(db.Text)
     fecha_resolucion = db.Column(db.Date)
     estado_conservacion = db.Column(db.String(20))
-    estado_control = db.Column(db.String(20))  # ✅ nuevo
-    historial_movimientos = db.Column(db.Text)  # ✅ nuevo
-    rubro_id = db.Column(db.Integer, db.ForeignKey('rubros.id_rubro'))  # ✅ nuevo
+    estado_control = db.Column(db.String(20))
+    historial_movimientos = db.Column(db.Text)
+
     no_dado = db.Column(db.Boolean, default=False)
     para_reparacion = db.Column(db.Boolean, default=False)
     para_baja = db.Column(db.Boolean, default=False)
     faltante = db.Column(db.Boolean, default=False)
     sobrante = db.Column(db.Boolean, default=False)
     problema_etiqueta = db.Column(db.Boolean, default=False)
+
     comentarios = db.Column(db.Text)
     foto_url = db.Column(db.String(255))
+
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_actualizacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 def allowed_file(filename):
@@ -104,20 +111,6 @@ def subir_imagen():
     return jsonify({"error": "Formato de archivo no permitido"}), 400
 
 
-#eliminar mobiliario ---------------------------------------------------------------
-@app.route('/api/mobiliario/<string:id>', methods=['DELETE'])
-def eliminar_mobiliario(id):
-    mobiliario = Mobiliario.query.get_or_404(id)
-    try:
-        mobiliario = Mobiliario.query.get_or_404(id)
-        db.session.delete(mobiliario)
-        db.session.commit()
-        return jsonify({"mensaje": "Registro eliminado correctamente"}), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
 
 
 
@@ -128,7 +121,9 @@ def obtener_rubros():
     data = [{'id_rubro': r.id_rubro, 'nombre': r.nombre} for r in rubros]
     return jsonify(data)
 
+
 # API para obtener clases por rubro
+#http://127.0.0.1:5000/api/clases-por-rubro?rubro_id=437
 @app.route('/api/clases-por-rubro', methods=['GET'])
 def clases_por_rubro():
     try:
@@ -151,104 +146,8 @@ def clases_por_rubro():
 
 
 
-# API nueva: devuelva un solo mobiliario por su id y permitirá precargar rubro y clase en el formulario al editar
-@app.route('/api/mobiliario/<string:id>', methods=['GET'])
-def obtener_mobiliario_por_id(id):
-    resultado = db.session.query(
-        Mobiliario,
-        Subdependencia.nombre.label("subdependencia"),
-        Anexo.nombre.label("anexo"),
-        ClaseBien.clase_bien_id,
-        ClaseBien.descripcion.label("clase"),
-        Rubro.id_rubro,
-        Rubro.nombre.label("rubro")
-    ).join(
-        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
-    ).join(
-        Anexo, Subdependencia.id_anexo == Anexo.id
-    ).outerjoin(
-        ClaseBien, ClaseBien.clase_bien_id == Mobiliario.clase_bien_id  # necesitas tener este campo en tu modelo
-    ).outerjoin(
-        Rubro, Rubro.id_rubro == ClaseBien.id_rubro
-    ).filter(
-        Mobiliario.id == id
-    ).first()
-
-    if not resultado:
-        return jsonify({"error": "Mobiliario no encontrado"}), 404
-
-    m, sub_nombre, anexo_nombre, clase_bien_id, clase_desc, id_rubro, rubro_nombre = resultado
-
-    return jsonify({
-        "id": m.id,
-        "descripcion": m.descripcion,
-        "resolucion": m.resolucion,
-        "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
-        "estado_conservacion": m.estado_conservacion,
-        "comentarios": m.comentarios,
-        "foto_url": m.foto_url,
-        "ubicacion_id": m.ubicacion_id,
-        "subdependencia": sub_nombre,
-        "anexo": anexo_nombre,
-        "no_dado": m.no_dado,
-        "para_reparacion": m.para_reparacion,
-        "para_baja": m.para_baja,
-        "faltante": m.faltante,
-        "sobrante": m.sobrante,
-        "problema_etiqueta": m.problema_etiqueta,
-        "fecha_creacion": m.fecha_creacion.isoformat(),
-        "fecha_actualizacion": m.fecha_actualizacion.isoformat(),
-        "clase_bien_id": clase_bien_id,
-        "clase": clase_desc,
-        "id_rubro": id_rubro,
-        "rubro": rubro_nombre
-    })
 
 
-#carga de nuevo registro---------
-# Ruta para registrar un nuevo mobiliario
-@app.route('/api/mobiliario', methods=['POST'])
-def registrar_mobiliario():
-    try:
-        data = request.json
-
-        # Validación de campos obligatorios
-        if not data.get("id") or not data.get("resolucion_numero") or not data.get("resolucion_tipo"):
-            return jsonify({"error": "Campos obligatorios faltantes"}), 400
-
-        # Composición del texto de resolución
-        tipo = data.get("resolucion_tipo").upper()
-        if tipo == "PSA":
-            tipo = "P.S.A"
-        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}"
-
-        # Creación del nuevo registro
-        nuevo = Mobiliario(
-            id=data.get("id"),
-            ubicacion_id=data.get("ubicacion_id"),
-            clase_bien_id=data.get("clase_bien_id"),  # Nombre correcto de la columna en la BD
-            descripcion=data.get("descripcion"),
-            resolucion=resolucion_texto,
-            fecha_resolucion=data.get("fecha_resolucion"),
-            estado_conservacion=data.get("estado_conservacion"),
-            no_dado=data.get("no_dado", False),
-            para_reparacion=data.get("reparacion", False),
-            para_baja=data.get("para_baja", False),
-            faltante=data.get("faltante", False),
-            sobrante=data.get("sobrante", False),
-            problema_etiqueta=data.get("etiqueta", False),
-            comentarios=data.get("comentarios"),
-            foto_url=data.get("foto_url", "")
-        )
-
-        # Guardar en base de datos
-        db.session.add(nuevo)
-        db.session.commit()
-        return jsonify({"mensaje": "Registro guardado exitosamente"}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
 
 #---------busca por impresora
 @app.route('/api/buscar-clase', methods=['GET'])
@@ -267,6 +166,7 @@ def buscar_clase():
     } for c in clases]
 
     return jsonify(data)
+
 #-------busca por id clase 109
 @app.route('/api/clase/<int:clase_bien_id>', methods=['GET'])
 def obtener_clase_por_id(clase_bien_id):
@@ -284,8 +184,7 @@ def obtener_clase_por_id(clase_bien_id):
         'rubro': rubro.nombre if rubro else 'Sin rubro'
     })
 
-
-# --- ANEXOS ---
+# API para AGREGAR anexos
 @app.route('/api/anexos', methods=['POST'])
 def agregar_anexo():
     data = request.json
@@ -294,6 +193,7 @@ def agregar_anexo():
     db.session.commit()
     return jsonify({'mensaje': 'Anexo agregado correctamente'}), 201
 
+# API para obtener todos los anexos
 @app.route('/api/anexos', methods=['GET'])
 def obtener_anexos():
     anexos = Anexo.query.all()
@@ -308,120 +208,15 @@ def agregar_subdependencia():
     db.session.commit()
     return jsonify({'mensaje': 'Subdependencia agregada correctamente'}), 201
 
+
+# API para obtener todas las subdependencias
 @app.route('/api/anexos/<int:id_anexo>/subdependencias', methods=['GET'])
 def obtener_subdependencias(id_anexo):
     subdependencias = Subdependencia.query.filter_by(id_anexo=id_anexo).all()
     return jsonify([{'id': sub.id, 'nombre': sub.nombre} for sub in subdependencias])
 
-# --- nuevo MOBILIARIO ------------------------------------
-#  @app.route('/api/mobiliario', methods=['GET'])
-# def listar_mobiliario():
-#     registros = Mobiliario.query.all()
-#     resultado = []
-#     for r in registros:
-#         resultado.append({
-#             "id": r.id,
-#             "descripcion": r.descripcion,
-#             "resolucion": r.resolucion,
-#             "fecha_resolucion": r.fecha_resolucion.isoformat() if r.fecha_resolucion else None,
-#             "estado_conservacion": r.estado_conservacion,
-#             "comentarios": r.comentarios,
-#             "foto_url": r.foto_url
-#         })
-#     return jsonify(resultado) 
 
-# api modificada
-@app.route('/api/mobiliario', methods=['GET'])
-def listar_mobiliario():
-    try:
-        resultados = db.session.query(
-            Mobiliario,
-            Subdependencia.nombre.label("subdependencia"),
-            Anexo.nombre.label("anexo")
-        ).join(
-            Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
-        ).join(
-            Anexo, Subdependencia.id_anexo == Anexo.id
-        ).all()
-
-        salida = []
-        for m, sub_nombre, anexo_nombre in resultados:
-            salida.append({
-                "id": m.id,
-                "descripcion": m.descripcion,
-                "resolucion": m.resolucion,
-                "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
-                "estado_conservacion": m.estado_conservacion,
-                "comentarios": m.comentarios,
-                "foto_url": m.foto_url,
-                "ubicacion_id": m.ubicacion_id,
-                "subdependencia": sub_nombre,
-                "anexo": anexo_nombre,
-                "no_dado": m.no_dado,
-                "para_reparacion": m.para_reparacion,
-                "para_baja": m.para_baja,
-                "faltante": m.faltante,
-                "sobrante": m.sobrante,
-                "problema_etiqueta": m.problema_etiqueta,
-                "fecha_creacion": m.fecha_creacion.isoformat() if m.fecha_creacion else None,
-                "fecha_actualizacion": m.fecha_actualizacion.isoformat() if m.fecha_actualizacion else None,
-            })
-
-        return jsonify(salida)
-
-    except Exception as e:
-        print("🔴 Error en /api/mobiliario:", str(e))
-        return jsonify({"error": str(e)}), 500
-
-# Eliminar patrimonio (mobiliario)
-@app.route('/api/patrimonio/<int:id>', methods=['DELETE'])
-def eliminar_patrimonio(id):
-    try:
-        registro = db.session.get(id)
-        if not registro:
-            return jsonify({'error': 'Registro no encontrado'}), 404
-        db.session.delete(registro)
-        db.session.commit()
-        return jsonify({'mensaje': 'Registro eliminado exitosamente'}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
         
-#--------- editar mobiliario -----------------------------------------------------
-@app.route('/api/mobiliario/<string:id>', methods=['PUT'])
-def editar_mobiliario(id):
-    mobiliario = Mobiliario.query.get_or_404(id)
-    try:
-        mobiliario = Mobiliario.query.get_or_404(id)
-        data = request.json
-
-        tipo = data.get("resolucion_tipo", "").upper()
-        if tipo == "PSA":
-            tipo = "P.S.A"
-        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}"
-
-        mobiliario.ubicacion_id = data.get("ubicacion_id", mobiliario.ubicacion_id)
-        mobiliario.descripcion = data.get("descripcion", mobiliario.descripcion)
-        mobiliario.resolucion = resolucion_texto
-        mobiliario.fecha_resolucion = data.get("fecha_resolucion", mobiliario.fecha_resolucion)
-        mobiliario.estado_conservacion = data.get("estado_conservacion", mobiliario.estado_conservacion)
-        mobiliario.no_dado = data.get("no_dado", mobiliario.no_dado)
-        mobiliario.para_reparacion = data.get("reparacion", mobiliario.para_reparacion)
-        mobiliario.para_baja = data.get("para_baja", mobiliario.para_baja)
-        mobiliario.faltante = data.get("faltante", mobiliario.faltante)
-        mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
-        mobiliario.problema_etiqueta = data.get("etiqueta", mobiliario.problema_etiqueta)
-        mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
-        mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
-        mobiliario.clase_bien_id = data.get("clase_bien_id", mobiliario.clase_bien_id) # --- nuevo
-
-        db.session.commit()
-        return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
 
 
 # Eliminar anexo------------------------------------------------------
@@ -454,7 +249,11 @@ def eliminar_subdependencia(id):
 
 
 
-# Última ruta nueva prueba sin LIMIT
+
+
+
+
+# API para obtener los registros de mobiliario-----------------------
 @app.route('/api/mobiliario/ultimos', methods=['GET'])
 def ultimos_mobiliarios():
     try:
@@ -505,7 +304,168 @@ def ultimos_mobiliarios():
 
 
 
+# API para eliminar un registro de patrimonio-----------------------------
+@app.route('/api/patrimonio/<string:id>', methods=['DELETE'])
+def eliminar_patrimonio(id):
+    try:
+        registro = db.session.get(Mobiliario, id)
+        if not registro:
+            return jsonify({'error': 'Registro no encontrado'}), 404
+        db.session.delete(registro)
+        db.session.commit()
+        return jsonify({'mensaje': 'Registro eliminado exitosamente'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+
+
+# API para editar mobiliario-----------------------------------------------------
+
+@app.route('/api/mobiliario/<string:id>', methods=['PUT'])
+def editar_mobiliario(id):
+    mobiliario = Mobiliario.query.get_or_404(id)
+    try:
+        data = request.json
+
+        tipo = data.get("resolucion_tipo", "").upper()
+        if tipo == "PSA":
+            tipo = "P.S.A"
+        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}" if data.get("resolucion_numero") else data.get("resolucion", mobiliario.resolucion)
+
+        mobiliario.ubicacion_id = data.get("ubicacion_id", mobiliario.ubicacion_id)
+        mobiliario.clase_bien_id = data.get("clase_bien_id", mobiliario.clase_bien_id)
+        mobiliario.rubro_id = data.get("rubro_id", mobiliario.rubro_id)
+        mobiliario.descripcion = data.get("descripcion", mobiliario.descripcion)
+        mobiliario.resolucion = resolucion_texto
+        mobiliario.fecha_resolucion = data.get("fecha_resolucion", mobiliario.fecha_resolucion)
+        mobiliario.estado_conservacion = data.get("estado_conservacion", mobiliario.estado_conservacion)
+        mobiliario.estado_control = data.get("estado_control", mobiliario.estado_control)
+        mobiliario.historial_movimientos = data.get("historial_movimientos", mobiliario.historial_movimientos)
+        mobiliario.no_dado = data.get("no_dado", mobiliario.no_dado)
+        mobiliario.para_reparacion = data.get("para_reparacion", mobiliario.para_reparacion)
+        mobiliario.para_baja = data.get("para_baja", mobiliario.para_baja)
+        mobiliario.faltante = data.get("faltante", mobiliario.faltante)
+        mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
+        mobiliario.problema_etiqueta = data.get("problema_etiqueta", mobiliario.problema_etiqueta)
+        mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
+        mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
+
+        db.session.commit()
+        return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+# Ruta para registrar un nuevo mobiliario
+# Esta ruta permite registrar un nuevo mobiliario con los datos proporcionados en el cuerpo de la 
+@app.route('/api/mobiliario', methods=['POST'])
+def registrar_mobiliario():
+    try:
+        data = request.json
+
+        tipo = data.get("resolucion_tipo", "").upper()
+        if tipo == "PSA":
+            tipo = "P.S.A"
+        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}" if data.get('resolucion_numero') else data.get("resolucion")
+
+        nuevo = Mobiliario(
+            id=data.get("id"),
+            ubicacion_id=data.get("ubicacion_id"),
+            clase_bien_id=data.get("clase_bien_id"),
+            rubro_id=data.get("rubro_id"),
+            descripcion=data.get("descripcion"),
+            resolucion=resolucion_texto,
+            fecha_resolucion=data.get("fecha_resolucion"),
+            estado_conservacion=data.get("estado_conservacion"),
+            estado_control=data.get("estado_control"),
+            historial_movimientos=data.get("historial_movimientos"),
+            no_dado=data.get("no_dado", False),
+            para_reparacion=data.get("para_reparacion", False),
+            para_baja=data.get("para_baja", False),
+            faltante=data.get("faltante", False),
+            sobrante=data.get("sobrante", False),
+            problema_etiqueta=data.get("problema_etiqueta", False),
+            comentarios=data.get("comentarios"),
+            foto_url=data.get("foto_url", "")
+        )
+
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({"mensaje": "Registro creado exitosamente"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# Ruta para obtener un mobiliario por ID--------------------------------------
+@app.route('/api/mobiliario/<string:id>', methods=['GET'])
+def obtener_mobiliario_por_id(id):
+    resultado = db.session.query(
+        Mobiliario,
+        Subdependencia.nombre.label("subdependencia"),
+        Subdependencia.id_anexo,
+        Anexo.nombre.label("anexo"),
+        Anexo.direccion.label("direccion_anexo"),
+        ClaseBien.id_clase,
+        ClaseBien.descripcion.label("clase"),
+        Rubro.id_rubro,
+        Rubro.nombre.label("rubro")
+    ).outerjoin(
+        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
+    ).outerjoin(
+        Anexo, Subdependencia.id_anexo == Anexo.id
+    ).outerjoin(
+        ClaseBien, ClaseBien.id_clase == Mobiliario.clase_bien_id
+    ).outerjoin(
+        Rubro, Rubro.id_rubro == Mobiliario.rubro_id
+    ).filter(
+        Mobiliario.id == id
+    ).first()
+
+    if not resultado:
+        return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+    m, sub_nombre, id_anexo, anexo_nombre, direccion_anexo, id_clase, clase_desc, id_rubro, rubro_nombre = resultado
+
+    return jsonify({
+        "id": m.id,
+        "descripcion": m.descripcion,
+        "resolucion": m.resolucion,
+        "fecha_resolucion": m.fecha_resolucion.isoformat() if m.fecha_resolucion else None,
+        "estado_conservacion": m.estado_conservacion,
+        "estado_control": m.estado_control,
+        "historial_movimientos": m.historial_movimientos,
+        "comentarios": m.comentarios,
+        "foto_url": m.foto_url,
+        "ubicacion_id": m.ubicacion_id,
+        "subdependencia": sub_nombre,
+        "id_anexo": id_anexo,
+        "anexo": anexo_nombre,
+        "direccion_anexo": direccion_anexo,
+        "no_dado": m.no_dado,
+        "para_reparacion": m.para_reparacion,
+        "para_baja": m.para_baja,
+        "faltante": m.faltante,
+        "sobrante": m.sobrante,
+        "problema_etiqueta": m.problema_etiqueta,
+        "fecha_creacion": m.fecha_creacion.isoformat() if m.fecha_creacion else None,
+        "fecha_actualizacion": m.fecha_actualizacion.isoformat() if m.fecha_actualizacion else None,
+        "clase_bien_id": id_clase,
+        "clase": clase_desc,
+        "rubro_id": id_rubro,
+        "rubro": rubro_nombre
+    })
+
+
 # EJECUCIÓN
 if __name__ == '__main__':
     app.run(debug=True)
+
+
 
