@@ -464,7 +464,7 @@ def obtener_mobiliario_por_id(id):
 
 
 
-@app.route('/mobiliario/etiqueta/ver/<string:id>')
+@app.route('/api/mobiliario/etiqueta/ver/<string:id>')
 def ver_etiqueta_para_imprimir(id):
     # URL de descarga de la etiqueta (usa la función actual que ya genera el PNG)
     etiqueta_url = url_for('generar_etiqueta_png', id=id)
@@ -478,7 +478,7 @@ from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import io
 
-@app.route('/mobiliario/etiqueta/png/<string:id>')
+@app.route('/api/mobiliario/etiqueta/png/<string:id>')
 def generar_etiqueta_png(id):
     import os
     size_px = 283  # 24 mm a 300 dpi
