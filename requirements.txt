@@ -8,7 +8,7 @@ qrcode
 # Nuevas dependencias
 cloudinary==1.37.0
 python-dotenv==1.0.1
-
+PIL
 # Opcionales si luego querés migraciones o formularios
 Flask-Migrate==4.0.4
 Flask-WTF==1.1.1
