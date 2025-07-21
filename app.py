@@ -501,7 +501,7 @@ def generar_etiqueta_png(id):
         return y + h + 4
 
     y = 5
-    y = centrar("Dirección de Patrimonio", font_titulo, y)
+    y = centrar("Dir. de Patrimonio", font_titulo, y)
     y = centrar(f"{id.zfill(6)}", font_id, y)
 
     # Código QR
