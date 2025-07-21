@@ -480,16 +480,19 @@ import io
 
 @app.route('/mobiliario/etiqueta/png/<string:id>')
 def generar_etiqueta_png(id):
+    import os
     size_px = 283  # 24 mm a 300 dpi
     etiqueta = Image.new('RGB', (size_px, size_px), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
     try:
-        font_titulo = ImageFont.truetype("arialbd.ttf", 24)
-        font_id = ImageFont.truetype("arialbd.ttf", 50)
-        font_fecha = ImageFont.truetype("arial.ttf", 35)
+        # Fuentes compatibles con Linux/Render
+        font_titulo = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        font_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+        font_fecha = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 35)
     except:
-        font_titulo = font_sub = font_id = font_fecha = None
+        # En caso de falla, usar fuente por defecto
+        font_titulo = font_id = font_fecha = ImageFont.load_default()
 
     # Función para centrar texto
     def centrar(texto, fuente, y):
@@ -499,23 +502,24 @@ def generar_etiqueta_png(id):
 
     y = 5
     y = centrar("Dirección de Patrimonio", font_titulo, y)
-    y = centrar(f" {id.zfill(6)}", font_id, y)
+    y = centrar(f"{id.zfill(6)}", font_id, y)
 
-    # QR
+    # Código QR
     qr_size = 150
     qr = qrcode.make(f"https://anexos.onrender.com/api/mobiliario/{id}").resize((qr_size, qr_size))
     qr_y = (size_px - qr_size) // 2 + 20
     etiqueta.paste(qr, ((size_px - qr_size) // 2, qr_y))
 
-    # Fecha
+    # Año actual
     fecha = datetime.now().strftime("%Y")
     centrar(fecha, font_fecha, size_px - 44)
 
-    # Enviar PNG puro
+    # Convertir a imagen PNG
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
     return send_file(buffer, mimetype='image/png')
+
 
 
 # EJECUCIÓN
