@@ -4,7 +4,7 @@ Flask-SQLAlchemy==3.0.5
 psycopg2-binary==2.9.9
 SQLAlchemy==2.0.38
 gunicorn==23.0.0
-
+qrcode
 # Nuevas dependencias
 cloudinary==1.37.0
 python-dotenv==1.0.1
