@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Etiqueta {{ id }}</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: white;
+        }
+
+        .etiqueta-container {
+            width: 24mm;
+            height: 24mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: auto;
+        }
+
+        img {
+            width: 24mm;
+            height: 24mm;
+        }
+
+        button,
+        .download-btn {
+            background: black;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px auto;
+            display: block;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        @media print {
+            button,
+            .download-btn {
+                display: none;
+            }
+
+            .etiqueta-container {
+                margin: 0;
+                padding: 0;
+                page-break-after: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button onclick="window.print()">🖨 Imprimir</button>
+    <a href="{{ etiqueta_url }}" download="etiqueta_{{ id }}.png" class="download-btn">⬇ Descargar</a>
+    <div class="etiqueta-container">
+        <img src="{{ etiqueta_url }}" alt="Etiqueta ID {{ id }}">
+    </div>
+</body>
+</html>
