@@ -503,7 +503,7 @@ def generar_etiqueta_png(id):
 
     # QR
     qr_size = 150
-    qr = qrcode.make(f"http://localhost:5000/mobiliario/{id}").resize((qr_size, qr_size))
+    qr = qrcode.make(f"https://anexos.onrender.com/api/mobiliario/{id}").resize((qr_size, qr_size))
     qr_y = (size_px - qr_size) // 2 + 20
     etiqueta.paste(qr, ((size_px - qr_size) // 2, qr_y))
 
