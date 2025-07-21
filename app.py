@@ -463,6 +463,61 @@ def obtener_mobiliario_por_id(id):
     })
 
 
+
+@app.route('/mobiliario/etiqueta/ver/<string:id>')
+def ver_etiqueta_para_imprimir(id):
+    # URL de descarga de la etiqueta (usa la función actual que ya genera el PNG)
+    etiqueta_url = url_for('generar_etiqueta_png', id=id)
+    return render_template('ver_etiqueta.html', id=id, etiqueta_url=etiqueta_url)
+
+
+
+from flask import send_file
+import qrcode
+from PIL import Image, ImageDraw, ImageFont
+from datetime import datetime
+import io
+
+@app.route('/mobiliario/etiqueta/png/<string:id>')
+def generar_etiqueta_png(id):
+    size_px = 283  # 24 mm a 300 dpi
+    etiqueta = Image.new('RGB', (size_px, size_px), 'black')
+    draw = ImageDraw.Draw(etiqueta)
+
+    try:
+        font_titulo = ImageFont.truetype("arialbd.ttf", 24)
+        font_id = ImageFont.truetype("arialbd.ttf", 50)
+        font_fecha = ImageFont.truetype("arial.ttf", 35)
+    except:
+        font_titulo = font_sub = font_id = font_fecha = None
+
+    # Función para centrar texto
+    def centrar(texto, fuente, y):
+        w, h = draw.textbbox((0, 0), texto, font=fuente)[2:]
+        draw.text(((size_px - w) // 2, y), texto, font=fuente, fill='white')
+        return y + h + 4
+
+    y = 5
+    y = centrar("Dirección de Patrimonio", font_titulo, y)
+    y = centrar(f" {id.zfill(6)}", font_id, y)
+
+    # QR
+    qr_size = 150
+    qr = qrcode.make(f"http://localhost:5000/mobiliario/{id}").resize((qr_size, qr_size))
+    qr_y = (size_px - qr_size) // 2 + 20
+    etiqueta.paste(qr, ((size_px - qr_size) // 2, qr_y))
+
+    # Fecha
+    fecha = datetime.now().strftime("%Y")
+    centrar(fecha, font_fecha, size_px - 44)
+
+    # Enviar PNG puro
+    buffer = io.BytesIO()
+    etiqueta.save(buffer, format='PNG')
+    buffer.seek(0)
+    return send_file(buffer, mimetype='image/png')
+
+
 # EJECUCIÓN
 if __name__ == '__main__':
     app.run(debug=True)
