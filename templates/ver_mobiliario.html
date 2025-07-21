@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Mobiliario #{{ item.id }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+  <div class="max-w-2xl mx-auto bg-white p-6 rounded shadow">
+    <h1 class="text-2xl font-bold mb-4">Mobiliario #{{ item.id }}</h1>
+    {% if item.foto_url %}
+    <img src="{{ item.foto_url }}" class="w-full max-h-80 object-contain mb-4 border rounded">
+    {% endif %}
+    <div class="space-y-2 text-sm">
+      <div><strong>Descripción:</strong> {{ item.descripcion }}</div>
+      <div><strong>Estado conservación:</strong> {{ item.estado_conservacion }}</div>
+      <div><strong>Estado control:</strong> {{ item.estado_control }}</div>
+      <div><strong>Resolución:</strong> {{ item.resolucion }}</div>
+      <div><strong>Fecha resolución:</strong> {{ item.fecha_resolucion }}</div>
+      <div><strong>Comentarios:</strong> {{ item.comentarios }}</div>
+      <div><strong>Rubro:</strong> {{ item.rubro }}</div>
+      <div><strong>Clase:</strong> {{ item.clase_bien }}</div>
+      <div><strong>Subdependencia:</strong> {{ item.subdependencia }}</div>
+      <div><strong>Anexo:</strong> {{ item.anexo }}</div>
+    </div>
+    <div class="mt-6">
+      <a href="/mobiliario" class="text-blue-600 hover:underline">← Volver al listado</a>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mobiliario</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    function filtrar() {
+      const query = document.getElementById('buscador').value.toLowerCase();
+      const filas = document.querySelectorAll('.mobiliario-item');
+      filas.forEach(fila => {
+        fila.style.display = fila.innerText.toLowerCase().includes(query) ? '' : 'none';
+      });
+    }
+  </script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8">
+  <div class="max-w-7xl mx-auto space-y-6">
+    <h1 class="text-2xl sm:text-3xl font-bold text-center sm:text-left">Listado de Mobiliario</h1>
+
+    <input id="buscador" onkeyup="filtrar()" type="text" placeholder="Buscar..."
+           class="w-full p-3 border rounded shadow-sm" />
+
+    <div class="grid gap-4">
+      {% for item in mobiliario %}
+      <div class="bg-white p-4 rounded shadow mobiliario-item hover:ring hover:ring-blue-200 transition"
+           ondblclick='abrirModal({{ item | tojson | safe }})'>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div>
+            <p class="text-sm text-gray-500">ID</p>
+            <p class="font-semibold">{{ item.id_mobiliario }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Descripción</p>
+            <p>{{ item.descripcion }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Estado</p>
+            <p>{{ item.estado_conservacion }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Clase</p>
+            <p>{{ item.clase_bien }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Rubro</p>
+            <p>{{ item.rubro }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Ubicación</p>
+            <p>{{ item.subdependencia }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Anexo</p>
+            <p>{{ item.anexo }}</p>
+          </div>
+          <div class="col-span-full sm:col-auto">
+            {% if item.foto_url %}
+              <img src="{{ item.foto_url }}" alt="Foto" class="w-16 h-16 object-cover rounded border" />
+            {% else %}
+              <div class="text-gray-400">Sin foto</div>
+            {% endif %}
+          </div>
+          <div class="flex gap-3 items-center col-span-full sm:col-auto">
+            <a href="/mobiliario/editar/{{ item.id_mobiliario }}"
+               class="text-blue-600 font-medium hover:underline text-sm">Editar</a>
+            <a href="/mobiliario/etiqueta/ver/{{ item.id_mobiliario }}" target="_blank"
+              class="text-green-600 font-medium hover:underline text-sm">Etiqueta</a>
+
+            <button onclick="agregarACola('{{ item.id_mobiliario }}')" 
+                    class="text-yellow-600 font-medium hover:underline text-sm">
+              ➕ Cola
+            </button>
+
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- MODAL RESPONSIVE -->
+  <div id="detalleModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50 p-4">
+    <div class="bg-white p-4 sm:p-6 rounded-lg shadow-lg w-full max-w-4xl relative max-h-[90vh] overflow-y-auto">
+      <button onclick="cerrarModal()" class="absolute top-2 right-3 text-gray-500 hover:text-black text-2xl font-bold">&times;</button>
+      <div class="flex flex-col sm:flex-row gap-4" id="modal-content"></div>
+    </div>
+  </div>
+
+  <script>
+    function abrirModal(item) {
+      const modal = document.getElementById('detalleModal');
+      const foto = item.foto_url
+        ? `<img src="${item.foto_url}" alt="Foto" class="w-full max-h-[300px] object-contain border rounded" />`
+        : '<div class="text-gray-500">Sin foto</div>';
+
+      const detalle = Object.entries(item).map(([key, val]) =>
+        `<div><span class="font-semibold">${key.replaceAll('_', ' ')}:</span> ${val ?? '—'}</div>`
+      ).join('');
+
+      document.getElementById('modal-content').innerHTML = `
+        <div class="sm:w-1/2">${foto}</div>
+        <div class="sm:w-1/2 space-y-2 text-sm">
+          <h2 class="text-xl font-bold mb-2">Detalle del Mobiliario</h2>
+          ${detalle}
+          <div class="pt-4 flex gap-2 flex-wrap">
+            <a href="/mobiliario/editar/${item.id_mobiliario}"
+                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Editar</a>
+            <button onclick="confirmarEliminar('${item.id_mobiliario}')"
+                class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Eliminar</button>
+            <a href="/mobiliario/etiqueta/ver/${item.id_mobiliario}" target="_blank"
+                class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Etiqueta</a>
+          </div>
+
+        </div>
+      `;
+      modal.classList.remove('hidden');
+    }
+
+    function cerrarModal() {
+      document.getElementById('detalleModal').classList.add('hidden');
+    }
+
+    function confirmarEliminar(id) {
+      if (confirm(`¿Estás seguro de que querés eliminar el mobiliario #${id}?`)) {
+        window.location.href = `/mobiliario/eliminar/${id}`;
+      }
+    }
+  </script>
+  <script>
+  function agregarACola(id) {
+    let cola = JSON.parse(localStorage.getItem("etiquetas_cola") || "[]");
+    if (!cola.includes(id)) {
+      cola.push(id);
+      localStorage.setItem("etiquetas_cola", JSON.stringify(cola));
+      alert("Etiqueta agregada a la cola ✔️");
+    } else {
+      alert("Ya está en la cola");
+    }
+  }
+
+  function imprimirCola() {
+    const ids = JSON.parse(localStorage.getItem("etiquetas_cola") || "[]");
+    if (ids.length === 0) {
+      alert("No hay etiquetas en la cola");
+      return;
+    }
+
+    fetch("/mobiliario/etiquetas/lote", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ ids })
+    })
+    .then(response => response.blob())
+    .then(blob => {
+      localStorage.removeItem("etiquetas_cola");
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    });
+  }
+</script>
+<button onclick="imprimirCola()" 
+        class="fixed bottom-5 right-5 bg-black text-white px-4 py-2 rounded shadow-lg z-50">
+  🖨️ Imprimir Cola
+</button>
+
+</body>
+</html>

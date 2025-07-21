@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Mobiliario</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-xl mx-auto bg-white p-6 rounded shadow">
+        <h1 class="text-2xl font-bold mb-4">Editar Mobiliario #{{ item.id }}</h1>
+        <form method="POST">
+            <div class="mb-4">
+                <label class="block font-semibold mb-1">Descripción</label>
+                <input name="descripcion" value="{{ item.descripcion }}" required
+                       class="w-full border rounded p-2">
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-semibold mb-1">Estado de Conservación</label>
+                <input name="estado_conservacion" value="{{ item.estado_conservacion }}"
+                       class="w-full border rounded p-2">
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-semibold mb-1">Comentarios</label>
+                <textarea name="comentarios" rows="3" class="w-full border rounded p-2">{{ item.comentarios }}</textarea>
+            </div>
+
+            <div class="flex justify-between">
+                <a href="{{ url_for('ver_mobiliario') }}" class="text-blue-600 hover:underline">Volver</a>
+                <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Guardar cambios</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
