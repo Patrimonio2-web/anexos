@@ -339,6 +339,17 @@ def editar_mobiliario(id):
     mobiliario = Mobiliario.query.get_or_404(id)
     try:
         data = request.json
+
+        # ✅ Evitar que cambien el ID manualmente (por seguridad)
+        if 'id' in data and data['id'] != id:
+            return jsonify({"error": "No se puede modificar el ID del bien"}), 400
+
+        # ✅ Validar campos obligatorios
+        campos_obligatorios = ['ubicacion_id', 'rubro_id', 'clase_bien_id']
+        for campo in campos_obligatorios:
+            if data.get(campo) is None:
+                return jsonify({"error": f"Falta el campo obligatorio: {campo}"}), 400
+
         ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         historial = mobiliario.historial_movimientos or ""
 
@@ -387,6 +398,7 @@ def editar_mobiliario(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 
 
