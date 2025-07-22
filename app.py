@@ -275,6 +275,7 @@ def ultimos_mobiliarios():
             m.foto_url,
             m.fecha_creacion,
             m.fecha_actualizacion,
+            m.historial_movimientos,  -- ✅ agregado
             r.nombre               AS rubro,
             cb.descripcion         AS clase_bien,
             sd.nombre              AS subdependencia,
@@ -296,10 +297,20 @@ def ultimos_mobiliarios():
         cur.close()
         conn.close()
 
+        # ✅ Convertir historial a lista separada por línea si existe
+        for r in results:
+            historial = r.get("historial_movimientos")
+            if historial:
+                r["historial"] = [line.strip() for line in historial.split('\n') if line.strip()]
+            else:
+                r["historial"] = []
+            del r["historial_movimientos"]
+
         return jsonify(results)
     except Exception as e:
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
+
 
 
 
@@ -328,13 +339,31 @@ def editar_mobiliario(id):
     mobiliario = Mobiliario.query.get_or_404(id)
     try:
         data = request.json
+        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        historial = mobiliario.historial_movimientos or ""
 
+        # Detectar cambio de ubicación
+        nueva_ubicacion_id = data.get("ubicacion_id", mobiliario.ubicacion_id)
+        if nueva_ubicacion_id != mobiliario.ubicacion_id:
+            sub_old = Subdependencia.query.get(mobiliario.ubicacion_id)
+            sub_new = Subdependencia.query.get(nueva_ubicacion_id)
+            anexo_old = Anexo.query.get(sub_old.id_anexo) if sub_old else None
+            anexo_new = Anexo.query.get(sub_new.id_anexo) if sub_new else None
+
+            ubicacion_old = f"{sub_old.nombre} - {anexo_old.nombre}" if sub_old and anexo_old else "Desconocido"
+            ubicacion_new = f"{sub_new.nombre} - {anexo_new.nombre}" if sub_new and anexo_new else "Desconocido"
+            historial += f"\n[{ahora}] Cambio de ubicación: de '{ubicacion_old}' a '{ubicacion_new}'"
+
+        # Guardar cambio genérico
+        historial += f"\n[{ahora}] Registro editado"
+
+        # Actualizar datos
         tipo = data.get("resolucion_tipo", "").upper()
         if tipo == "PSA":
             tipo = "P.S.A"
         resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}" if data.get("resolucion_numero") else data.get("resolucion", mobiliario.resolucion)
 
-        mobiliario.ubicacion_id = data.get("ubicacion_id", mobiliario.ubicacion_id)
+        mobiliario.ubicacion_id = nueva_ubicacion_id
         mobiliario.clase_bien_id = data.get("clase_bien_id", mobiliario.clase_bien_id)
         mobiliario.rubro_id = data.get("rubro_id", mobiliario.rubro_id)
         mobiliario.descripcion = data.get("descripcion", mobiliario.descripcion)
@@ -342,7 +371,7 @@ def editar_mobiliario(id):
         mobiliario.fecha_resolucion = data.get("fecha_resolucion", mobiliario.fecha_resolucion)
         mobiliario.estado_conservacion = data.get("estado_conservacion", mobiliario.estado_conservacion)
         mobiliario.estado_control = data.get("estado_control", mobiliario.estado_control)
-        mobiliario.historial_movimientos = data.get("historial_movimientos", mobiliario.historial_movimientos)
+        mobiliario.historial_movimientos = historial
         mobiliario.no_dado = data.get("no_dado", mobiliario.no_dado)
         mobiliario.para_reparacion = data.get("para_reparacion", mobiliario.para_reparacion)
         mobiliario.para_baja = data.get("para_baja", mobiliario.para_baja)
@@ -358,6 +387,7 @@ def editar_mobiliario(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 
 
