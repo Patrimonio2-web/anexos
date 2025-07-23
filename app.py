@@ -405,47 +405,6 @@ def editar_mobiliario(id):
 
 # Ruta para registrar un nuevo mobiliario
 # Esta ruta permite registrar un nuevo mobiliario con los datos proporcionados en el cuerpo de la 
-@app.route('/api/mobiliario2', methods=['POST'])
-def registrar_mobiliario2():
-    try:
-        data = request.json
-
-        tipo = data.get("resolucion_tipo", "").upper()
-        if tipo == "PSA":
-            tipo = "P.S.A"
-        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}" if data.get('resolucion_numero') else data.get("resolucion")
-
-        nuevo = Mobiliario(
-            id=data.get("id"),
-            ubicacion_id=data.get("ubicacion_id"),
-            clase_bien_id=data.get("clase_bien_id"),
-            rubro_id=data.get("rubro_id"),
-            descripcion=data.get("descripcion"),
-            resolucion=resolucion_texto,
-            fecha_resolucion=data.get("fecha_resolucion"),
-            estado_conservacion=data.get("estado_conservacion"),
-            estado_control=data.get("estado_control"),
-            historial_movimientos=data.get("historial_movimientos"),
-            no_dado=data.get("no_dado", False),
-            para_reparacion=data.get("para_reparacion", False),
-            para_baja=data.get("para_baja", False),
-            faltante=data.get("faltante", False),
-            sobrante=data.get("sobrante", False),
-            problema_etiqueta=data.get("problema_etiqueta", False),
-            comentarios=data.get("comentarios"),
-            foto_url=data.get("foto_url", "")
-        )
-
-        db.session.add(nuevo)
-        db.session.commit()
-        return jsonify({"mensaje": "Registro creado exitosamente"}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-
-#nuevoooo prueba
 @app.route('/api/mobiliario', methods=['POST'])
 def registrar_mobiliario():
     try:
