@@ -334,6 +334,8 @@ def eliminar_patrimonio(id):
 
 # API para editar mobiliario-----------------------------------------------------
 
+from datetime import datetime, timedelta
+
 @app.route('/api/mobiliario/<string:id>', methods=['PUT'])
 def editar_mobiliario(id):
     mobiliario = Mobiliario.query.get_or_404(id)
@@ -350,7 +352,8 @@ def editar_mobiliario(id):
             if data.get(campo) is None:
                 return jsonify({"error": f"Falta el campo obligatorio: {campo}"}), 400
 
-        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 🕒 Hora de Argentina (UTC-3)
+        ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
         historial = mobiliario.historial_movimientos or ""
 
         # Detectar cambio de ubicación
@@ -368,12 +371,24 @@ def editar_mobiliario(id):
         # Guardar cambio genérico
         historial += f"\n[{ahora}] Registro editado"
 
-        # Actualizar datos
-        tipo = data.get("resolucion_tipo", "").upper()
-        if tipo == "PSA":
-            tipo = "P.S.A"
-        resolucion_texto = f"Resol Nº{data.get('resolucion_numero')} {tipo}" if data.get("resolucion_numero") else data.get("resolucion", mobiliario.resolucion)
+        # Formatear tipo de resolución
+        tipos_resolucion = {
+            "PSA": "P.S.A",
+            "DECRETO": "Decreto",
+            "SL": "S.L",
+            "PSL": "P.S.L"
+        }
 
+        tipo = data.get("resolucion_tipo", "").upper()
+        tipo_formateado = tipos_resolucion.get(tipo, tipo)
+
+        resolucion_texto = (
+            f"Resol Nº{data.get('resolucion_numero')} {tipo_formateado}"
+            if data.get("resolucion_numero")
+            else data.get("resolucion", mobiliario.resolucion)
+        )
+
+        # Actualizar datos
         mobiliario.ubicacion_id = nueva_ubicacion_id
         mobiliario.clase_bien_id = data.get("clase_bien_id", mobiliario.clase_bien_id)
         mobiliario.rubro_id = data.get("rubro_id", mobiliario.rubro_id)
@@ -398,6 +413,7 @@ def editar_mobiliario(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 
 
