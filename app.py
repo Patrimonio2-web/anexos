@@ -405,7 +405,7 @@ def editar_mobiliario(id):
 
 # Ruta para registrar un nuevo mobiliario
 # Esta ruta permite registrar un nuevo mobiliario con los datos proporcionados en el cuerpo de la 
-@app.route('/api/mobiliario', methods=['POST'])
+@app.route('/api/mobiliario2', methods=['POST'])
 def registrar_mobiliario():
     try:
         data = request.json
@@ -439,6 +439,65 @@ def registrar_mobiliario():
         db.session.add(nuevo)
         db.session.commit()
         return jsonify({"mensaje": "Registro creado exitosamente"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+#nuevoooo prueba
+@app.route('/api/mobiliario', methods=['POST'])
+def registrar_mobiliario():
+    try:
+        data = request.json
+
+        # Diccionario de tipos de resolución formateados
+        tipos_resolucion = {
+            "PSA": "P.S.A",
+            "Decreto": "Decreto",
+            "SL": "S.L",
+            "PSL": "P.S.L"
+        }
+
+        tipo = data.get("resolucion_tipo", "").upper()
+        tipo_formateado = tipos_resolucion.get(tipo, tipo)
+
+        resolucion_texto = (
+            f"Resol Nº{data.get('resolucion_numero')} {tipo_formateado}"
+            if data.get('resolucion_numero')
+            else data.get("resolucion")
+        )
+
+        # Si no se proporciona ID, generar el próximo ID numérico
+        id_mob = data.get("id")
+        if not id_mob:
+            ultimo = db.session.query(db.func.max(Mobiliario.id)).scalar()
+            id_mob = (ultimo or 0) + 1
+
+        nuevo = Mobiliario(
+            id=id_mob,
+            ubicacion_id=data.get("ubicacion_id"),
+            clase_bien_id=data.get("clase_bien_id"),
+            rubro_id=data.get("rubro_id"),
+            descripcion=data.get("descripcion"),
+            resolucion=resolucion_texto,
+            fecha_resolucion=data.get("fecha_resolucion"),
+            estado_conservacion=data.get("estado_conservacion"),
+            estado_control=data.get("estado_control"),
+            historial_movimientos=data.get("historial_movimientos"),
+            no_dado=data.get("no_dado", False),
+            para_reparacion=data.get("para_reparacion", False),
+            para_baja=data.get("para_baja", False),
+            faltante=data.get("faltante", False),
+            sobrante=data.get("sobrante", False),
+            problema_etiqueta=data.get("problema_etiqueta", False),
+            comentarios=data.get("comentarios"),
+            foto_url=data.get("foto_url", "")
+        )
+
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({"mensaje": "Registro creado exitosamente", "id_generado": id_mob}), 201
 
     except Exception as e:
         db.session.rollback()
