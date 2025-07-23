@@ -464,18 +464,23 @@ def registrar_mobiliario():
         tipo_formateado = tipos_resolucion.get(tipo, tipo)
 
         resolucion_numero = data.get('resolucion_numero')
-        resolucion_texto = (
-            f"Resol Nº{str(resolucion_numero)} {tipo_formateado}"
-            if resolucion_numero is not None
-            else data.get("resolucion")
-        )
+        if resolucion_numero is not None:
+            resolucion_texto = f"Resol Nº{str(resolucion_numero)} {tipo_formateado}"
+        else:
+            resolucion_texto = data.get("resolucion")
 
-        # Si no se proporciona ID, generar el próximo ID numérico
+        # Generar el próximo ID numérico si no se proporciona
         id_mob = data.get("id")
         if not id_mob:
             ultimo = db.session.query(db.func.max(Mobiliario.id)).scalar()
             id_mob = (ultimo or 0) + 1
         print("🟡 ID generado para nuevo mobiliario:", id_mob)
+
+        # Validar campos opcionales vacíos
+        estado_conservacion = data.get("estado_conservacion") or None
+        estado_control = data.get("estado_control") or None
+        historial_movimientos = data.get("historial_movimientos") or None
+        comentarios = data.get("comentarios") or None
 
         nuevo = Mobiliario(
             id=id_mob,
@@ -485,16 +490,16 @@ def registrar_mobiliario():
             descripcion=data.get("descripcion"),
             resolucion=resolucion_texto,
             fecha_resolucion=data.get("fecha_resolucion"),
-            estado_conservacion=data.get("estado_conservacion"),
-            estado_control=data.get("estado_control"),
-            historial_movimientos=data.get("historial_movimientos"),
+            estado_conservacion=estado_conservacion,
+            estado_control=estado_control,
+            historial_movimientos=historial_movimientos,
             no_dado=data.get("no_dado", False),
             para_reparacion=data.get("para_reparacion", False),
             para_baja=data.get("para_baja", False),
             faltante=data.get("faltante", False),
             sobrante=data.get("sobrante", False),
             problema_etiqueta=data.get("problema_etiqueta", False),
-            comentarios=data.get("comentarios"),
+            comentarios=comentarios,
             foto_url=data.get("foto_url", "")
         )
 
@@ -507,6 +512,7 @@ def registrar_mobiliario():
         db.session.rollback()
         print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
