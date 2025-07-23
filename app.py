@@ -464,10 +464,10 @@ def registrar_mobiliario():
         tipo_formateado = tipos_resolucion.get(tipo, tipo)
 
         resolucion_numero = data.get('resolucion_numero')
-        if resolucion_numero is not None:
-            resolucion_texto = f"Resol Nº{str(resolucion_numero)} {tipo_formateado}"
+        if resolucion_numero and str(resolucion_numero).strip() != "":
+            resolucion_texto = f"Resol Nº{str(resolucion_numero).strip()} {str(tipo_formateado)}"
         else:
-            resolucion_texto = data.get("resolucion")
+            resolucion_texto = data.get("resolucion") or ""
 
         # Generar el próximo ID numérico si no se proporciona
         id_mob = data.get("id")
@@ -512,6 +512,7 @@ def registrar_mobiliario():
         db.session.rollback()
         print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
