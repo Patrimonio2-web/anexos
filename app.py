@@ -472,12 +472,11 @@ def registrar_mobiliario():
         # Generar el próximo ID numérico si no se proporciona
         id_mob = data.get("id")
         if not id_mob:
-            ultimo = db.session.query(db.func.max(Mobiliario.id)).scalar()
-            try:
-                id_mob = str(int(ultimo) + 1) if ultimo else "1"
-            except ValueError:
-                print("⚠️ El último ID no es numérico:", ultimo)
-                return jsonify({"error": "No se pudo generar un ID autoincremental"}), 500
+            # Obtener todos los IDs actuales como strings
+            ids_actuales = db.session.query(Mobiliario.id).all()
+            # Convertir los que sean numéricos
+            ids_numericos = [int(x[0]) for x in ids_actuales if x[0] and str(x[0]).isdigit()]
+            id_mob = str(max(ids_numericos) + 1) if ids_numericos else "1"
         print("🟡 ID generado para nuevo mobiliario:", id_mob)
 
         # Validar campos opcionales vacíos
@@ -516,6 +515,7 @@ def registrar_mobiliario():
         db.session.rollback()
         print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
