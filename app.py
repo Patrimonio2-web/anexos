@@ -460,20 +460,24 @@ def registrar_mobiliario():
             "PSL": "P.S.L"
         }
 
-        tipo_raw = data.get("resolucion_tipo", "")
-        tipo_formateado = tipos_resolucion.get(tipo_raw.upper(), str(tipo_raw).strip())
+        tipo = data.get("resolucion_tipo", "").upper()
+        tipo_formateado = tipos_resolucion.get(tipo, tipo)
 
-        resolucion_numero = data.get('resolucion_numero', '')
-        if str(resolucion_numero).strip():
+        resolucion_numero = data.get('resolucion_numero')
+        if resolucion_numero and str(resolucion_numero).strip() != "":
             resolucion_texto = f"Resol Nº{str(resolucion_numero).strip()} {str(tipo_formateado)}"
         else:
-            resolucion_texto = str(data.get("resolucion") or "")
+            resolucion_texto = data.get("resolucion") or ""
 
         # Generar el próximo ID numérico si no se proporciona
         id_mob = data.get("id")
         if not id_mob:
             ultimo = db.session.query(db.func.max(Mobiliario.id)).scalar()
-            id_mob = (ultimo or 0) + 1
+            try:
+                id_mob = str(int(ultimo) + 1) if ultimo else "1"
+            except ValueError:
+                print("⚠️ El último ID no es numérico:", ultimo)
+                return jsonify({"error": "No se pudo generar un ID autoincremental"}), 500
         print("🟡 ID generado para nuevo mobiliario:", id_mob)
 
         # Validar campos opcionales vacíos
@@ -512,6 +516,7 @@ def registrar_mobiliario():
         db.session.rollback()
         print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
