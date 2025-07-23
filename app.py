@@ -406,7 +406,7 @@ def editar_mobiliario(id):
 # Ruta para registrar un nuevo mobiliario
 # Esta ruta permite registrar un nuevo mobiliario con los datos proporcionados en el cuerpo de la 
 @app.route('/api/mobiliario2', methods=['POST'])
-def registrar_mobiliario():
+def registrar_mobiliario2():
     try:
         data = request.json
 
