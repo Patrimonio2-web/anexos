@@ -463,9 +463,10 @@ def registrar_mobiliario():
         tipo = data.get("resolucion_tipo", "").upper()
         tipo_formateado = tipos_resolucion.get(tipo, tipo)
 
+        resolucion_numero = data.get('resolucion_numero')
         resolucion_texto = (
-            f"Resol Nº{data.get('resolucion_numero')} {tipo_formateado}"
-            if data.get('resolucion_numero')
+            f"Resol Nº{str(resolucion_numero)} {tipo_formateado}"
+            if resolucion_numero is not None
             else data.get("resolucion")
         )
 
@@ -506,6 +507,7 @@ def registrar_mobiliario():
         db.session.rollback()
         print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
