@@ -450,11 +450,12 @@ def registrar_mobiliario2():
 def registrar_mobiliario():
     try:
         data = request.json
+        print("🟢 Data recibida en /api/mobiliario:", data)
 
         # Diccionario de tipos de resolución formateados
         tipos_resolucion = {
             "PSA": "P.S.A",
-            "Decreto": "Decreto",
+            "DECRETO": "Decreto",
             "SL": "S.L",
             "PSL": "P.S.L"
         }
@@ -473,6 +474,7 @@ def registrar_mobiliario():
         if not id_mob:
             ultimo = db.session.query(db.func.max(Mobiliario.id)).scalar()
             id_mob = (ultimo or 0) + 1
+        print("🟡 ID generado para nuevo mobiliario:", id_mob)
 
         nuevo = Mobiliario(
             id=id_mob,
@@ -497,11 +499,14 @@ def registrar_mobiliario():
 
         db.session.add(nuevo)
         db.session.commit()
+        print("✅ Registro guardado correctamente.")
         return jsonify({"mensaje": "Registro creado exitosamente", "id_generado": id_mob}), 201
 
     except Exception as e:
         db.session.rollback()
+        print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 # Ruta para obtener un mobiliario por ID--------------------------------------
