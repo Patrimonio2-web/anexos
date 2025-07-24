@@ -552,8 +552,9 @@ def obtener_mobiliario_por_id(id):
         "faltante": m.faltante,
         "sobrante": m.sobrante,
         "problema_etiqueta": m.problema_etiqueta,
-        "fecha_creacion": m.fecha_creacion.strftime("%d/%m/%Y %H:%M") if m.fecha_creacion else None,
-        "fecha_actualizacion": m.fecha_actualizacion.strftime("%d/%m/%Y %H:%M") if m.fecha_actualizacion else None,
+        from datetime import timedelta
+        "fecha_creacion": (m.fecha_creacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_creacion else None,
+        "fecha_actualizacion": (m.fecha_actualizacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_actualizacion else None,
         "clase_bien_id": id_clase,
         "clase": clase_desc,
         "rubro_id": id_rubro,
