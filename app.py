@@ -275,7 +275,7 @@ def ultimos_mobiliarios():
             m.foto_url,
             m.fecha_creacion,
             m.fecha_actualizacion,
-            m.historial_movimientos,  -- ✅ agregado
+            m.historial_movimientos,
             r.nombre               AS rubro,
             cb.descripcion         AS clase_bien,
             sd.nombre              AS subdependencia,
@@ -286,7 +286,8 @@ def ultimos_mobiliarios():
         LEFT JOIN rubros        r  ON m.rubro_id = r.id_rubro
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
-        ORDER BY id::integer DESC;
+        WHERE m.id ~ '^[0-9]+$'  -- ✅ solo IDs numéricos
+        ORDER BY m.id::integer DESC;
         """
 
         conn = db.engine.raw_connection()
@@ -310,6 +311,7 @@ def ultimos_mobiliarios():
     except Exception as e:
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
+
 
 
 
