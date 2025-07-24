@@ -286,7 +286,7 @@ def ultimos_mobiliarios():
         LEFT JOIN rubros        r  ON m.rubro_id = r.id_rubro
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
-        ORDER BY m.id DESC;
+        ORDER BY id::integer DESC;
         """
 
         conn = db.engine.raw_connection()
