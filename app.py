@@ -7,7 +7,7 @@ import cloudinary
 import cloudinary.uploader
 import os
 import tempfile
-
+from datetime import timedelta
 app = Flask(__name__)
 CORS(app)
 
@@ -552,7 +552,6 @@ def obtener_mobiliario_por_id(id):
         "faltante": m.faltante,
         "sobrante": m.sobrante,
         "problema_etiqueta": m.problema_etiqueta,
-        from datetime import timedelta
         "fecha_creacion": (m.fecha_creacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_creacion else None,
         "fecha_actualizacion": (m.fecha_actualizacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_actualizacion else None,
         "clase_bien_id": id_clase,
