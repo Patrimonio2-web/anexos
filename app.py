@@ -254,6 +254,8 @@ def eliminar_subdependencia(id):
 
 
 # API para obtener los registros de mobiliario-----------------------
+from datetime import timedelta
+
 @app.route('/api/mobiliario/ultimos', methods=['GET'])
 def ultimos_mobiliarios():
     try:
@@ -286,7 +288,7 @@ def ultimos_mobiliarios():
         LEFT JOIN rubros        r  ON m.rubro_id = r.id_rubro
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
-        WHERE m.id ~ '^[0-9]+$'  -- ✅ solo IDs numéricos
+        WHERE m.id ~ '^[0-9]+$'
         ORDER BY m.id::integer DESC;
         """
 
@@ -298,14 +300,21 @@ def ultimos_mobiliarios():
         cur.close()
         conn.close()
 
-        # ✅ Convertir historial a lista separada por línea si existe
+        # ✅ Formatear fechas y procesar historial
         for r in results:
+            # Convertir historial en lista
             historial = r.get("historial_movimientos")
             if historial:
                 r["historial"] = [line.strip() for line in historial.split('\n') if line.strip()]
             else:
                 r["historial"] = []
             del r["historial_movimientos"]
+
+            # Formatear fechas con hora argentina
+            if r["fecha_creacion"]:
+                r["fecha_creacion"] = (r["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+            if r["fecha_actualizacion"]:
+                r["fecha_actualizacion"] = (r["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
 
         return jsonify(results)
     except Exception as e:
