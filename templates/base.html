@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}Listado de Mobiliario{% endblock %}</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    window.onload = () => { lucide.createIcons(); }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body class="bg-white text-gray-900 p-8 font-sans">
+
+  <div class="max-w-6xl mx-auto">
+    {% block content %}{% endblock %}
+  </div>
+
+</body>
+</html>

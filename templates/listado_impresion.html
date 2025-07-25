@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Listado de Mobiliario</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    window.onload = () => {
+      lucide.createIcons();
+      window.print();
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    @media print {
+      .no-print {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="bg-white text-black p-10 text-sm leading-relaxed">
+  <div class="max-w-6xl mx-auto">
+    <!-- Encabezado con logo más grande -->
+    <div class="flex items-center justify-between mb-8 border-b pb-4">
+      <div class="flex items-center gap-6">
+        <img src="{{ url_for('static', filename='images/logo_legislatura.jpeg') }}" alt="Logo Legislatura" class="h-24 w-auto">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900 leading-tight">
+            Inventario de Bienes Muebles
+          </h1>
+          <p class="text-base text-gray-700">Legislatura de la Provincia de La Rioja</p>
+        </div>
+      </div>
+      <div class="text-sm text-right text-gray-700">
+        <p><strong>Fecha:</strong> {{ ahora.strftime('%d/%m/%Y') }}</p>
+      </div>
+    </div>
+
+    <!-- Información del Anexo y Subdependencia -->
+    <div class="mb-4 text-gray-800">
+      <p><strong>Anexo:</strong> {{ anexo_nombre }} <span class="text-gray-500"></span></p>
+      <p><strong>Subdependencia:</strong> {{ subdependencia_nombre }} <span class="text-gray-500">(Oficina N.º {{ subdependencia_id }})</span></p>
+    </div>
+
+    <!-- Tabla de Mobiliario -->
+    <div class="overflow-x-auto border rounded-lg shadow">
+    <table class="min-w-full divide-y divide-gray-300 border border-gray-300 text-xs">
+        <thead class="bg-gray-200 text-gray-800 uppercase tracking-wide">
+        <tr>
+            <th class="px-4 py-1 text-left">Descripción</th>
+            <th class="px-4 py-1 text-left">ID</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for m in mobiliarios %}
+        <tr class="{% if loop.index0 % 2 == 0 %}bg-white{% else %}bg-gray-100{% endif %} hover:bg-blue-50">
+            <td class="px-4 py-1 align-top">{{ m[0] }}</td>
+            <td class="px-4 py-1 align-top">{{ m[1] }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <!-- Pie -->
+    <div class="mt-6 text-right text-xs text-gray-500">
+      <p>Total: {{ mobiliarios|length }} unidades</p>
+    </div>
+  </div>
+  <!-- Firmas -->
+<div class="mt-16 flex justify-around text-center text-sm text-gray-800">
+  <div>
+    <div class="border-t border-dotted border-gray-500 w-64 mx-auto mb-1"></div>
+    Responsable Área
+  </div>
+  <div>
+    <div class="border-t border-dotted border-gray-500 w-64 mx-auto mb-1"></div>
+    Responsable Patrimonio
+  </div>
+</div>
+
+</body>
+</html>
+
+<style>
+  @media print {
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      margin: 0;
+      font-size: 0.7rem;
+    }
+
+    .shadow, .rounded-lg {
+      box-shadow: none !important;
+    }
+
+    table {
+      border-collapse: collapse !important;
+    }
+
+    th, td {
+      border: 1px solid #ccc !important;
+      padding: 4px !important;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f9f9f9 !important;
+    }
+
+    tr:nth-child(odd) {
+      background-color: white !important;
+    }
+
+    img {
+      max-height: 60px !important;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 1.5cm;
+    }
+  }
+</style>

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto p-6">
+  <h1 class="text-2xl font-bold mb-4 flex items-center gap-2">
+    <i data-lucide="printer"></i> Imprimir Listado de Mobiliario
+  </h1>
+
+  <!-- Selección de Anexo y Subdependencia -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div>
+      <label class="block mb-1">Anexo</label>
+      <select id="anexoSelect" class="w-full p-2 rounded bg-gray-100 border">
+        <option value="">Seleccione un anexo</option>
+        {% for anexo in anexos %}
+          <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block mb-1">Subdependencia</label>
+      <select id="subdependenciaSelect" class="w-full p-2 rounded bg-gray-100 border" disabled>
+        <option value="">Seleccione un anexo primero</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Filtro: incluir faltantes -->
+  <div class="mb-4">
+    <label class="inline-flex items-center gap-2">
+      <input type="checkbox" id="incluirFaltantes" checked class="text-green-600">
+      Incluir mobiliario marcado como <strong>faltante</strong>
+    </label>
+  </div>
+
+  <!-- Botón para imprimir -->
+  <button onclick="generarImpresion()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+    Imprimir
+  </button>
+
+  <!-- Previsualización del listado -->
+  <div id="resultadoListado" class="mt-10"></div>
+</div>
+
+<script>
+  const anexoSelect = document.getElementById("anexoSelect");
+  const subSelect = document.getElementById("subdependenciaSelect");
+  const resultadoDiv = document.getElementById("resultadoListado");
+  const incluirFaltantes = document.getElementById("incluirFaltantes");
+
+  anexoSelect.addEventListener("change", () => {
+    const idAnexo = anexoSelect.value;
+    subSelect.innerHTML = '<option value="">Cargando...</option>';
+    subSelect.disabled = true;
+
+    fetch(`/api/subdependencias_por_anexo/${idAnexo}`)
+      .then(res => res.json())
+      .then(data => {
+        subSelect.innerHTML = '<option value="">Seleccione subdependencia</option>';
+        data.forEach(sub => {
+          subSelect.innerHTML += `<option value="${sub.id}">${sub.nombre}</option>`;
+        });
+        subSelect.disabled = false;
+        cargarListado();
+      });
+  });
+
+  subSelect.addEventListener("change", cargarListado);
+  incluirFaltantes.addEventListener("change", cargarListado);
+
+  function cargarListado() {
+    const anexo = anexoSelect.value;
+    const sub = subSelect.value;
+    const incluir = incluirFaltantes.checked;
+
+    if (!anexo || !sub) return;
+
+    const params = new URLSearchParams({
+      anexo: anexo,
+      subdependencia: sub,
+      incluir_faltantes: incluir
+    });
+
+    resultadoDiv.innerHTML = '<p class="text-gray-500">Cargando...</p>';
+
+    fetch(`/imprimir_listado_preview?${params}`)
+      .then(res => res.text())
+      .then(html => {
+        resultadoDiv.innerHTML = html;
+      });
+  }
+
+  function generarImpresion() {
+    const anexo = anexoSelect.value;
+    const sub = subSelect.value;
+    const incluir = incluirFaltantes.checked;
+    const url = `/imprimir_listado?anexo=${anexo}&subdependencia=${sub}&incluir_faltantes=${incluir}`;
+    window.open(url, '_blank');
+  }
+</script>
+{% endblock %}
