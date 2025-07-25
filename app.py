@@ -627,6 +627,167 @@ def generar_etiqueta_png(id):
     buffer.seek(0)
     return send_file(buffer, mimetype='image/png')
 
+#imprimir listados ------------------------------------------------------------
+
+
+@app.route('/imprimir')
+def imprimir():
+    anexos = Anexo.query.all()
+    return render_template('imprimir.html', anexos=anexos)
+
+
+from datetime import datetime
+
+from datetime import datetime
+
+from flask import request, render_template
+from datetime import datetime
+
+@app.route('/imprimir_listado')
+def imprimir_listado():
+    anexo_id = request.args.get('anexo')
+    sub_id = request.args.get('subdependencia')
+    filtros = request.args.get('filtros', '').split(',')
+    incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
+
+    campos = {
+        "no_dado": "No Dado",
+        "para_reparacion": "Reparación",
+        "para_baja": "Para baja",
+        "faltante": "Faltante",
+        "sobrante": "Sobrante",
+        "problema_etiqueta": "Problema etiqueta"
+    }
+
+    query = """
+        SELECT m.descripcion, m.id
+        FROM mobiliario m
+        JOIN subdependencias sd ON m.ubicacion_id = sd.id
+        JOIN anexos a ON sd.id_anexo = a.id
+        WHERE a.id = %s AND sd.id = %s
+    """
+
+    for campo in filtros:
+        if campo and campo != "faltante":
+            query += f" AND m.{campo} = TRUE"
+
+    if not incluir_faltantes:
+        query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
+
+    conn = db.engine.raw_connection()
+    cur = conn.cursor()
+    cur.execute(query, (anexo_id, sub_id))
+    mobiliarios = cur.fetchall()
+
+    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
+    anexo_nombre = cur.fetchone()[0]
+
+    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
+    subdependencia_nombre = cur.fetchone()[0]
+
+    conn.close()
+
+    return render_template(
+        "listado_impresion.html",
+        mobiliarios=mobiliarios,
+        campos=campos,
+        ahora=datetime.now(),
+        anexo_nombre=anexo_nombre,
+        subdependencia_nombre=subdependencia_nombre,
+        subdependencia_id=sub_id
+    )
+
+
+
+
+
+
+
+
+
+@app.route('/api/subdependencias_por_anexo/<int:anexo_id>')
+def subdependencias_por_anexo(anexo_id):
+    subdeps = Subdependencia.query.filter_by(id_anexo=anexo_id).all()
+    return jsonify([{"id": s.id, "nombre": s.nombre} for s in subdeps])
+
+
+@app.route('/api/mobiliario_filtrado', methods=['POST'])
+def mobiliario_filtrado():
+    data = request.get_json()
+    subdep_id = data['subdependencia_id']
+    filtros = data.get('filtros', [])
+
+    query = Mobiliario.query.filter_by(ubicacion_id=subdep_id)
+
+    # Aplicar filtros
+    for campo in ['no_dado', 'para_reparacion', 'para_baja', 'faltante', 'sobrante', 'problema_etiqueta']:
+        if campo not in filtros:
+            query = query.filter((getattr(Mobiliario, campo) != True) | (getattr(Mobiliario, campo) == None))
+
+    resultados = query.order_by(Mobiliario.id.desc()).all()
+    return jsonify([
+        {
+            "id": m.id,
+            "descripcion": m.descripcion
+        } for m in resultados
+    ])
+
+
+from flask import render_template_string
+from datetime import datetime
+
+from flask import render_template_string, request
+from datetime import datetime
+
+@app.route('/imprimir_listado_preview')
+def imprimir_listado_preview():
+    anexo_id = request.args.get('anexo')
+    sub_id = request.args.get('subdependencia')
+    filtros = request.args.get('filtros', '').split(',')
+    incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
+
+    query = """
+        SELECT m.descripcion, m.id
+        FROM mobiliario m
+        JOIN subdependencias sd ON m.ubicacion_id = sd.id
+        JOIN anexos a ON sd.id_anexo = a.id
+        WHERE a.id = %s AND sd.id = %s
+    """
+
+    for campo in filtros:
+        if campo and campo != "faltante":
+            query += f" AND m.{campo} = TRUE"
+
+    if not incluir_faltantes:
+        query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
+
+    conn = db.engine.raw_connection()
+    cur = conn.cursor()
+    cur.execute(query, (anexo_id, sub_id))
+    mobiliarios = cur.fetchall()
+    conn.close()
+
+    return render_template_string("""
+    <table class="w-full table-auto border border-gray-300 text-sm mt-4">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="border px-2 py-1">Descripción</th>
+          <th class="border px-2 py-1">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in mobiliarios %}
+        <tr class="hover:bg-gray-50">
+          <td class="border px-2 py-1">{{ m[0] }}</td>
+          <td class="border px-2 py-1">{{ m[1] }}</td>
+        </tr>
+        {% endfor %}
+        {% if mobiliarios|length == 0 %}
+        <tr><td colspan="2" class="text-center p-4 text-gray-500">No se encontraron resultados.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    """, mobiliarios=mobiliarios)
 
 
 # EJECUCIÓN
