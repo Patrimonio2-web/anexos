@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Altas de Bienes Muebles</title>
+  <style>
+    @page {
+      size: legal landscape;
+      margin: 40px 40px 80px 40px;
+    }
+
+    body {
+      font-family: 'DejaVu Sans', sans-serif;
+      font-size: 11px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .tabla-items {
+      margin-bottom: 40px;
+    }
+
+    .tabla-items th, .tabla-items td {
+      border: 1px solid #000;
+      padding: 6px 8px;
+      text-align: left;
+      line-height: 1.5;
+    }
+
+    .tabla-items th {
+      background-color: #eee;
+    }
+
+    .bloque-rubro {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .fila-rubro-nombre {
+      background-color: #f0f0f0;
+      font-weight: bold;
+      text-align: center;
+      border: 2px solid #000;
+    }
+
+    .total-final {
+      margin-top: 60px;
+      font-weight: bold;
+      font-size: 14px;
+      text-align: right;
+      padding-right: 20px;
+    }
+  </style>
+</head>
+<body>
+
+{% set rubros = registros | groupby("rubro_nombre") %}
+{% for rubro, items_rubro in rubros %}
+  <div class="bloque-rubro">
+    <table class="tabla-items">
+      <thead>
+        <!-- Fila "RUBRO / MAQUINARIA Y EQUIPO" -->
+        <tr>
+          <td style="border: 1px solid black; font-weight: bold;">RUBRO</td>
+          <td style="border: 1px solid black; font-weight: bold; text-align: center;" colspan="2">MAQUINARIA Y EQUIPO</td>
+          <td style="border: 1px solid black;" colspan="8"></td>
+        </tr>
+        <!-- Fila "4.3 ..." -->
+        <tr>
+          <td style="border: 1px solid black;">4.3 ...</td>
+          <td style="border: 1px solid black;" colspan="2"></td>
+          <td style="border: 1px solid black;" colspan="8"></td>
+        </tr>
+        <!-- Fila dinámica con número y nombre de rubro -->
+        <tr>
+          <td class="fila-rubro-nombre" colspan="11">
+            {{ items_rubro[0].id_rubro }} - {{ rubro }}
+          </td>
+        </tr>
+        <!-- Encabezados de tabla -->
+        <tr>
+          <th>Nro.</th>
+          <th>Fecha Alta</th>
+          <th>Cant.</th>
+          <th>Concepto</th>
+          <th>Disposición Administrativa Fecha</th>
+          <th>Valor Unitario</th>
+          <th>Valor Total</th>
+          <th>Causas de Alta</th>
+          <th>Código Presup.</th>
+          <th>Clase</th>
+          <th>Identidad</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items_rubro %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ item.fecha_alta }}</td>
+          <td>{{ item.cantidad }}</td>
+          <td>{{ item.concepto }}</td>
+          <td>{{ item.disposicion }}</td>
+          <td>${{ "{:,.2f}".format(item.valor_unitario) }}</td>
+          <td>${{ "{:,.2f}".format(item.valor_total) }}</td>
+          <td>{{ item.causa_alta }}</td>
+          <td>{{ item.id_rubro }}</td>
+          <td>{{ item.id_clase }}</td>
+          <td>{{ item.identidad or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endfor %}
+
+<!-- TOTAL GENERAL separado del contenido -->
+<p class="total-final">TOTAL GENERAL: ${{ "{:,.2f}".format(total_general) }}</p>
+
+</body>
+</html>

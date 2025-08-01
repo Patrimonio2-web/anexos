@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Planilla de Altas</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      margin: 30px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    th, td {
+      border: 1px solid black;
+      padding: 4px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    th {
+      background-color: #f0f0f0;
+    }
+    .titulo {
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .subtitulo {
+      text-align: center;
+      font-size: 16px;
+      font-weight: bold;
+      text-decoration: underline;
+    }
+    .encabezado {
+      font-weight: bold;
+      background-color: #e0e0e0;
+    }
+    .rubro {
+      text-align: left;
+      font-weight: bold;
+      background-color: #d0d0d0;
+    }
+    .clase {
+      text-align: center;
+      font-weight: bold;
+      background-color: #f8f8f8;
+    }
+    .total {
+      font-weight: bold;
+      text-align: right;
+      padding-right: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="titulo">MOVIMIENTOS DE ALTAS DE BIENES MUEBLES</div>
+  <div class="subtitulo">.{{ mes|upper }} {{ anio }}</div>
+  <div style="text-align: right; font-size: 11px;">Fecha de Presentación: {{ fecha_presentacion }}</div>
+  <div style="text-align: right; font-size: 11px;">Codificación Básica: 2.0.000.</div>
+
+  {% set registros_filtrados = registros | selectattr("rubro_nombre", "!=", None) | selectattr("clase_nombre", "!=", None) | list %}
+  {% set registros_por_rubro = registros_filtrados | groupby('rubro_nombre') %}
+
+  {% for rubro, items_rubro in registros_por_rubro %}
+    <div class="rubro">RUBRO: {{ rubro }}</div>
+
+    {% set registros_por_clase = items_rubro | groupby('clase_nombre') %}
+    {% for clase, items_clase in registros_por_clase %}
+      <div class="clase">{{ clase }}</div>
+
+      <table>
+        <thead>
+          <tr class="encabezado">
+            <th>Nro</th>
+            <th>Fecha Alta</th>
+            <th>Cant.</th>
+            <th>Concepto</th>
+            <th>Disposición<br>Fecha</th>
+            <th>Valor Unitario</th>
+            <th>Valor Total</th>
+            <th>Causa Alta</th>
+            <th>Código Presup.</th>
+            <th>Clase</th>
+            <th>Identidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in items_clase %}
+            {% set i = loop.index %}
+
+            <tr>
+              <td>{{ i }}</td>
+              <td>{{ r.fecha_alta.strftime('%d/%m/%Y') if r.fecha_alta }}</td>
+              <td>{{ r.cantidad }}</td>
+              <td style="text-align: left;">{{ r.concepto }}</td>
+              <td>
+                {% if r.disposicion %}{{ r.disposicion }}<br>{% endif %}
+                {% if r.fecha_resolucion %}{{ r.fecha_resolucion.strftime('%d/%m/%Y') }}{% endif %}
+              </td>
+              <td>${{ "{:,.2f}".format(r.valor_unitario or 0) }}</td>
+              <td>${{ "{:,.2f}".format(r.valor_total or 0) }}</td>
+              <td>{{ r.causa_alta }}</td>
+              <td>{{ r.codigo_presup }}</td>
+              <td>{{ r.clase_nombre }}</td>
+              <td>{{ r.identidad }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+  {% endfor %}
+
+  <br>
+  <div class="total">TOTAL GENERAL: ${{ "{:,.2f}".format(total_general) }}</div>
+
+</body>
+</html>

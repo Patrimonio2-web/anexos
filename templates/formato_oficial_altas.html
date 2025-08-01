@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Movimientos de Altas</title>
+  <style>
+    @media print {
+      .repeat-header {
+        display: table-header-group;
+      }
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: white;
+      color: black;
+      padding: 40px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 40px;
+      page-break-inside: auto;
+    }
+
+    th, td {
+      border: 1px solid black;
+      padding: 4px 6px;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #d3d3d3;
+      font-weight: bold;
+    }
+
+    .footer {
+      margin-top: 30px;
+      text-align: right;
+      font-weight: bold;
+    }
+
+    .grupo-rubro, .grupo-subrubro {
+      font-weight: bold;
+      background-color: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Tabla principal con encabezado completo que se repite -->
+  <table>
+    <thead class="repeat-header">
+      <tr>
+        <th colspan="11" style="border: none; padding: 0;">
+          <table style="width: 100%; border: none; margin-bottom: 10px;">
+            <tr>
+              <td style="width: 20%; text-align: left; border: none;">
+                <img src="{{ url_for('static', filename='images/escudo.png') }}" alt="Escudo" style="height: 80px;">
+              </td>
+              <td style="text-align: center; font-weight: bold; border: none;">
+                <div style="font-size: 19px;">MOVIMIENTOS DE ALTAS DE BIENES MUEBLES</div>
+                <div><u>{{ mes.upper() if mes else 'MES' }} {{ anio }}</u></div>
+              </td>
+              <td style="width: 20%; text-align: right; font-size: 11px; border: none;">
+                <div><strong>Fecha de Presentación:</strong>{{ fecha_presentacion }}</div>
+                <div><strong>Codificación Básica:</strong> 2.0.000.</div>
+              </td>
+            </tr>
+          </table>
+        </th>
+      </tr>
+      <tr>
+        <th>NRO ORDEN</th>
+        <th>FECHA ALTAS</th>
+        <th>CANT.</th>
+        <th>CONCEPTO</th>
+        <th>DISPOSICIÓN ADMINISTRATIVA</th>
+        <th>VALOR UNITARIO</th>
+        <th>VALOR TOTAL</th>
+        <th>CAUSAS DE ALTA</th>
+        <th>CÓDIGO PRESUP.</th>
+        <th>CLASE</th>
+        <th>IDENTIDAD</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set rubros_agrupados = registros | groupby("rubro_codigo") %}
+      {% for rubro_codigo, rubro_items in rubros_agrupados %}
+        <tr class="grupo-rubro">
+          <td colspan="3">RUBRO {{ rubro_codigo[:3] }}...</td>
+          <td colspan="8">{{ rubro_items[0].rubro_general or 'MAQUINARIA Y EQUIPO' }}</td>
+        </tr>
+
+        {% set subrubros = rubro_items | groupby("codigo_presup") %}
+        {% for subrubro_codigo, items in subrubros %}
+          <tr class="grupo-subrubro">
+            <td colspan="11">{{ subrubro_codigo }}. {{ items[0].rubro_nombre.upper() }}</td>
+          </tr>
+
+          {% for item in items %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ item.fecha_alta.strftime('%d/%m/%Y') if item.fecha_alta }}</td>
+              <td>{{ item.cantidad }}</td>
+              <td>{{ item.concepto }}</td>
+              <td>{{ item.disposicion }}</td>
+              <td>$ {{ "%.2f"|format(item.valor_unitario|float) }}</td>
+              <td>$ {{ "%.2f"|format(item.valor_total|float) }}</td>
+              <td>{{ item.causa_alta }}</td>
+              <td>{{ item.codigo_presup }}</td>
+              <td>{{ item.id_clase or 'SIN CLASE' }}</td>
+              <td>{{ item.identidad }}</td>
+            </tr>
+          {% endfor %}
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    TOTAL GENERAL: $ {{ "{:,.2f}".format(total_general).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+  </div>
+
+</body>
+</html>

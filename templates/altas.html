@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Altas de Bienes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-gray-900 text-gray-100">
+  <div class="container mx-auto px-4 py-6">
+    <!-- Logo grande arriba -->
+<div class="flex justify-center mb-6">
+  <img src="/static/images/logopatri.png" alt="Logo" class="h-24">
+</div>
+
+<!-- Título debajo del logo -->
+<h1 class="text-3xl font-bold mb-6 text-center text-base-100 flex items-center justify-center gap-2">
+  <i data-lucide="plus-square" class="w-6 h-6"></i>
+  Carga de Altas de Bienes
+</h1>
+
+
+
+    <form method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-800 p-4 rounded-lg shadow mb-6">
+      <select name="mes_planilla" required class="p-2 border rounded bg-gray-700 text-white">
+        <option value="">Mes de la planilla</option>
+        <option>Enero</option><option>Febrero</option><option>Marzo</option>
+        <option>Abril</option><option>Mayo</option><option>Junio</option>
+        <option>Julio</option><option>Agosto</option><option>Septiembre</option>
+        <option>Octubre</option><option>Noviembre</option><option>Diciembre</option>
+      </select>
+
+      <input type="text" name="anio_planilla" required class="p-2 border rounded bg-gray-700 text-white" placeholder="Año de la planilla">
+      <input type="date" name="fecha_alta" required class="p-2 border rounded bg-gray-700 text-white">
+
+      <input type="text" name="concepto" required class="p-2 border rounded bg-gray-700 text-white" placeholder="Descipciòn">
+<!-- Tipo de Resolución -->
+<div class="col-span-2">
+  <label class="block text-sm font-semibold mb-1 text-white">Tipo de Resolución</label>
+  <div class="flex gap-4 text-white">
+    <label><input type="radio" name="tipo_resolucion" value="RESOL" class="mr-1" required> PSA</label>
+    <label><input type="radio" name="tipo_resolucion" value="RESOL SL" class="mr-1"> SL</label>
+    <label><input type="radio" name="tipo_resolucion" value="RESOL PSL" class="mr-1"> PSL</label>
+    <label><input type="radio" name="tipo_resolucion" value="DCTO" class="mr-1"> DCTO</label>
+  </div>
+</div>
+
+<!-- Número de Resolución -->
+<div class="col-span-2">
+  <input type="text" name="disposicion_numero" id="disposicion-numero"
+         class="p-2 border rounded bg-gray-700 text-white w-full"
+         placeholder="Número de Resolución (Ej: 14)">
+</div>
+
+<!-- Campo oculto donde se guarda el texto final -->
+<input type="hidden" name="disposicion" id="disposicion-final">
+
+<!-- Fecha de Resolución -->
+<div class="col-span-2">
+  <label for="fecha_resolucion" class="block text-sm font-semibold mb-1 text-white">Fecha de Resolución</label>
+  <input type="date" name="fecha_resolucion" id="fecha_resolucion"
+         class="p-2 border rounded bg-gray-700 text-white w-full">
+</div>
+
+
+<script>
+  const radios = document.querySelectorAll('input[name="tipo_resolucion"]');
+  const numeroInput = document.getElementById('disposicion-numero');
+  const fechaInput = document.getElementById('fecha_resolucion');
+  const campoFinal = document.getElementById('disposicion-final');
+
+  function formatearFecha(fechaISO) {
+    if (!fechaISO) return '';
+    const [a, m, d] = fechaISO.split("-");
+    return `${d}/${m}/${a}`;
+  }
+
+  function actualizarResolucion() {
+    const tipo = document.querySelector('input[name="tipo_resolucion"]:checked');
+    const numero = numeroInput.value.trim();
+    const fecha = fechaInput.value;
+
+    if (!tipo || !numero) return;
+
+    let encabezado = "";
+    let parentesis = "";
+
+    if (tipo.value === "DCTO") {
+      encabezado = "DCTO. N°";
+    } else {
+      encabezado = "RESOL. N°";
+      if (tipo.value === "RESOL") parentesis = "(P.S.A.)";
+      else if (tipo.value === "RESOL PSL") parentesis = "(P.S.L.)";
+      else if (tipo.value === "RESOL SL") parentesis = "(S.L.)";
+    }
+
+    const fechaFormateada = formatearFecha(fecha);
+    const resultado = `${encabezado}${numero}${parentesis ? ' ' + parentesis : ''}${fechaFormateada ? ' ' + fechaFormateada : ''}`;
+
+    campoFinal.value = resultado;
+  }
+
+  radios.forEach(r => r.addEventListener('change', actualizarResolucion));
+  numeroInput.addEventListener('input', actualizarResolucion);
+  fechaInput.addEventListener('change', actualizarResolucion);
+</script>
+
+
+      <!-- Dentro del formulario -->
+      <input type="number" name="cantidad" id="cantidad" required class="p-2 border rounded bg-gray-700 text-white" placeholder="Cantidad">
+      <input type="number" step="0.01" name="valor_unitario" id="valor_unitario" class="p-2 border rounded bg-gray-700 text-white" placeholder="Valor Unitario">
+      <input type="number" step="0.01" name="valor_total" id="valor_total" readonly class="p-2 border rounded bg-gray-700 text-white" placeholder="Valor Total">
+
+      <input type="text" name="causa_alta" class="p-2 border rounded bg-gray-700 text-white" placeholder="Causa de Alta">
+      <input type="text" name="codigo_presup" class="p-2 border rounded bg-gray-700 text-white" placeholder="Código Presup.">
+      <input type="text" name="identidad" class="p-2 border rounded bg-gray-700 text-white" placeholder="Identidad">
+
+            <!-- RUBRO -->
+      <div>
+        <label for="rubro-buscador" class="block text-sm font-semibold mb-1">Buscar Rubro</label>
+        <input type="text" id="rubro-buscador" list="lista-rubros" class="w-full p-2 border rounded bg-gray-700 text-white" placeholder="Ej: 431 o MAQUINARIA" required>
+        <datalist id="lista-rubros">
+          {% for r in rubros %}
+            <option value="{{ r.id_rubro }} - {{ r.nombre }}">
+          {% endfor %}
+        </datalist>
+        <input type="hidden" name="id_rubro" id="rubro-id">
+      </div>
+
+      <!-- CLASE -->
+      <div>
+        <label for="clase-buscador" class="block text-sm font-semibold mb-1">Buscar Clase</label>
+        <input type="text" id="clase-buscador" list="lista-clases" class="w-full p-2 border rounded bg-gray-700 text-white" placeholder="Ej: 123 o COMPUTADORA" required>
+        <datalist id="lista-clases">
+          {% for c in clases %}
+            <option value="{{ c.id_clase }} - {{ c.descripcion }}" data-rubro="{{ c.id_rubro }}">
+          {% endfor %}
+        </datalist>
+        <input type="hidden" name="id_clase" id="clase-id">
+      </div>
+
+
+
+      <button class="col-span-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2">
+        <i data-lucide="save" class="w-5 h-5"></i> Guardar Alta
+      </button>
+    </form>
+
+    
+<form method="GET" class="flex flex-wrap items-center gap-4 bg-gray-800 p-4 rounded-lg shadow mb-6">
+  <div>
+    <label class="block text-sm text-white mb-1">Filtrar por Mes:</label>
+    <select name="mes" class="p-2 border rounded bg-gray-700 text-white">
+      <option value="">Todos</option>
+      <option value="Enero">Enero</option>
+      <option value="Febrero">Febrero</option>
+      <option value="Marzo">Marzo</option>
+      <option value="Abril">Abril</option>
+      <option value="Mayo">Mayo</option>
+      <option value="Junio">Junio</option>
+      <option value="Julio">Julio</option>
+      <option value="Agosto">Agosto</option>
+      <option value="Septiembre">Septiembre</option>
+      <option value="Octubre">Octubre</option>
+      <option value="Noviembre">Noviembre</option>
+      <option value="Diciembre">Diciembre</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm text-white mb-1">Filtrar por Año:</label>
+    <input type="text" name="anio" class="p-2 border rounded bg-gray-700 text-white" placeholder="Ej: 2025">
+  </div>
+  <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded mt-5" type="submit">
+    Filtrar
+  </button>
+</form>
+
+    <div class="flex justify-between items-center mb-4">
+  <h2 class="text-lg font-semibold flex items-center gap-2 text-base-100">
+    <i data-lucide="list" class="w-5 h-5"></i> Movimientos cargados
+  </h2>
+  
+  <form method="GET" action="/altas/exportar_pdf" target="_blank">
+    <input type="hidden" name="mes" value="{{ request.args.get('mes', '') }}">
+    <input type="hidden" name="anio" value="{{ request.args.get('anio', '') }}">
+    <button type="submit" class="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded">
+      <i data-lucide="file-text" class="w-5 h-5"></i> Exportar a PDF
+    </button>
+    
+      <input type="hidden" name="mes" value="{{ request.args.get('mes', '') }}">
+      <input type="hidden" name="anio" value="{{ request.args.get('anio', '') }}">
+      <button type="submit" class="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded">
+        <i data-lucide="file-text" class="w-5 h-5"></i> Formato Oficial HTML
+      </button>
+    </form>
+
+
+
+
+</form>
+
+
+</div>
+
+
+    <div class="space-y-8">
+  <div class="space-y-8">
+  {% set registros_filtrados = registros | selectattr('rubro_nombre') | list %}
+  {% set rubros_agrupados = registros_filtrados | groupby('rubro_nombre') %}
+
+  {% for rubro, items in rubros_agrupados %}
+    <div class="bg-gray-800 rounded shadow p-4">
+      <h3 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+        <i data-lucide="folder" class="w-5 h-5"></i> {{ rubro }}
+      </h3>
+
+      <table class="min-w-full text-sm text-left border border-gray-700 text-white">
+        <thead class="bg-gray-700">
+          <tr>
+            <th class="px-3 py-2">Fecha</th>
+            <th class="px-3 py-2">Cantidad</th>
+            <th class="px-3 py-2">Concepto</th>
+            <th class="px-3 py-2">Disposición</th>
+            <th class="px-3 py-2">Valor Unitario</th>
+            <th class="px-3 py-2">Valor Total</th>
+            <th class="px-3 py-2">Causa</th>
+            <th class="px-3 py-2">Código Presup.</th>
+            <th class="px-3 py-2">Clase</th>
+            <th class="px-3 py-2">Identidad</th>
+            <th class="px-3 py-2 text-center">Editar</th>
+            <th class="px-3 py-2 text-center">Eliminar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set total = 0 %}
+          {% for item in items %}
+          <tr class="border-t border-gray-700 hover:bg-gray-700">
+            <td class="px-3 py-2">{{ item.fecha_alta }}</td>
+            <td class="px-3 py-2">{{ item.cantidad }}</td>
+            <td class="px-3 py-2">{{ item.concepto }}</td>
+            <td class="px-3 py-2">{{ item.disposicion }}</td>
+            <td class="px-3 py-2">$ {{ "%.2f"|format(item.valor_unitario|float) }}</td>
+            <td class="px-3 py-2">$ {{ "%.2f"|format(item.valor_total|float) }}</td>
+            <td class="px-3 py-2">{{ item.causa_alta }}</td>
+            <td class="px-3 py-2">{{ item.codigo_presup }}</td>
+            <td class="px-3 py-2">{{ item.id_clase }}</td>
+            <td class="px-3 py-2">{{ item.identidad }}</td>
+            <td class="px-3 py-2 text-center">
+              <a href="/altas/editar/{{ item.id }}" class="text-blue-400 hover:text-blue-600">
+                <i data-lucide="pencil" class="w-4 h-4 inline"></i>
+              </a>
+            </td>
+            <td class="px-3 py-2 text-center">
+              <form method="POST" action="/altas/eliminar/{{ item.id }}" onsubmit="return confirm('¿Estás seguro que querés eliminar este registro?');" style="display:inline;">
+                <button type="submit" class="text-red-400 hover:text-red-600">
+                <i data-lucide="trash-2" class="w-4 h-4 inline"></i>
+              </button>
+            </form>
+
+            </td>
+          </tr>
+          {% set valor = (item.valor_total|string)|replace(",", ".")|replace("$", "") %}
+          {% if valor and valor != "None" %}
+            {% set total = total + valor|float %}
+          {% endif %}
+          {% endfor %}
+
+        
+        </tbody>
+
+      </table>
+    </div>
+  {% endfor %}
+</div>
+
+
+
+  <script>
+  const rubroInput = document.getElementById('rubro-buscador');
+  const rubroIdInput = document.getElementById('rubro-id');
+  const claseInput = document.getElementById('clase-buscador');
+  const claseIdInput = document.getElementById('clase-id');
+  const claseDatalist = document.getElementById('lista-clases');
+  const claseOptions = [...claseDatalist.options];
+
+  // Al escribir o seleccionar un rubro
+  rubroInput.addEventListener('input', () => {
+    const val = rubroInput.value.split(' - ')[0].trim();
+    rubroIdInput.value = /^\d+$/.test(val) ? val : '';
+
+    // Filtrar clases por rubro
+    const rubroSeleccionado = rubroIdInput.value;
+    claseDatalist.innerHTML = ''; // vaciar datalist
+
+    claseOptions.forEach(opt => {
+      const rubroClase = opt.getAttribute('data-rubro');
+      if (rubroClase === rubroSeleccionado) {
+        claseDatalist.appendChild(opt.cloneNode(true));
+      }
+    });
+
+    // Resetear clase
+    claseInput.value = '';
+    claseIdInput.value = '';
+  });
+
+  // Al escribir en clase
+  claseInput.addEventListener('input', () => {
+    const val = claseInput.value.split(' - ')[0].trim();
+    const match = claseOptions.find(opt => opt.value.startsWith(val + ' '));
+    claseIdInput.value = match ? val : '';
+  });
+
+  // Cálculo automático valor_total = cantidad × valor_unitario
+  const cantidadInput = document.getElementById('cantidad');
+  const unitarioInput = document.getElementById('valor_unitario');
+  const totalInput = document.getElementById('valor_total');
+
+  function calcularTotal() {
+    const cantidad = parseFloat(cantidadInput.value) || 0;
+    const unitario = parseFloat(unitarioInput.value) || 0;
+    totalInput.value = (cantidad * unitario).toFixed(2);
+  }
+
+  cantidadInput.addEventListener('input', calcularTotal);
+  unitarioInput.addEventListener('input', calcularTotal);
+
+  // Iniciar icons
+  window.addEventListener('DOMContentLoaded', () => {
+    lucide.createIcons();
+  });
+</script>
+
+
+
+</body>
+</html>

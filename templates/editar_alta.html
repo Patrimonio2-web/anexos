@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Editar Alta</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-gray-900 text-gray-100">
+  <div class="container mx-auto px-4 py-6">
+    <h1 class="text-2xl font-bold mb-6 flex items-center gap-2 text-base-100">
+      <i data-lucide="edit-3" class="w-6 h-6"></i> Editar Alta
+    </h1>
+
+    <form method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-800 p-4 rounded-lg shadow">
+      <input type="date" name="fecha_alta" value="{{ registro.fecha_alta }}" required class="p-2 border rounded bg-gray-700 text-white">
+
+      <input type="number" name="cantidad" value="{{ registro.cantidad }}" required class="p-2 border rounded bg-gray-700 text-white" placeholder="Cantidad">
+
+      <input type="text" name="concepto" value="{{ registro.concepto }}" required class="p-2 border rounded bg-gray-700 text-white" placeholder="Concepto">
+
+      <input type="text" name="disposicion" value="{{ registro.disposicion }}" class="p-2 border rounded bg-gray-700 text-white" placeholder="Disposición">
+
+      <input type="number" step="0.01" name="valor_unitario" value="{{ registro.valor_unitario }}" class="p-2 border rounded bg-gray-700 text-white" placeholder="Valor Unitario">
+
+      <input type="number" step="0.01" name="valor_total" value="{{ registro.valor_total }}" class="p-2 border rounded bg-gray-700 text-white" placeholder="Valor Total">
+
+      <input type="text" name="causa_alta" value="{{ registro.causa_alta }}" class="p-2 border rounded bg-gray-700 text-white" placeholder="Causa de Alta">
+
+      <input type="text" name="codigo_presup" value="{{ registro.codigo_presup }}" class="p-2 border rounded bg-gray-700 text-white" placeholder="Código Presup.">
+
+      <input type="text" name="identidad" value="{{ registro.identidad }}" class="p-2 border rounded bg-gray-700 text-white" placeholder="Identidad">
+
+      <!-- Rubro -->
+      <div>
+        <label class="block text-sm font-semibold mb-1">Rubro</label>
+        <select name="id_rubro" class="w-full p-2 border rounded bg-gray-700 text-white">
+          <option value="">Seleccionar...</option>
+          {% for rubro in rubros %}
+          <option value="{{ rubro.id_rubro }}" {% if rubro.id_rubro == registro.id_rubro %}selected{% endif %}>
+            {{ rubro.id_rubro }} - {{ rubro.nombre }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Clase -->
+      <div>
+        <label class="block text-sm font-semibold mb-1">Clase</label>
+        <select name="id_clase" class="w-full p-2 border rounded bg-gray-700 text-white">
+          <option value="">Seleccionar...</option>
+          {% for clase in clases %}
+          <option value="{{ clase.id_clase }}" {% if clase.id_clase == registro.id_clase %}selected{% endif %}>
+            {{ clase.id_clase }} - {{ clase.descripcion }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-span-2 flex justify-between items-center mt-4">
+        <a href="/altas" class="text-white bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded flex items-center gap-2">
+          <i data-lucide="arrow-left"></i> Cancelar
+        </a>
+        <button class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
+          <i data-lucide="save"></i> Guardar Cambios
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>
