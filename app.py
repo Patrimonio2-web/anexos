@@ -1085,7 +1085,7 @@ def exportar_pdf_altas():
 
 
 # 🚀 Crear app y registrar blueprint
-app = Flask(__name__)
+#app = Flask(__name__)
 app.secret_key = 'clave-secreta-segura-123'  # 🔐 solo esta instancia
 app.register_blueprint(bp)
 # 🔢 Filtro para convertir strings tipo "$ 12,345.67" a float
