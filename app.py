@@ -455,12 +455,12 @@ def registrar_mobiliario():
         else:
             resolucion_texto = data.get("resolucion") or ""
 
-        # Generar el próximo ID numérico si no se proporciona
+        # Usar el ID proporcionado si es válido, o generar uno nuevo
         id_mob = data.get("id")
-        if not id_mob:
-            # Obtener todos los IDs actuales como strings
+        if id_mob and str(id_mob).isdigit():
+            id_mob = str(id_mob)
+        else:
             ids_actuales = db.session.query(Mobiliario.id).all()
-            # Convertir los que sean numéricos
             ids_numericos = [int(x[0]) for x in ids_actuales if x[0] and str(x[0]).isdigit()]
             id_mob = str(max(ids_numericos) + 1) if ids_numericos else "1"
         print("🟡 ID generado para nuevo mobiliario:", id_mob)
@@ -501,6 +501,7 @@ def registrar_mobiliario():
         db.session.rollback()
         print("🔴 Error en /api/mobiliario:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
