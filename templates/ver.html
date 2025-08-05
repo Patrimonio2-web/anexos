@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobiliario con Advertencia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="max-w-6xl mx-auto p-6">
+        <h1 class="text-2xl font-bold mb-4">Listado de Mobiliario</h1>
+        <div id="mobiliarioContainer" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"></div>
+    </div>
+
+    <script>
+        fetch('/api/mobiliario/advertencia')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('mobiliarioContainer');
+                container.innerHTML = '';
+                data.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white p-4 rounded shadow';
+                    card.innerHTML = `
+                        <img src="${item.foto_url || 'https://via.placeholder.com/300'}" class="w-full h-48 object-cover rounded">
+                        <h2 class="text-lg font-semibold mt-2">${item.descripcion}</h2>
+                        <p><strong>Anexo:</strong> ${item.anexo || 'N/A'}</p>
+                        <p><strong>Subdependencia:</strong> ${item.subdependencia || 'N/A'}</p>
+                        <p><strong>Rubro:</strong> ${item.rubro || 'N/A'}</p>
+                        <p><strong>Clase:</strong> ${item.clase_bien || 'N/A'}</p>
+                        <p class="mt-2 text-red-600 font-medium">${item.advertencia}</p>
+                    `;
+                    container.appendChild(card);
+                });
+            });
+    </script>
+</body>
+</html>
