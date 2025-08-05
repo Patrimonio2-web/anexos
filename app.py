@@ -581,7 +581,7 @@ def ver_etiqueta_para_imprimir(id):
 
 
 from flask import send_file
-import qrcode
+import code
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import io
@@ -612,7 +612,7 @@ def generar_etiqueta_png(id):
     y = centrar("Dir. de Patrimonio", font_titulo, y)
     y = centrar(f"{id.zfill(6)}", font_id, y)
 
-    # Código QR
+    # Código 
     qr_size = 150
     qr = qrcode.make(f"https://heritage-management.vercel.app/patrimonio/editar/{id}").resize((qr_size, qr_size))
     qr_y = (size_px - qr_size) // 2 + 20
@@ -653,7 +653,7 @@ def mobiliario_advertencia_por_id(mobiliario_id):
 
         conn = db.engine.raw_connection()
         cur = conn.cursor()
-        cur.execute(query, (str(mobiliario_id),))  # ← Convertimos a string
+        cur.execute(query, (str(mobiliario_id),))  # <-- pasamos como string
         row = cur.fetchone()
         columns = [col[0] for col in cur.description]
         cur.close()
@@ -669,9 +669,11 @@ def mobiliario_advertencia_por_id(mobiliario_id):
         )
 
         return jsonify(result)
+
     except Exception as e:
         print("🔴 Error en /api/mobiliario/<id>/advertencia:", e)
         return jsonify({'error': str(e)}), 500
+
 
 
 #imprimir listados ------------------------------------------------------------
