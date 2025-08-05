@@ -677,7 +677,9 @@ def mobiliario_advertencia_por_id(mobiliario_id):
 
 @app.route('/ver')
 def ver_mobiliario():
+    # No hace falta capturar el id aquí, el JS en ver.html lo lee del query string
     return render_template('ver.html')
+
 
 #imprimir listados ------------------------------------------------------------
 
