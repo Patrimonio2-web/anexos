@@ -8,31 +8,44 @@
 </head>
 <body class="bg-gray-100">
     <div class="max-w-6xl mx-auto p-6">
-        <h1 class="text-2xl font-bold mb-4">Listado de Mobiliario</h1>
+        <h1 class="text-2xl font-bold mb-4">Mobiliario</h1>
         <div id="mobiliarioContainer" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"></div>
     </div>
 
     <script>
-        fetch('/api/mobiliario/advertencia')
-            .then(res => res.json())
-            .then(data => {
-                const container = document.getElementById('mobiliarioContainer');
-                container.innerHTML = '';
-                data.forEach(item => {
-                    const card = document.createElement('div');
-                    card.className = 'bg-white p-4 rounded shadow';
-                    card.innerHTML = `
-                        <img src="${item.foto_url || 'https://via.placeholder.com/300'}" class="w-full h-48 object-cover rounded">
-                        <h2 class="text-lg font-semibold mt-2">${item.descripcion}</h2>
-                        <p><strong>Anexo:</strong> ${item.anexo || 'N/A'}</p>
-                        <p><strong>Subdependencia:</strong> ${item.subdependencia || 'N/A'}</p>
-                        <p><strong>Rubro:</strong> ${item.rubro || 'N/A'}</p>
-                        <p><strong>Clase:</strong> ${item.clase_bien || 'N/A'}</p>
-                        <p class="mt-2 text-red-600 font-medium">${item.advertencia}</p>
+        // Obtener ID de la URL
+        const params = new URLSearchParams(window.location.search);
+        const mobiliarioId = params.get('id');
+
+        if (!mobiliarioId) {
+            document.getElementById('mobiliarioContainer').innerHTML = 
+                '<p class="text-red-600">No se especificó un ID de mobiliario.</p>';
+        } else {
+            fetch(`/api/mobiliario/${mobiliarioId}/advertencia`)
+                .then(res => {
+                    if (!res.ok) throw new Error('Mobiliario no encontrado');
+                    return res.json();
+                })
+                .then(item => {
+                    const container = document.getElementById('mobiliarioContainer');
+                    container.innerHTML = `
+                        <div class="bg-white p-4 rounded shadow">
+                            <img src="${item.foto_url || 'https://via.placeholder.com/300'}" class="w-full h-48 object-cover rounded">
+                            <h2 class="text-lg font-semibold mt-2">${item.descripcion}</h2>
+                            <p><strong>Anexo:</strong> ${item.anexo || 'N/A'}</p>
+                            <p><strong>Subdependencia:</strong> ${item.subdependencia || 'N/A'}</p>
+                            <p><strong>Rubro:</strong> ${item.rubro || 'N/A'}</p>
+                            <p><strong>Clase:</strong> ${item.clase_bien || 'N/A'}</p>
+                            <p class="mt-2 text-red-600 font-medium">${item.advertencia}</p>
+                        </div>
                     `;
-                    container.appendChild(card);
+                })
+                .catch(err => {
+                    document.getElementById('mobiliarioContainer').innerHTML = 
+                        `<p class="text-red-600">${err.message}</p>`;
                 });
-            });
+        }
     </script>
 </body>
 </html>
+
