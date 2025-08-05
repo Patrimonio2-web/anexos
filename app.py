@@ -628,6 +628,51 @@ def generar_etiqueta_png(id):
     buffer.seek(0)
     return send_file(buffer, mimetype='image/png')
 
+
+#vista que me llevan los qr---------------------------------------------------------------------
+@app.route('/api/mobiliario/<int:mobiliario_id>/advertencia', methods=['GET'])
+def mobiliario_advertencia_por_id(mobiliario_id):
+    try:
+        query = """
+        SELECT 
+            m.id AS id_mobiliario,
+            m.foto_url,
+            m.descripcion,
+            r.nombre AS rubro,
+            cb.descripcion AS clase_bien,
+            sd.nombre AS subdependencia,
+            a.nombre AS anexo
+        FROM mobiliario m
+        LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.id_clase
+        LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
+        LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
+        LEFT JOIN anexos a ON sd.id_anexo = a.id
+        WHERE m.id = %s
+        LIMIT 1;
+        """
+
+        conn = db.engine.raw_connection()
+        cur = conn.cursor()
+        cur.execute(query, (mobiliario_id,))
+        row = cur.fetchone()
+        columns = [col[0] for col in cur.description]
+        cur.close()
+        conn.close()
+
+        if not row:
+            return jsonify({'error': 'Mobiliario no encontrado'}), 404
+
+        result = dict(zip(columns, row))
+        result["advertencia"] = (
+            "Si este mobiliario se encuentra fuera de la ubicación correspondiente, "
+            "avisar a la Dirección de Patrimonio en Dalmacio Vélez 274."
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        print("🔴 Error en /api/mobiliario/<id>/advertencia:", e)
+        return jsonify({'error': str(e)}), 500
+
 #imprimir listados ------------------------------------------------------------
 
 
@@ -1099,6 +1144,8 @@ def to_float(value):
 
 # 📎 Registrar el filtro en la app Flask (no en el Blueprint)
 app.add_template_filter(to_float, 'to_float')
+
+
 
 
 # ▶️ Ejecutar con python app.py
