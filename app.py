@@ -614,7 +614,7 @@ def generar_etiqueta_png(id):
 
     # Código 
     qr_size = 150
-    qr = qrcode.make(f"https://heritage-management.vercel.app/patrimonio/editar/{id}").resize((qr_size, qr_size))
+    qr = qrcode.make(f"https://anexos.onrender.com/ver?id={id}").resize((qr_size, qr_size))
     qr_y = (size_px - qr_size) // 2 + 20
     etiqueta.paste(qr, ((size_px - qr_size) // 2, qr_y))
 
@@ -665,7 +665,7 @@ def mobiliario_advertencia_por_id(mobiliario_id):
         result = dict(zip(columns, row))
         result["advertencia"] = (
             "Si este mobiliario se encuentra fuera de la ubicación correspondiente, "
-            "avisar a la Dirección de Patrimonio en Dalmacio Vélez 274."
+            "avisar a la Dirección de Patrimonio en Dalmacio Vélez 743."
         )
 
         return jsonify(result)
@@ -675,6 +675,9 @@ def mobiliario_advertencia_por_id(mobiliario_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/ver')
+def ver_mobiliario():
+    return render_template('ver.html')
 
 #imprimir listados ------------------------------------------------------------
 
