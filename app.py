@@ -585,6 +585,7 @@ import code
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import io
+import qrcode
 
 @app.route('/api/mobiliario/etiqueta/png/<string:id>')
 def generar_etiqueta_png(id):
