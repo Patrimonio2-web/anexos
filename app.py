@@ -630,7 +630,7 @@ def generar_etiqueta_png(id):
 
 
 #vista que me llevan los qr---------------------------------------------------------------------
-@app.route('/api/mobiliario/<int:mobiliario_id>/advertencia', methods=['GET'])
+@app.route('/api/mobiliario/<mobiliario_id>/advertencia', methods=['GET'])
 def mobiliario_advertencia_por_id(mobiliario_id):
     try:
         query = """
@@ -653,7 +653,7 @@ def mobiliario_advertencia_por_id(mobiliario_id):
 
         conn = db.engine.raw_connection()
         cur = conn.cursor()
-        cur.execute(query, (mobiliario_id,))
+        cur.execute(query, (str(mobiliario_id),))  # ← Convertimos a string
         row = cur.fetchone()
         columns = [col[0] for col in cur.description]
         cur.close()
@@ -672,6 +672,7 @@ def mobiliario_advertencia_por_id(mobiliario_id):
     except Exception as e:
         print("🔴 Error en /api/mobiliario/<id>/advertencia:", e)
         return jsonify({'error': str(e)}), 500
+
 
 #imprimir listados ------------------------------------------------------------
 
