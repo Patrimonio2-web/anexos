@@ -13,7 +13,8 @@ import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
 import pandas as pd
-
+from copy import deepcopy
+from models import db, AuditLog  # además de tus otros modelos
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
 from openpyxl import Workbook
@@ -133,6 +134,31 @@ class Subdependencia(db.Model):
     id_anexo = db.Column(db.Integer, db.ForeignKey('anexos.id', ondelete='CASCADE'), nullable=False)
     nombre = db.Column(db.String(255), nullable=False)
     piso = db.Column(db.Integer)  # 👈 este campo está en tu base (PDF), podés incluirlo si lo necesitás
+
+class Auditoria(db.Model):
+    __tablename__ = 'auditoria'
+
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.DateTime, server_default=db.func.now())
+    tabla_afectada = db.Column(db.String(100), nullable=False)
+    id_registro = db.Column(db.String(50), nullable=False)
+    accion = db.Column(db.String(50), nullable=False)
+    cambios = db.Column(db.Text)
+    ip_origen = db.Column(db.String(50))
+    user_agent = db.Column(db.Text)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "fecha": self.fecha.strftime("%d/%m/%Y %H:%M"),
+            "tabla_afectada": self.tabla_afectada,
+            "id_registro": self.id_registro,
+            "accion": self.accion,
+            "cambios": self.cambios,
+            "ip_origen": self.ip_origen,
+            "user_agent": self.user_agent
+        }
+
 
 
 class Mobiliario(db.Model):
@@ -310,7 +336,68 @@ def clases_por_rubro():
         return jsonify({'error': str(e)}), 500
 
 
+#AUDITORIAS----------------------------------------------------------------------------------------------------------
+from datetime import datetime
+import json
 
+def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos_nuevos=None, descripcion=""):
+    try:
+        sql = """
+            INSERT INTO auditoria (fecha, accion, tabla_afectada, id_registro, datos_anteriores, datos_nuevos, descripcion)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        conn = db.engine.raw_connection()
+        cur = conn.cursor()
+        cur.execute(sql, (
+            datetime.utcnow(),
+            accion,
+            tabla,
+            str(id_registro),
+            json.dumps(datos_anteriores) if datos_anteriores else None,
+            json.dumps(datos_nuevos) if datos_nuevos else None,
+            descripcion
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"⚠ Error registrando auditoría: {e}")
+
+from sqlalchemy import text
+
+@app.route('/api/auditoria', methods=['GET'])
+def get_auditoria():
+    # paginación opcional (?limit=50&offset=0)
+    try:
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+    except ValueError:
+        return jsonify({"error": "limit/offset inválidos"}), 400
+
+    sql = text("""
+        SELECT
+            id,
+            to_char(fecha AT TIME ZONE 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI') AS fecha,
+            accion,
+            tabla_afectada,
+            id_registro,
+            datos_anteriores,
+            datos_nuevos,
+            descripcion
+        FROM auditoria
+        ORDER BY fecha DESC
+        LIMIT :limit OFFSET :offset
+    """)
+
+    try:
+        # maneja apertura/cierre de conexión automáticamente
+        with db.engine.connect() as conn:
+            result = conn.execute(sql, {"limit": limit, "offset": offset})
+            # .mappings() para obtener dicts directamente (SQLAlchemy 1.4+)
+            data = [dict(row._mapping) for row in result]
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -491,32 +578,101 @@ def ultimos_mobiliarios():
 
 
 
-# API para eliminar un registro de patrimonio-----------------------------
+# ====== HELPERS DE AUDITORÍA ======
+from datetime import datetime, date, timedelta
+import json
+from sqlalchemy import text
+
+def _serialize(v):
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    return v
+
+def model_to_dict(instance, exclude=('fecha_creacion', 'fecha_actualizacion')):
+    """Convierte un modelo SQLAlchemy a dict JSON-serializable."""
+    data = {}
+    for col in instance.__table__.columns:
+        if exclude and col.name in exclude:
+            continue
+        data[col.name] = _serialize(getattr(instance, col.name))
+    return data
+
+def _compute_diff(before: dict, after: dict):
+    keys = set(before.keys()) | set(after.keys())
+    diff = {}
+    for k in sorted(keys):
+        if before.get(k) != after.get(k):
+            diff[k] = [before.get(k), after.get(k)]
+    return diff
+
+def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
+    """Inserta una fila en la tabla auditoria (misma transacción del request)."""
+    try:
+        diff = _compute_diff(before or {}, after or {})
+        # Si no mandaron descripción, guardo el diff como texto para referencia rápida
+        desc_final = descripcion if descripcion else (json.dumps({"diff": diff}) if diff else None)
+
+        db.session.execute(
+            text("""
+                INSERT INTO auditoria
+                  (fecha, accion, tabla_afectada, id_registro, datos_anteriores, datos_nuevos, descripcion)
+                VALUES
+                  (NOW(), :accion, :tabla, :id_registro, CAST(:before AS JSONB), CAST(:after AS JSONB), :descripcion)
+            """),
+            {
+                "accion": accion,
+                "tabla": tabla,
+                "id_registro": str(id_registro),
+                "before": json.dumps(before) if before else None,
+                "after": json.dumps(after) if after else None,
+                "descripcion": desc_final
+            }
+        )
+        # NO hacemos commit acá: viaja con la operación principal
+    except Exception as e:
+        # No romper el flujo principal por un error de auditoría
+        print(f"⚠ Error registrando auditoría: {e}")
+
+
+# ====== API para eliminar un registro de patrimonio -----------------------------
 @app.route('/api/patrimonio/<string:id>', methods=['DELETE'])
 def eliminar_patrimonio(id):
     try:
         registro = db.session.get(Mobiliario, id)
         if not registro:
             return jsonify({'error': 'Registro no encontrado'}), 404
+
+        # Snapshot ANTES para auditoría
+        datos_previos = model_to_dict(registro)
+
+        # Eliminar
         db.session.delete(registro)
+
+        # Auditoría
+        registrar_auditoria(
+            accion="DELETE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=datos_previos,
+            after=None,
+            descripcion="Eliminación de mobiliario"
+        )
+
         db.session.commit()
         return jsonify({'mensaje': 'Registro eliminado exitosamente'}), 200
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
 
-
-# API para editar mobiliario-----------------------------------------------------
-
-from datetime import datetime, timedelta
-
+# ====== API para editar mobiliario ---------------------------------------------
 @app.route('/api/mobiliario/<string:id>', methods=['PUT'])
 def editar_mobiliario(id):
     mobiliario = Mobiliario.query.get_or_404(id)
     try:
-        data = request.json
+        data = request.json or {}
 
         # ✅ Evitar que cambien el ID manualmente (por seguridad)
         if 'id' in data and data['id'] != id:
@@ -531,6 +687,9 @@ def editar_mobiliario(id):
         # 🕒 Hora de Argentina (UTC-3)
         ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%d-%m-%Y %H:%M")
         historial = mobiliario.historial_movimientos or ""
+
+        # Snapshot ANTES para auditoría
+        before = model_to_dict(mobiliario)
 
         # Detectar cambio de ubicación
         nueva_ubicacion_id = data.get("ubicacion_id", mobiliario.ubicacion_id)
@@ -583,6 +742,19 @@ def editar_mobiliario(id):
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
 
+        # Snapshot DESPUÉS
+        after = model_to_dict(mobiliario)
+
+        # Auditoría
+        registrar_auditoria(
+            accion="UPDATE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=before,
+            after=after,
+            descripcion="Edición de mobiliario"
+        )
+
         db.session.commit()
         return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
 
@@ -592,15 +764,11 @@ def editar_mobiliario(id):
 
 
 
-
-
-
-# Ruta para registrar un nuevo mobiliario
-# Esta ruta permite registrar un nuevo mobiliario con los datos proporcionados en el cuerpo de la 
+# ====== API para registrar un nuevo mobiliario ---------------------------------
 @app.route('/api/mobiliario', methods=['POST'])
 def registrar_mobiliario():
     try:
-        data = request.json
+        data = request.json or {}
         print("🟢 Data recibida en /api/mobiliario:", data)
 
         # Diccionario de tipos de resolución formateados
@@ -611,7 +779,7 @@ def registrar_mobiliario():
             "PSL": "P.S.L"
         }
 
-        tipo = data.get("resolucion_tipo", "").upper()
+        tipo = (data.get("resolucion_tipo") or "").upper()
         tipo_formateado = tipos_resolucion.get(tipo, tipo)
 
         resolucion_numero = data.get('resolucion_numero')
@@ -658,6 +826,19 @@ def registrar_mobiliario():
         )
 
         db.session.add(nuevo)
+        db.session.flush()  # asegura tener el ID en la sesión
+
+        # Auditoría (snapshot después)
+        after = model_to_dict(nuevo)
+        registrar_auditoria(
+            accion="CREATE",
+            tabla="mobiliario",
+            id_registro=nuevo.id,
+            before=None,
+            after=after,
+            descripcion="Alta de mobiliario"
+        )
+
         db.session.commit()
         print("✅ Registro guardado correctamente.")
         return jsonify({"mensaje": "Registro creado exitosamente", "id_generado": id_mob}), 201
