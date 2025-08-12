@@ -52,55 +52,71 @@
     </div>
   </div>
 
-  <script>
-    const API = "/api/auditoria";
-    const tbody = document.getElementById("tbody");
-    const modal = document.getElementById("modal");
-    const datosAnteriores = document.getElementById("datos_anteriores");
-    const datosNuevos = document.getElementById("datos_nuevos");
+ <script>
+  const API = "/api/auditoria";
+  const tbody = document.getElementById("tbody");
+  const modal = document.getElementById("modal");
+  const datosAnteriores = document.getElementById("datos_anteriores");
+  const datosNuevos = document.getElementById("datos_nuevos");
 
-    function openModal(anteriores, nuevos) {
-      datosAnteriores.textContent = anteriores ? JSON.stringify(JSON.parse(anteriores), null, 2) : "Sin datos";
-      datosNuevos.textContent = nuevos ? JSON.stringify(JSON.parse(nuevos), null, 2) : "Sin datos";
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
+  function prettyJSON(val) {
+    if (val === null || val === undefined || val === "") return "Sin datos";
+    try {
+      // Si es string JSON, parsealo; si ya es objeto, dejalo
+      const obj = (typeof val === "string") ? JSON.parse(val) : val;
+      return JSON.stringify(obj, null, 2);
+    } catch (e) {
+      // Si falla el parse, al menos mostrás el valor tal cual
+      return (typeof val === "string") ? val : JSON.stringify(val, null, 2);
+    }
+  }
+
+  function openModal(anteriores, nuevos) {
+    datosAnteriores.textContent = prettyJSON(anteriores);
+    datosNuevos.textContent = prettyJSON(nuevos);
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+
+  function closeModal() {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+
+  async function loadAuditoria() {
+    const res = await fetch(API);
+    const data = await res.json();
+    tbody.innerHTML = "";
+
+    if (!Array.isArray(data) || !data.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Sin registros</td></tr>`;
+      return;
     }
 
-    function closeModal() {
-      modal.classList.add("hidden");
-      modal.classList.remove("flex");
-    }
+    data.forEach(row => {
+      const tr = document.createElement("tr");
+      const fecha = row.fecha ? new Date(row.fecha).toLocaleString() : "-";
+      tr.innerHTML = `
+        <td class="px-4 py-2">${fecha}</td>
+        <td class="px-4 py-2 font-semibold">${row.accion || "-"}</td>
+        <td class="px-4 py-2">${row.tabla_afectada || "-"}</td>
+        <td class="px-4 py-2">${row.id_registro || "-"}</td>
+        <td class="px-4 py-2">${row.descripcion || "-"}</td>
+        <td class="px-4 py-2 text-center">
+          <button class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500">
+            Ver
+          </button>
+        </td>
+      `;
+      tr.querySelector("button").addEventListener("click", () =>
+        openModal(row.datos_anteriores, row.datos_nuevos)
+      );
+      tbody.appendChild(tr);
+    });
+  }
 
-    async function loadAuditoria() {
-      const res = await fetch(API);
-      const data = await res.json();
-      tbody.innerHTML = "";
+  loadAuditoria();
+</script>
 
-      if (!data.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Sin registros</td></tr>`;
-        return;
-      }
-
-      data.forEach(row => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td class="px-4 py-2">${row.fecha}</td>
-          <td class="px-4 py-2 font-semibold">${row.accion}</td>
-          <td class="px-4 py-2">${row.tabla_afectada}</td>
-          <td class="px-4 py-2">${row.id_registro}</td>
-          <td class="px-4 py-2">${row.descripcion || "-"}</td>
-          <td class="px-4 py-2 text-center">
-            <button class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500">
-              Ver
-            </button>
-          </td>
-        `;
-        tr.querySelector("button").addEventListener("click", () => openModal(row.datos_anteriores, row.datos_nuevos));
-        tbody.appendChild(tr);
-      });
-    }
-
-    loadAuditoria();
-  </script>
 </body>
 </html>
