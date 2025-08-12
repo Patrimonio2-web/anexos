@@ -13,19 +13,18 @@ import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
 import pandas as pd
-from copy import deepcopy
+# from copy import deepcopy  # ← opcional: borrar si no se usa
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
 from openpyxl import Workbook
 
 # ===================== APP & CONFIG =====================
 app = Flask(__name__)
-CORS(app)
 
 # 🔐 SECRET KEY (mover a env en prod)
 app.secret_key = os.getenv("SECRET_KEY", "clave-secreta-segura-123")
 
-# 🌐 CORS (Vercel + local)
+# 🌐 CORS (Vercel + local) — una sola vez y con credenciales
 CORS(app, supports_credentials=True, origins=[
     "https://heritage-management.vercel.app",
     "http://localhost:3000"
@@ -60,7 +59,8 @@ def get_conn_dict():
         database="patrimonio_ppfk",
         user="patrimonio_ppfk_user",
         password="SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2",
-        cursor_factory=psycopg2.extras.DictCursor
+        cursor_factory=psycopg2.extras.DictCursor,
+        sslmode="require"  # 👈 importante en Render
     )
     cur = conn.cursor()
     return conn, cur
@@ -80,7 +80,6 @@ def login_required_api(f):
             return jsonify({"error": "unauthorized"}), 401
         return f(*args, **kwargs)
     return wrapped
-
 
 
 # Configuración de la base de datos PostgreSQL-
@@ -215,6 +214,9 @@ def subir_imagen():
 
 
 # ===================== AUTH API (JSON para el frontend) =====================
+import psycopg2  # para capturar UndefinedColumn
+from werkzeug.security import check_password_hash, generate_password_hash
+
 @app.post("/api/login")
 def api_login():
     data = request.get_json() or {}
@@ -222,28 +224,75 @@ def api_login():
     password = data.get("password") or ""
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
+
     try:
         conn, cur = get_conn_dict()
-        cur.execute("""
-            SELECT id, username, password, role, COALESCE(activo, TRUE) AS activo
-            FROM usuarios
-            WHERE username = %s
-            LIMIT 1
-        """, (username,))
-        user = cur.fetchone()
-        cur.close(); conn.close()
+        try:
+            # Intento completo (si faltan columnas role/activo, hacemos fallback)
+            cur.execute("""
+                SELECT id, username, password,
+                       COALESCE(role, 'usuario')  AS role,
+                       COALESCE(activo, TRUE)     AS activo
+                FROM usuarios
+                WHERE username = %s
+                LIMIT 1
+            """, (username,))
+            row = cur.fetchone()
+            user = dict(row) if row else None
+        except psycopg2.errors.UndefinedColumn:
+            conn.rollback()
+            cur.execute("""
+                SELECT id, username, password
+                FROM usuarios
+                WHERE username = %s
+                LIMIT 1
+            """, (username,))
+            row = cur.fetchone()
+            user = dict(row) if row else None
+            if user:
+                user["role"] = "usuario"
+                user["activo"] = True
+        finally:
+            cur.close(); conn.close()
     except Exception as e:
+        print("🔴 DB ERROR /api/login:", e)
         return jsonify({"error": f"db_error: {str(e)}"}), 500
 
-    if not user or not user["activo"]:
+    if not user:
         return jsonify({"error": "invalid_credentials"}), 401
-    if not check_password_hash(user["password"], password):
-        return jsonify({"error": "invalid_credentials"}), 401
+    if not user.get("activo", True):
+        return jsonify({"error": "user_inactive"}), 403
+
+    stored = user.get("password") or ""
+
+    def is_hashed(p: str) -> bool:
+        # Heurística para hashes de werkzeug (pbkdf2:sha256:...)
+        return p.startswith("pbkdf2:")
+
+    # Caso 1: ya está hasheada → validar normal
+    if is_hashed(stored):
+        if not check_password_hash(stored, password):
+            return jsonify({"error": "invalid_credentials"}), 401
+    else:
+        # Caso 2: estaba en texto plano → migrar si coincide
+        if stored != password:
+            return jsonify({"error": "invalid_credentials"}), 401
+        try:
+            new_hash = generate_password_hash(password)
+            conn, cur = get_conn_dict()
+            cur.execute("UPDATE usuarios SET password = %s WHERE id = %s", (new_hash, user["id"]))
+            conn.commit()
+            cur.close(); conn.close()
+            user["password"] = new_hash
+            print(f"✅ Password migrada a hash para usuario {user['username']}")
+        except Exception as e:
+            print("🔴 Error migrando password:", e)
+            # No bloqueamos el login aunque falle el update
 
     session.permanent = True
     session["username"] = user["username"]
-    session["role"] = user["role"]
-    return jsonify({"username": user["username"], "role": user["role"]}), 200
+    session["role"] = user.get("role", "usuario")
+    return jsonify({"username": session["username"], "role": session["role"]}), 200
 
 @app.get("/api/me")
 @login_required_api
