@@ -1296,76 +1296,7 @@ def exportar_pdf_altas():
 
 
 
-from functools import wraps
-from flask import redirect, url_for
 
-def login_required(f):
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        if 'username' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return wrapped
-
-
-# --------- AUTH -------------------------------------------------------------------------------------
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    # si ya está logueado
-    if session.get('username'):
-        return redirect(url_for('inicio'))
-
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-
-        try:
-            conn, cur = get_conn_dict()
-            cur.execute("""
-                SELECT id, username, password, role, COALESCE(activo, TRUE) AS activo
-                FROM usuarios
-                WHERE username = %s
-                LIMIT 1
-            """, (username,))
-            user = cur.fetchone()
-            cur.close(); conn.close()
-        except Exception as e:
-            flash(f'Error de conexión: {e}', 'error')
-            return render_template('login.html')
-
-        if not user:
-            flash('Usuario o contraseña incorrectos', 'error')
-            return render_template('login.html')
-
-        if not user['activo']:
-            flash('Usuario inactivo. Contacte al administrador.', 'error')
-            return render_template('login.html')
-
-        # password hasheada
-        if check_password_hash(user['password'], password):
-            session.permanent = True
-            session['username'] = user['username']
-            session['role'] = user['role']
-            return redirect(url_for('inicio'))
-
-        flash('Usuario o contraseña incorrectos', 'error')
-
-    return render_template('login.html')
-
-
-@app.route('/inicio')
-@login_required
-def inicio():
-    return render_template('inicio.html')  # o tu dashboard principal
-
-
-@app.route('/logout')
-def logout():
-    session.pop('username', None)
-    session.pop('role', None)
-    flash('Has cerrado sesión correctamente.', 'success')
-    return redirect(url_for('login'))
-# --------- /AUTH ---------------------------------------------------------------------------
 
 #DASHBOARD-----------------------------------------------------------------------------------------------------------------
 # ---------- DASHBOARD -------------------------------------------------------------------------------------------------------------
