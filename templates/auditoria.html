@@ -1,254 +1,67 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full">
+<html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Auditoría del Sistema</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auditoría</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="min-h-full bg-slate-50 text-slate-800">
-  <!-- Header -->
-  <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-slate-200">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-xl bg-slate-900 text-white grid place-content-center text-lg font-bold">AU</div>
-        <div>
-          <h1 class="text-xl font-semibold">Auditoría del Sistema</h1>
-          <p class="text-sm text-slate-500">Cambios en tiempo histórico: crear, editar y eliminar.</p>
-        </div>
-      </div>
-      <a href="/" class="text-sm text-slate-500 hover:text-slate-700">Volver</a>
+<body class="bg-gray-100 text-gray-800">
+
+  <div class="max-w-7xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-6">Registros de Auditoría</h1>
+
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-2 text-left">Fecha</th>
+            <th class="px-4 py-2 text-left">Acción</th>
+            <th class="px-4 py-2 text-left">Tabla</th>
+            <th class="px-4 py-2 text-left">ID Registro</th>
+            <th class="px-4 py-2 text-left">Descripción</th>
+            <th class="px-4 py-2 text-center">Detalle</th>
+          </tr>
+        </thead>
+        <tbody id="tbody" class="divide-y divide-gray-200">
+        </tbody>
+      </table>
     </div>
-  </header>
+  </div>
 
-  <!-- Filtros -->
-  <section class="max-w-7xl mx-auto px-4 mt-6">
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6">
-      <form id="filters" class="grid grid-cols-1 md:grid-cols-6 gap-3">
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium mb-1">Tabla</label>
-          <input id="f-table" type="text" placeholder="mobiliario, clientes, etc."
-                 class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-slate-900/20" />
-        </div>
-        <div class="md:col-span-1">
-          <label class="block text-sm font-medium mb-1">Acción</label>
-          <select id="f-action" class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-slate-900/20">
-            <option value="">Todas</option>
-            <option value="CREATE">CREATE</option>
-            <option value="UPDATE">UPDATE</option>
-            <option value="DELETE">DELETE</option>
-          </select>
-        </div>
-        <div class="md:col-span-1">
-          <label class="block text-sm font-medium mb-1">ID registro</label>
-          <input id="f-record" type="text" placeholder="ej: 123"
-                 class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-slate-900/20" />
-        </div>
-        <div class="md:col-span-1">
-          <label class="block text-sm font-medium mb-1">Desde</label>
-          <input id="f-desde" type="datetime-local"
-                 class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-slate-900/20" />
-        </div>
-        <div class="md:col-span-1">
-          <label class="block text-sm font-medium mb-1">Hasta</label>
-          <input id="f-hasta" type="datetime-local"
-                 class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-slate-900/20" />
-        </div>
-
-        <div class="md:col-span-6 flex flex-wrap items-center gap-3 mt-1">
-          <button id="btn-buscar" type="submit"
-                  class="rounded-xl bg-slate-900 text-white px-4 py-2 hover:bg-slate-800">
-            Buscar
-          </button>
-          <button id="btn-limpiar" type="button"
-                  class="rounded-xl border border-slate-300 px-4 py-2 hover:bg-slate-100">
-            Limpiar
-          </button>
-          <div class="ml-auto flex items-center gap-2 text-sm text-slate-500">
-            <label for="f-per-page">Por página</label>
-            <select id="f-per-page" class="rounded-lg border-slate-300">
-              <option>25</option>
-              <option selected>50</option>
-              <option>100</option>
-            </select>
-          </div>
-        </div>
-      </form>
-    </div>
-  </section>
-
-  <!-- Tabla -->
-  <main class="max-w-7xl mx-auto px-4 mt-6 mb-24">
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide border-b">
-            <tr>
-              <th class="px-4 py-3 text-left">Fecha</th>
-              <th class="px-4 py-3 text-left">Acción</th>
-              <th class="px-4 py-3 text-left">Tabla</th>
-              <th class="px-4 py-3 text-left">ID</th>
-              <th class="px-4 py-3 text-left">Endpoint</th>
-              <th class="px-4 py-3 text-left">IP</th>
-              <th class="px-4 py-3 text-left">Cambios</th>
-              <th class="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody id="tbody" class="divide-y divide-slate-100"></tbody>
-        </table>
-      </div>
-
-      <!-- Paginación -->
-      <div class="flex items-center justify-between p-4 border-t">
-        <div class="text-sm text-slate-500">
-          <span id="total">0</span> resultados • Página <span id="page">1</span>/<span id="pages">1</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="prev" class="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50">Anterior</button>
-          <button id="next" class="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50">Siguiente</button>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <!-- Modal Detalle -->
+  <!-- Modal -->
   <div id="modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4">
-    <div class="bg-white w-full max-w-4xl rounded-2xl shadow-xl">
-      <div class="flex items-center justify-between px-5 py-4 border-b">
-        <h3 class="text-lg font-semibold">Detalle de cambio</h3>
-        <button id="close" class="text-slate-500 hover:text-slate-700 text-xl">&times;</button>
+    <div class="bg-white w-full max-w-4xl rounded-lg shadow-lg">
+      <div class="flex justify-between items-center p-4 border-b">
+        <h2 class="text-lg font-semibold">Detalle de Auditoría</h2>
+        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700 text-xl">&times;</button>
       </div>
-
-      <div class="px-5 pt-4">
-        <!-- Tabs -->
-        <div class="flex gap-2 mb-4">
-          <button data-tab="tab-diff" class="tab-btn rounded-lg px-3 py-1.5 bg-slate-900 text-white text-sm">Diff</button>
-          <button data-tab="tab-before" class="tab-btn rounded-lg px-3 py-1.5 border border-slate-300 text-sm">Antes</button>
-          <button data-tab="tab-after" class="tab-btn rounded-lg px-3 py-1.5 border border-slate-300 text-sm">Después</button>
+      <div class="p-4 space-y-4">
+        <div>
+          <h3 class="font-semibold">Datos Anteriores:</h3>
+          <pre id="datos_anteriores" class="bg-gray-50 p-3 rounded overflow-auto max-h-60"></pre>
         </div>
-
-        <div id="tab-diff" class="tab-panel">
-          <div id="diff-content" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm overflow-auto max-h-[60vh] whitespace-pre-wrap"></div>
-        </div>
-        <div id="tab-before" class="tab-panel hidden">
-          <pre id="before-content" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm overflow-auto max-h-[60vh]"></pre>
-        </div>
-        <div id="tab-after" class="tab-panel hidden">
-          <pre id="after-content" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm overflow-auto max-h-[60vh]"></pre>
+        <div>
+          <h3 class="font-semibold">Datos Nuevos:</h3>
+          <pre id="datos_nuevos" class="bg-gray-50 p-3 rounded overflow-auto max-h-60"></pre>
         </div>
       </div>
-
-      <div class="px-5 py-4 border-t flex items-center justify-end">
-        <button id="close2" class="rounded-xl bg-slate-900 text-white px-4 py-2 hover:bg-slate-800">Cerrar</button>
+      <div class="p-4 border-t flex justify-end">
+        <button onclick="closeModal()" class="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700">Cerrar</button>
       </div>
     </div>
   </div>
 
   <script>
-    // ==== CONFIGURACIÓN ====
-    const API = "/api/auditoria"; // Cambiá si tu backend está en otro dominio
-
-    // ==== ESTADO ====
-    let state = {
-      page: 1,
-      pages: 1,
-      total: 0,
-      perPage: 50,
-      filters: { table: "", action: "", record: "", desde: "", hasta: "" },
-      data: []
-    };
-
-    // ==== ELEMENTOS ====
+    const API = "/api/auditoria";
     const tbody = document.getElementById("tbody");
-    const totalEl = document.getElementById("total");
-    const pageEl = document.getElementById("page");
-    const pagesEl = document.getElementById("pages");
-    const prevBtn = document.getElementById("prev");
-    const nextBtn = document.getElementById("next");
-
-    // filtros
-    const fTable = document.getElementById("f-table");
-    const fAction = document.getElementById("f-action");
-    const fRecord = document.getElementById("f-record");
-    const fDesde = document.getElementById("f-desde");
-    const fHasta = document.getElementById("f-hasta");
-    const fPerPage = document.getElementById("f-per-page");
-    const form = document.getElementById("filters");
-    const btnLimpiar = document.getElementById("btn-limpiar");
-
-    // modal
     const modal = document.getElementById("modal");
-    const close = document.getElementById("close");
-    const close2 = document.getElementById("close2");
-    const diffContent = document.getElementById("diff-content");
-    const beforeContent = document.getElementById("before-content");
-    const afterContent = document.getElementById("after-content");
-    const tabBtns = document.querySelectorAll(".tab-btn");
-    const tabPanels = document.querySelectorAll(".tab-panel");
+    const datosAnteriores = document.getElementById("datos_anteriores");
+    const datosNuevos = document.getElementById("datos_nuevos");
 
-    // ==== LÓGICA ====
-    function fmtDate(iso) {
-      if (!iso) return "-";
-      const d = new Date(iso);
-      const pad = (n) => String(n).padStart(2,"0");
-      return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
-    function renderRows(items) {
-      tbody.innerHTML = "";
-      if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">Sin resultados</td></tr>`;
-        return;
-      }
-
-      items.forEach((it) => {
-        const cambios = it.diff ? Object.keys(it.diff).length : 0;
-        const badgeColor = it.action === "DELETE" ? "bg-rose-100 text-rose-700"
-                        : it.action === "CREATE" ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-700";
-
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td class="px-4 py-3">${fmtDate(it.created_at)}</td>
-          <td class="px-4 py-3"><span class="px-2 py-1 rounded-lg text-xs font-semibold ${badgeColor}">${it.action}</span></td>
-          <td class="px-4 py-3">${it.table}</td>
-          <td class="px-4 py-3">${it.record_id}</td>
-          <td class="px-4 py-3 text-slate-500">${it.endpoint ?? "-"}</td>
-          <td class="px-4 py-3 text-slate-500">${it.ip ?? "-"}</td>
-          <td class="px-4 py-3"><span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs">${cambios} campo(s)</span></td>
-          <td class="px-4 py-3 text-right">
-            <button class="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50 text-sm">Ver</button>
-          </td>
-        `;
-        tr.querySelector("button").addEventListener("click", () => openModal(it));
-        tbody.appendChild(tr);
-      });
-    }
-
-    function openModal(item) {
-      // Diff — pinta "antes → después" línea por línea
-      let diffLines = [];
-      if (item.diff && Object.keys(item.diff).length) {
-        for (const k of Object.keys(item.diff)) {
-          const [a, b] = item.diff[k];
-          diffLines.push(`• ${k}\n   - ${JSON.stringify(a)}\n   + ${JSON.stringify(b)}\n`);
-        }
-      } else {
-        diffLines.push("No hay diferencias registradas.");
-      }
-      diffContent.textContent = diffLines.join("\n");
-
-      beforeContent.textContent = JSON.stringify(item.before ?? {}, null, 2);
-      afterContent.textContent  = JSON.stringify(item.after ?? {},  null, 2);
-
-      // activar tab Diff
-      tabBtns.forEach(btn => btn.classList.remove("bg-slate-900","text-white"));
-      tabBtns.forEach(btn => btn.classList.add("border","border-slate-300","text-slate-800","bg-white"));
-      tabBtns[0].classList.remove("border","border-slate-300","bg-white","text-slate-800");
-      tabBtns[0].classList.add("bg-slate-900","text-white");
-      tabPanels.forEach(p => p.classList.add("hidden"));
-      document.getElementById("tab-diff").classList.remove("hidden");
-
+    function openModal(anteriores, nuevos) {
+      datosAnteriores.textContent = anteriores ? JSON.stringify(JSON.parse(anteriores), null, 2) : "Sin datos";
+      datosNuevos.textContent = nuevos ? JSON.stringify(JSON.parse(nuevos), null, 2) : "Sin datos";
       modal.classList.remove("hidden");
       modal.classList.add("flex");
     }
@@ -258,86 +71,36 @@
       modal.classList.remove("flex");
     }
 
-    tabBtns.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const target = btn.dataset.tab;
-        tabBtns.forEach(b => b.classList.remove("bg-slate-900","text-white"));
-        tabBtns.forEach(b => b.classList.add("border","border-slate-300","text-slate-800","bg-white"));
-        btn.classList.add("bg-slate-900","text-white");
-        btn.classList.remove("border","border-slate-300","bg-white","text-slate-800");
-        tabPanels.forEach(p => p.classList.add("hidden"));
-        document.getElementById(target).classList.remove("hidden");
-      });
-    });
-
-    close.addEventListener("click", closeModal);
-    close2.addEventListener("click", closeModal);
-    modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
-
-    async function fetchData() {
-      const params = new URLSearchParams();
-      params.set("page", state.page);
-      params.set("per_page", state.perPage);
-
-      if (state.filters.table)  params.set("table", state.filters.table.trim());
-      if (state.filters.action) params.set("action", state.filters.action);
-      if (state.filters.record) params.set("record_id", state.filters.record.trim());
-      if (state.filters.desde)  params.set("desde", new Date(state.filters.desde).toISOString());
-      if (state.filters.hasta)  params.set("hasta", new Date(state.filters.hasta).toISOString());
-
-      const url = `${API}?${params.toString()}`;
-      const res = await fetch(url);
+    async function loadAuditoria() {
+      const res = await fetch(API);
       const data = await res.json();
+      tbody.innerHTML = "";
 
-      state.data  = data.items || [];
-      state.page  = data.page || 1;
-      state.pages = data.pages || 1;
-      state.total = data.total || 0;
+      if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Sin registros</td></tr>`;
+        return;
+      }
 
-      renderRows(state.data);
-      totalEl.textContent = state.total;
-      pageEl.textContent = state.page;
-      pagesEl.textContent = state.pages;
-
-      prevBtn.disabled = state.page <= 1;
-      nextBtn.disabled = state.page >= state.pages;
-      prevBtn.classList.toggle("opacity-50", prevBtn.disabled);
-      nextBtn.classList.toggle("opacity-50", nextBtn.disabled);
+      data.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="px-4 py-2">${row.fecha}</td>
+          <td class="px-4 py-2 font-semibold">${row.accion}</td>
+          <td class="px-4 py-2">${row.tabla_afectada}</td>
+          <td class="px-4 py-2">${row.id_registro}</td>
+          <td class="px-4 py-2">${row.descripcion || "-"}</td>
+          <td class="px-4 py-2 text-center">
+            <button class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500">
+              Ver
+            </button>
+          </td>
+        `;
+        tr.querySelector("button").addEventListener("click", () => openModal(row.datos_anteriores, row.datos_nuevos));
+        tbody.appendChild(tr);
+      });
     }
 
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      state.page = 1;
-      state.filters.table  = fTable.value;
-      state.filters.action = fAction.value;
-      state.filters.record = fRecord.value;
-      state.filters.desde  = fDesde.value;
-      state.filters.hasta  = fHasta.value;
-      state.perPage = parseInt(fPerPage.value, 10) || 50;
-      fetchData();
-    });
-
-    btnLimpiar.addEventListener("click", () => {
-      fTable.value = "";
-      fAction.value = "";
-      fRecord.value = "";
-      fDesde.value = "";
-      fHasta.value = "";
-      state.filters = { table:"", action:"", record:"", desde:"", hasta:"" };
-      state.page = 1;
-      fetchData();
-    });
-
-    prevBtn.addEventListener("click", () => { if (state.page > 1) { state.page--; fetchData(); }});
-    nextBtn.addEventListener("click", () => { if (state.page < state.pages) { state.page++; fetchData(); }});
-    fPerPage.addEventListener("change", () => {
-      state.perPage = parseInt(fPerPage.value, 10) || 50;
-      state.page = 1;
-      fetchData();
-    });
-
-    // Primera carga
-    fetchData();
+    loadAuditoria();
   </script>
 </body>
 </html>
