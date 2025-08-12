@@ -367,7 +367,7 @@ def editar_mobiliario(id):
                 return jsonify({"error": f"Falta el campo obligatorio: {campo}"}), 400
 
         # 🕒 Hora de Argentina (UTC-3)
-        ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+        ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%d-%m-%Y %H:%M")
         historial = mobiliario.historial_movimientos or ""
 
         # Detectar cambio de ubicación
