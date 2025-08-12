@@ -1,33 +1,101 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify,session, flash
+from flask import (
+    Flask, render_template, request, redirect, url_for, send_file,
+    jsonify, session, flash, Blueprint, render_template_string
+)
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
-import cloudinary
-import cloudinary.uploader
-import os
-import tempfile
-from datetime import timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
-import psycopg2.extras
 
+import os, tempfile, io
+import cloudinary, cloudinary.uploader
+import psycopg2, psycopg2.extras
+import qrcode
+import pandas as pd
+
+from functools import wraps
+from PIL import Image, ImageDraw, ImageFont
+from openpyxl import Workbook
+
+# ===================== APP & CONFIG =====================
 app = Flask(__name__)
 CORS(app)
 
+# 🔐 SECRET KEY (mover a env en prod)
+app.secret_key = os.getenv("SECRET_KEY", "clave-secreta-segura-123")
 
-# Configuración de la base de datos PostgreSQL-
-app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
+# 🌐 CORS (Vercel + local)
+CORS(app, supports_credentials=True, origins=[
+    "https://heritage-management.vercel.app",
+    "http://localhost:3000"
+])
+
+# 🍪 Cookies de sesión para cross-site (Vercel ↔ Render)
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True      # Render usa HTTPS
+app.permanent_session_lifetime = timedelta(days=7)
+
+# 🗄️ Base de datos (mover a env en prod)
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2"
+    "@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limite de 16MB para archivos
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# Configuración Cloudinary
+db = SQLAlchemy(app)
+
+# ☁️ Cloudinary (mover a env)
 cloudinary.config(
     cloud_name="deokbrzem",
     api_key="628521442744972",
     api_secret="UI7D6jgGKoAzjB_NLAgTi1XAwXQ"
 )
 
-db = SQLAlchemy(app)
+# ===================== HELPERS =====================
+def get_conn_dict():
+    conn = psycopg2.connect(
+        host="dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com",
+        database="patrimonio_ppfk",
+        user="patrimonio_ppfk_user",
+        password="SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2",
+        cursor_factory=psycopg2.extras.DictCursor
+    )
+    cur = conn.cursor()
+    return conn, cur
+
+def login_required(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return wrapped
+
+def login_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if 'username' not in session:
+            return jsonify({"error": "unauthorized"}), 401
+        return f(*args, **kwargs)
+    return wrapped
+
+
+
+# Configuración de la base de datos PostgreSQL-
+# app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
+# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limite de 16MB para archivos
+
+# Configuración Cloudinary
+#cloudinary.config(
+    #cloud_name="deokbrzem",
+    #api_key="628521442744972",
+    #api_secret="UI7D6jgGKoAzjB_NLAgTi1XAwXQ"
+#)
+
+#db = SQLAlchemy(app)
 
 # MODELOS
 # Modelos
@@ -114,7 +182,94 @@ def subir_imagen():
     return jsonify({"error": "Formato de archivo no permitido"}), 400
 
 
+# ===================== AUTH API (JSON para el frontend) =====================
+@app.post("/api/login")
+def api_login():
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "missing_credentials"}), 400
+    try:
+        conn, cur = get_conn_dict()
+        cur.execute("""
+            SELECT id, username, password, role, COALESCE(activo, TRUE) AS activo
+            FROM usuarios
+            WHERE username = %s
+            LIMIT 1
+        """, (username,))
+        user = cur.fetchone()
+        cur.close(); conn.close()
+    except Exception as e:
+        return jsonify({"error": f"db_error: {str(e)}"}), 500
 
+    if not user or not user["activo"]:
+        return jsonify({"error": "invalid_credentials"}), 401
+    if not check_password_hash(user["password"], password):
+        return jsonify({"error": "invalid_credentials"}), 401
+
+    session.permanent = True
+    session["username"] = user["username"]
+    session["role"] = user["role"]
+    return jsonify({"username": user["username"], "role": user["role"]}), 200
+
+@app.get("/api/me")
+@login_required_api
+def api_me():
+    return jsonify({"username": session.get("username"), "role": session.get("role")}), 200
+
+@app.post("/api/logout")
+def api_logout():
+    session.pop("username", None)
+    session.pop("role", None)
+    return jsonify({"ok": True}), 200
+
+# ===================== VISTAS HTML (ya las tenías) =====================
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('username'):
+        return redirect(url_for('inicio'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        try:
+            conn, cur = get_conn_dict()
+            cur.execute("""
+                SELECT id, username, password, role, COALESCE(activo, TRUE) AS activo
+                FROM usuarios
+                WHERE username = %s
+                LIMIT 1
+            """, (username,))
+            user = cur.fetchone()
+            cur.close(); conn.close()
+        except Exception as e:
+            flash(f'Error de conexión: {e}', 'error')
+            return render_template('login.html')
+        if not user:
+            flash('Usuario o contraseña incorrectos', 'error')
+            return render_template('login.html')
+        if not user['activo']:
+            flash('Usuario inactivo. Contacte al administrador.', 'error')
+            return render_template('login.html')
+        if check_password_hash(user['password'], password):
+            session.permanent = True
+            session['username'] = user['username']
+            session['role'] = user['role']
+            return redirect(url_for('inicio'))
+        flash('Usuario o contraseña incorrectos', 'error')
+    return render_template('login.html')
+
+@app.route('/inicio')
+@login_required
+def inicio():
+    return render_template('inicio.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    session.pop('role', None)
+    flash('Has cerrado sesión correctamente.', 'success')
+    return redirect(url_for('login'))
 
 
 # API para obtener todos los rubros ordenados por ID
