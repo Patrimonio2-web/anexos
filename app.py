@@ -1212,6 +1212,113 @@ def logout():
     return redirect(url_for('login'))
 # --------- /AUTH ---------------------------------------------------------------------------
 
+#DASHBOARD-----------------------------------------------------------------------------------------------------------------
+# ---------- DASHBOARD -------------------------------------------------------------------------------------------------------------
+from sqlalchemy import text
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/api/dashboard', methods=['GET'])
+def dashboard_data():
+    try:
+        with db.engine.connect() as conn:
+            # KPIs
+            total_mobiliario = conn.execute(text("""
+                SELECT COUNT(*) FROM mobiliario
+            """)).scalar() or 0
+
+            total_anexos = conn.execute(text("""
+                SELECT COUNT(*) FROM anexos
+            """)).scalar() or 0
+
+            total_subdeps = conn.execute(text("""
+                SELECT COUNT(*) FROM subdependencias
+            """)).scalar() or 0
+
+            total_altas = conn.execute(text("""
+                SELECT COUNT(*) FROM movimientos_altas
+            """)).scalar() or 0
+
+            # Distribución por estado de conservación
+            por_estado = conn.execute(text("""
+                SELECT COALESCE(NULLIF(TRIM(LOWER(estado_conservacion)), ''), 'sin dato') AS estado,
+                       COUNT(*) AS cantidad
+                FROM mobiliario
+                GROUP BY 1
+                ORDER BY 2 DESC
+            """)).mappings().all()
+
+            # Conteo por rubro
+            por_rubro = conn.execute(text("""
+                SELECT COALESCE(r.nombre, 'Sin rubro') AS rubro, COUNT(*) AS cantidad
+                FROM mobiliario m
+                LEFT JOIN rubros r ON r.id_rubro = m.rubro_id
+                GROUP BY 1
+                ORDER BY 2 DESC
+                LIMIT 12
+            """)).mappings().all()
+
+            # Conteo por anexo (top 12)
+            por_anexo = conn.execute(text("""
+                SELECT COALESCE(a.nombre, 'Sin anexo') AS anexo, COUNT(*) AS cantidad
+                FROM mobiliario m
+                LEFT JOIN subdependencias sd ON sd.id = m.ubicacion_id
+                LEFT JOIN anexos a ON a.id = sd.id_anexo
+                GROUP BY 1
+                ORDER BY 2 DESC
+                LIMIT 12
+            """)).mappings().all()
+
+            # Serie mensual: cantidad de mobiliario creado (últimos 12 meses)
+            serie_mob = conn.execute(text("""
+                SELECT to_char(date_trunc('month',
+                           (m.fecha_creacion AT TIME ZONE 'UTC') - interval '3 hour'),
+                           'YYYY-MM') AS mes,
+                       COUNT(*) AS cantidad
+                FROM mobiliario m
+                WHERE m.fecha_creacion IS NOT NULL
+                GROUP BY 1
+                ORDER BY 1
+                LIMIT 36
+            """)).mappings().all()
+
+            # Serie mensual: total de ALTAS en ARS (últimos 24 meses)
+            # Ajuste robusto por si valor_total es texto: quita $ y comas antes de castear
+            serie_altas = conn.execute(text("""
+                SELECT to_char(make_date(anio_planilla::int, mes_planilla::int, 1), 'YYYY-MM') AS mes,
+                       SUM(
+                           NULLIF(
+                               REPLACE(REPLACE(COALESCE(valor_total::text, '0'),'$',''),',','')
+                           ,'')::numeric
+                       ) AS total
+                FROM movimientos_altas
+                WHERE anio_planilla ~ '^[0-9]{4}$' AND mes_planilla ~ '^[0-9]{1,2}$'
+                GROUP BY 1
+                ORDER BY 1
+                LIMIT 36
+            """)).mappings().all()
+
+        data = {
+            "kpis": {
+                "mobiliario": int(total_mobiliario),
+                "anexos": int(total_anexos),
+                "subdependencias": int(total_subdeps),
+                "altas": int(total_altas),
+            },
+            "por_estado": [{"label": r["estado"], "value": int(r["cantidad"])} for r in por_estado],
+            "por_rubro":  [{"label": r["rubro"], "value": int(r["cantidad"])} for r in por_rubro],
+            "por_anexo":  [{"label": r["anexo"], "value": int(r["cantidad"])} for r in por_anexo],
+            "serie_mobiliario": [{"mes": r["mes"], "value": int(r["cantidad"])} for r in serie_mob],
+            "serie_altas": [{"mes": r["mes"], "value": float(r["total"] or 0)} for r in serie_altas],
+        }
+        return jsonify(data)
+
+    except Exception as e:
+        print("🔴 Error /api/dashboard:", e)
+        return jsonify({"error": str(e)}), 500
+# ---------- /DASHBOARD ----------
 
 
 
