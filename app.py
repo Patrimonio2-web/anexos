@@ -14,7 +14,6 @@ import psycopg2, psycopg2.extras
 import qrcode
 import pandas as pd
 from copy import deepcopy
-from models import db, AuditLog  # además de tus otros modelos
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
 from openpyxl import Workbook
