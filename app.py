@@ -447,6 +447,11 @@ def get_auditoria():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# --- vista para ver la auditoría ---
+@app.route("/auditoria")
+def vista_auditoria():
+    return render_template("auditoria.html")
+
 
 
 #---------busca por impresora
