@@ -118,7 +118,14 @@ class Anexo(db.Model):
     nombre = db.Column(db.String(255), nullable=False)
     direccion = db.Column(db.Text)
 
-
+class Usuario(db.Model):
+    __tablename__ = 'usuarios'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)  # hash
+    role = db.Column(db.String(20), nullable=False, default='usuario')
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    fecha_creacion = db.Column(db.DateTime, server_default=db.func.now())
 
 class Subdependencia(db.Model):
     __tablename__ = 'subdependencias'
