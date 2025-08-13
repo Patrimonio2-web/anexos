@@ -355,33 +355,56 @@ import json
 
 from flask import session, request
 
-def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos_nuevos=None, descripcion=""):
+def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
+    """
+    Inserta una fila en auditoria.
+    - Toma usuario de sesión o header X-User.
+    - Guarda IP y User-Agent.
+    - Hora de Argentina.
+    - before/after como JSONB.
+    """
     try:
+        # Usuario con fallbacks
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
         ip = request.remote_addr
         ua = request.headers.get("User-Agent")
 
+        # Hora AR
         tz = pytz.timezone("America/Argentina/Buenos_Aires")
         fecha_arg = datetime.now(tz)
 
-        sql = """
-            INSERT INTO auditoria (
-                fecha, accion, tabla_afectada, id_registro,
-                datos_anteriores, datos_nuevos, descripcion,
-                usuario, ip_origen, user_agent
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """
-        conn = db.engine.raw_connection()
-        cur = conn.cursor()
-        cur.execute(sql, (
-            fecha_arg, accion, tabla, str(id_registro),
-            json.dumps(datos_anteriores) if datos_anteriores else None,
-            json.dumps(datos_nuevos) if datos_nuevos else None,
-            descripcion, usuario, ip, ua
-        ))
-        conn.commit()
-        cur.close(); conn.close()
+        # Normalizar JSON
+        before_json = json.dumps(before) if before else None
+        after_json  = json.dumps(after) if after else None
+
+        # Inserción (usa SQLAlchemy para compartir transacción si corresponde)
+        db.session.execute(
+            text("""
+                INSERT INTO auditoria (
+                    fecha, accion, tabla_afectada, id_registro,
+                    datos_anteriores, datos_nuevos, descripcion,
+                    usuario, ip_origen, user_agent
+                )
+                VALUES (
+                    :fecha, :accion, :tabla, :id_registro,
+                    CAST(:before AS JSONB), CAST(:after AS JSONB), :descripcion,
+                    :usuario, :ip, :ua
+                )
+            """),
+            {
+                "fecha": fecha_arg,
+                "accion": accion,
+                "tabla": tabla,
+                "id_registro": str(id_registro),
+                "before": before_json,
+                "after": after_json,
+                "descripcion": descripcion,
+                "usuario": usuario,
+                "ip": ip,
+                "ua": ua
+            }
+        )
+        # No hagas commit acá: viaja con la operación principal
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
