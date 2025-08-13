@@ -7,7 +7,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
-
+import pytz 
 import os, tempfile, io
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
@@ -144,6 +144,7 @@ class Auditoria(db.Model):
     cambios = db.Column(db.Text)
     ip_origen = db.Column(db.String(50))
     user_agent = db.Column(db.Text)
+    usuario = db.Column(db.String(100))  # 👈 nuevo campo
 
     def to_dict(self):
         return {
@@ -154,8 +155,10 @@ class Auditoria(db.Model):
             "accion": self.accion,
             "cambios": self.cambios,
             "ip_origen": self.ip_origen,
-            "user_agent": self.user_agent
+            "user_agent": self.user_agent,
+            "usuario": self.usuario
         }
+
 
 
 
@@ -388,28 +391,49 @@ def clases_por_rubro():
 from datetime import datetime
 import json
 
+from flask import session, request
+
+from flask import session, request
+
 def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos_nuevos=None, descripcion=""):
     try:
+        usuario = session.get("username", "desconocido")  # usuario logueado o 'desconocido'
+        ip = request.remote_addr
+        ua = request.headers.get("User-Agent")
+
+        # Hora de Argentina
+        tz = pytz.timezone("America/Argentina/Buenos_Aires")
+        fecha_arg = datetime.now(tz)
+
         sql = """
-            INSERT INTO auditoria (fecha, accion, tabla_afectada, id_registro, datos_anteriores, datos_nuevos, descripcion)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO auditoria (
+                fecha, accion, tabla_afectada, id_registro, 
+                datos_anteriores, datos_nuevos, descripcion, 
+                usuario, ip_origen, user_agent
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         conn = db.engine.raw_connection()
         cur = conn.cursor()
         cur.execute(sql, (
-            datetime.utcnow(),
+            fecha_arg,
             accion,
             tabla,
             str(id_registro),
             json.dumps(datos_anteriores) if datos_anteriores else None,
             json.dumps(datos_nuevos) if datos_nuevos else None,
-            descripcion
+            descripcion,
+            usuario,
+            ip,
+            ua
         ))
         conn.commit()
         cur.close()
         conn.close()
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
+
+
 
 from sqlalchemy import text
 
