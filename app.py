@@ -308,45 +308,7 @@ def api_logout():
     session.pop("role", None)
     return jsonify({"ok": True}), 200
 
-# ===================== VISTAS HTML (ya las tenías) =====================
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if session.get('username'):
-        return redirect(url_for('inicio'))
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-        try:
-            conn, cur = get_conn_dict()
-            cur.execute("""
-                SELECT id, username, password, role, COALESCE(activo, TRUE) AS activo
-                FROM usuarios
-                WHERE username = %s
-                LIMIT 1
-            """, (username,))
-            user = cur.fetchone()
-            cur.close(); conn.close()
-        except Exception as e:
-            flash(f'Error de conexión: {e}', 'error')
-            return render_template('login.html')
-        if not user:
-            flash('Usuario o contraseña incorrectos', 'error')
-            return render_template('login.html')
-        if not user['activo']:
-            flash('Usuario inactivo. Contacte al administrador.', 'error')
-            return render_template('login.html')
-        if check_password_hash(user['password'], password):
-            session.permanent = True
-            session['username'] = user['username']
-            session['role'] = user['role']
-            return redirect(url_for('inicio'))
-        flash('Usuario o contraseña incorrectos', 'error')
-    return render_template('login.html')
 
-@app.route('/inicio')
-@login_required
-def inicio():
-    return render_template('inicio.html')
 
 @app.route('/logout')
 def logout():
@@ -393,25 +355,9 @@ import json
 
 from flask import session, request
 
-from flask import session, request
-
 def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos_nuevos=None, descripcion=""):
     try:
-        # 1) sesión (ideal)
-        usuario = session.get("username")
-        # 2) header opcional - útil si hay un servicio intermedio
-        if not usuario:
-            usuario = request.headers.get("X-User")
-        # 3) body opcional - si llamás a un endpoint interno y le pasás usuario
-        if not usuario:
-            try:
-                body = request.get_json(silent=True) or {}
-                usuario = body.get("usuario")
-            except:
-                pass
-        if not usuario:
-            usuario = "desconocido"
-
+        usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
         ip = request.remote_addr
         ua = request.headers.get("User-Agent")
 
@@ -427,7 +373,7 @@ def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
         conn = db.engine.raw_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute(sql, (
             fecha_arg, accion, tabla, str(id_registro),
             json.dumps(datos_anteriores) if datos_anteriores else None,
@@ -691,33 +637,6 @@ def _compute_diff(before: dict, after: dict):
             diff[k] = [before.get(k), after.get(k)]
     return diff
 
-def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
-    """Inserta una fila en la tabla auditoria (misma transacción del request)."""
-    try:
-        diff = _compute_diff(before or {}, after or {})
-        # Si no mandaron descripción, guardo el diff como texto para referencia rápida
-        desc_final = descripcion if descripcion else (json.dumps({"diff": diff}) if diff else None)
-
-        db.session.execute(
-            text("""
-                INSERT INTO auditoria
-                  (fecha, accion, tabla_afectada, id_registro, datos_anteriores, datos_nuevos, descripcion)
-                VALUES
-                  (NOW(), :accion, :tabla, :id_registro, CAST(:before AS JSONB), CAST(:after AS JSONB), :descripcion)
-            """),
-            {
-                "accion": accion,
-                "tabla": tabla,
-                "id_registro": str(id_registro),
-                "before": json.dumps(before) if before else None,
-                "after": json.dumps(after) if after else None,
-                "descripcion": desc_final
-            }
-        )
-        # NO hacemos commit acá: viaja con la operación principal
-    except Exception as e:
-        # No romper el flujo principal por un error de auditoría
-        print(f"⚠ Error registrando auditoría: {e}")
 
 
 # ====== API para eliminar un registro de patrimonio -----------------------------
