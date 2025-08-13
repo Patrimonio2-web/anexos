@@ -397,39 +397,45 @@ from flask import session, request
 
 def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos_nuevos=None, descripcion=""):
     try:
-        usuario = session.get("username", "desconocido")  # usuario logueado o 'desconocido'
+        # 1) sesión (ideal)
+        usuario = session.get("username")
+        # 2) header opcional - útil si hay un servicio intermedio
+        if not usuario:
+            usuario = request.headers.get("X-User")
+        # 3) body opcional - si llamás a un endpoint interno y le pasás usuario
+        if not usuario:
+            try:
+                body = request.get_json(silent=True) or {}
+                usuario = body.get("usuario")
+            except:
+                pass
+        if not usuario:
+            usuario = "desconocido"
+
         ip = request.remote_addr
         ua = request.headers.get("User-Agent")
 
-        # Hora de Argentina
         tz = pytz.timezone("America/Argentina/Buenos_Aires")
         fecha_arg = datetime.now(tz)
 
         sql = """
             INSERT INTO auditoria (
-                fecha, accion, tabla_afectada, id_registro, 
-                datos_anteriores, datos_nuevos, descripcion, 
+                fecha, accion, tabla_afectada, id_registro,
+                datos_anteriores, datos_nuevos, descripcion,
                 usuario, ip_origen, user_agent
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
         conn = db.engine.raw_connection()
-        cur = conn.cursor()
+        cur  = conn.cursor()
         cur.execute(sql, (
-            fecha_arg,
-            accion,
-            tabla,
-            str(id_registro),
+            fecha_arg, accion, tabla, str(id_registro),
             json.dumps(datos_anteriores) if datos_anteriores else None,
             json.dumps(datos_nuevos) if datos_nuevos else None,
-            descripcion,
-            usuario,
-            ip,
-            ua
+            descripcion, usuario, ip, ua
         ))
         conn.commit()
-        cur.close()
-        conn.close()
+        cur.close(); conn.close()
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
