@@ -360,57 +360,60 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
     Inserta una fila en auditoria.
     - Toma usuario de sesión o header X-User.
     - Guarda IP y User-Agent.
-    - Hora de Argentina.
+    - Fecha en hora de Argentina (se calcula en Postgres).
     - before/after como JSONB.
+    - NO hace commit: comparte transacción con la operación que la llame.
     """
     try:
-        # Usuario con fallbacks
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
         ip = request.remote_addr
         ua = request.headers.get("User-Agent")
 
-        # Hora AR
-        tz = pytz.timezone("America/Argentina/Buenos_Aires")
-        fecha_arg = datetime.now(tz)
-
-        # Normalizar JSON
-        before_json = json.dumps(before) if before else None
-        after_json  = json.dumps(after) if after else None
-
-        # Inserción (usa SQLAlchemy para compartir transacción si corresponde)
         db.session.execute(
             text("""
                 INSERT INTO auditoria (
-                    fecha, accion, tabla_afectada, id_registro,
-                    datos_anteriores, datos_nuevos, descripcion,
-                    usuario, ip_origen, user_agent
+                    fecha,               -- hora AR calculada en el server DB
+                    accion,
+                    tabla_afectada,
+                    id_registro,
+                    datos_anteriores,
+                    datos_nuevos,
+                    descripcion,
+                    usuario,
+                    ip_origen,
+                    user_agent
                 )
                 VALUES (
-                    :fecha, :accion, :tabla, :id_registro,
-                    CAST(:before AS JSONB), CAST(:after AS JSONB), :descripcion,
-                    :usuario, :ip, :ua
+                    timezone('America/Argentina/Buenos_Aires', now()),  -- 👈 acá forzamos AR
+                    :accion,
+                    :tabla,
+                    :id_registro,
+                    CAST(:before AS JSONB),
+                    CAST(:after  AS JSONB),
+                    :descripcion,
+                    :usuario,
+                    :ip,
+                    :ua
                 )
             """),
             {
-                "fecha": fecha_arg,
                 "accion": accion,
                 "tabla": tabla,
                 "id_registro": str(id_registro),
-                "before": before_json,
-                "after": after_json,
+                "before": json.dumps(before) if before else None,
+                "after":  json.dumps(after)  if after  else None,
                 "descripcion": descripcion,
                 "usuario": usuario,
                 "ip": ip,
                 "ua": ua
             }
         )
-        # No hagas commit acá: viaja con la operación principal
+        # sin commit aquí
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
 
 
-from sqlalchemy import text
 
 from sqlalchemy import text
 
@@ -425,7 +428,11 @@ def get_auditoria():
     sql = text("""
         SELECT
             id,
-            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya se guarda en hora Argentina
+            -- Forzamos hora de Argentina al mostrar
+            to_char(
+                timezone('America/Argentina/Buenos_Aires', fecha::timestamptz),
+                'DD/MM/YYYY HH24:MI'
+            ) AS fecha,
             usuario,
             accion,
             tabla_afectada,
