@@ -1,122 +1,360 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Auditoría</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Auditoría del Sistema</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bg:      { DEFAULT: '#0B1220', soft: '#0F172A', card: '#111827' },
+            ink:     { DEFAULT: '#E5E7EB', mute: '#9CA3AF', dim: '#6B7280' },
+            primary: { DEFAULT: '#60A5FA', ring: '#1D4ED8' },
+            accent:  { green: '#22C55E', yellow: '#F59E0B', red: '#EF4444' }
+          },
+          boxShadow: {
+            card: '0 10px 20px rgba(0,0,0,0.35)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .scrollbar-thin::-webkit-scrollbar{height:8px;width:8px}
+    .scrollbar-thin::-webkit-scrollbar-thumb{background:#374151;border-radius:6px}
+    .scrollbar-thin::-webkit-scrollbar-track{background:#111827}
+  </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body class="bg-bg text-ink selection:bg-primary/30 selection:text-white min-h-screen">
 
-  <div class="max-w-7xl mx-auto p-6">
-    <h1 class="text-2xl font-bold mb-6">Registros de Auditoría</h1>
-
-    <div class="bg-white shadow rounded-lg overflow-hidden">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
-          <tr>
-            <th class="px-4 py-2 text-left">Fecha</th>
-            <th class="px-4 py-2 text-left">Acción</th>
-            <th class="px-4 py-2 text-left">Tabla</th>
-            <th class="px-4 py-2 text-left">ID Registro</th>
-            <th class="px-4 py-2 text-left">Descripción</th>
-            <th class="px-4 py-2 text-center">Detalle</th>
-          </tr>
-        </thead>
-        <tbody id="tbody" class="divide-y divide-gray-200">
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Modal -->
-  <div id="modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4">
-    <div class="bg-white w-full max-w-4xl rounded-lg shadow-lg">
-      <div class="flex justify-between items-center p-4 border-b">
-        <h2 class="text-lg font-semibold">Detalle de Auditoría</h2>
-        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700 text-xl">&times;</button>
-      </div>
-      <div class="p-4 space-y-4">
-        <div>
-          <h3 class="font-semibold">Datos Anteriores:</h3>
-          <pre id="datos_anteriores" class="bg-gray-50 p-3 rounded overflow-auto max-h-60"></pre>
+  <header class="sticky top-0 z-40 backdrop-blur bg-bg/80 border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-primary/15 grid place-content-center ring-1 ring-white/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7h18M3 12h18M3 17h18"/>
+          </svg>
         </div>
         <div>
-          <h3 class="font-semibold">Datos Nuevos:</h3>
-          <pre id="datos_nuevos" class="bg-gray-50 p-3 rounded overflow-auto max-h-60"></pre>
+          <h1 class="text-xl font-semibold text-white">Auditoría del Sistema</h1>
+          <p class="text-sm text-ink-dim">Registros de cambios con hora de Argentina</p>
         </div>
       </div>
-      <div class="p-4 border-t flex justify-end">
-        <button onclick="closeModal()" class="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700">Cerrar</button>
+
+      <div class="flex items-center gap-2">
+        <input id="searchInput" type="text" placeholder="Buscar (usuario, tabla, acción, id)..."
+               class="w-72 px-3 py-2 rounded-lg bg-bg-soft text-ink placeholder:text-ink-dim border border-white/10 focus:outline-none focus:ring-2 focus:ring-primary-ring/60">
+        <button id="refreshBtn"
+                class="px-3 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition">
+          Actualizar
+        </button>
       </div>
     </div>
-  </div>
+  </header>
 
- <script>
-  const API = "/api/auditoria";
-  const tbody = document.getElementById("tbody");
-  const modal = document.getElementById("modal");
-  const datosAnteriores = document.getElementById("datos_anteriores");
-  const datosNuevos = document.getElementById("datos_nuevos");
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <div class="bg-bg-soft border border-white/5 rounded-2xl shadow-card overflow-hidden">
+      <!-- Table header -->
+      <div class="px-4 sm:px-6 py-4 border-b border-white/5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span id="totalSpan" class="text-ink-dim text-sm">Mostrando registros...</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-ink-dim text-sm">Por página</label>
+          <select id="limitSelect"
+                  class="bg-bg text-ink border border-white/10 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-ring/60">
+            <option>25</option>
+            <option selected>50</option>
+            <option>100</option>
+          </select>
+        </div>
+      </div>
 
-  function prettyJSON(val) {
-    if (val === null || val === undefined || val === "") return "Sin datos";
-    try {
-      // Si es string JSON, parsealo; si ya es objeto, dejalo
-      const obj = (typeof val === "string") ? JSON.parse(val) : val;
-      return JSON.stringify(obj, null, 2);
-    } catch (e) {
-      // Si falla el parse, al menos mostrás el valor tal cual
-      return (typeof val === "string") ? val : JSON.stringify(val, null, 2);
+      <!-- Table -->
+      <div class="overflow-x-auto scrollbar-thin">
+        <table class="min-w-full text-sm">
+          <thead class="bg-bg-soft border-b border-white/5 text-ink-mute uppercase text-xs tracking-wider">
+            <tr>
+              <th class="px-4 sm:px-6 py-3 text-left">Fecha (AR)</th>
+              <th class="px-4 sm:px-6 py-3 text-left">Usuario</th>
+              <th class="px-4 sm:px-6 py-3 text-left">Acción</th>
+              <th class="px-4 sm:px-6 py-3 text-left">Tabla</th>
+              <th class="px-4 sm:px-6 py-3 text-left">ID Registro</th>
+              <th class="px-4 sm:px-6 py-3 text-left">Cambios</th>
+              <th class="px-4 sm:px-6 py-3 text-right"></th>
+            </tr>
+          </thead>
+          <tbody id="auditoriaBody" class="divide-y divide-white/5"></tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="px-4 sm:px-6 py-4 border-t border-white/5 flex items-center justify-between">
+        <button id="prevBtn"
+                class="px-3 py-2 rounded-lg bg-white/5 text-ink hover:bg-white/10 border border-white/10 disabled:opacity-40 disabled:cursor-not-allowed">
+          Anterior
+        </button>
+        <div class="text-ink-dim text-sm">
+          Página <span id="pageSpan" class="text-ink">1</span>
+        </div>
+        <button id="nextBtn"
+                class="px-3 py-2 rounded-lg bg-white/5 text-ink hover:bg-white/10 border border-white/10 disabled:opacity-40 disabled:cursor-not-allowed">
+          Siguiente
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Template for diff panel -->
+  <template id="diffTemplate">
+    <div class="mt-3 bg-bg rounded-xl border border-white/10 overflow-hidden">
+      <div class="px-4 sm:px-6 py-3 text-ink-mute text-xs uppercase tracking-wider bg-white/5">Detalle de cambios</div>
+      <div class="overflow-x-auto scrollbar-thin">
+        <table class="min-w-full text-sm">
+          <thead class="text-ink-dim bg-white/5">
+            <tr>
+              <th class="px-4 sm:px-6 py-2 text-left">Campo</th>
+              <th class="px-4 sm:px-6 py-2 text-left">Antes</th>
+              <th class="px-4 sm:px-6 py-2 text-left">Después</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5"></tbody>
+        </table>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    // === Config ===
+    const API = '/api/auditoria'; // Ajustá si tu backend vive en otro host/origen.
+
+    // === State ===
+    let limit  = 50;
+    let offset = 0;
+    let page   = 1;
+    let cache  = []; // última página cargada (para buscar en cliente)
+    let totalKnown = null; // desconocido (API no devuelve total), mostramos rango aprox.
+
+    // === DOM ===
+    const bodyEl      = document.getElementById('auditoriaBody');
+    const totalEl     = document.getElementById('totalSpan');
+    const pageEl      = document.getElementById('pageSpan');
+    const prevBtn     = document.getElementById('prevBtn');
+    const nextBtn     = document.getElementById('nextBtn');
+    const limitSelect = document.getElementById('limitSelect');
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn  = document.getElementById('refreshBtn');
+    const diffTpl     = document.getElementById('diffTemplate');
+
+    // === Utils ===
+    function badgeForAction(action){
+      const a = (action || '').toUpperCase();
+      const base = 'inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ring-1 ring-inset';
+      if (a === 'INSERT') return `${base} bg-accent-green/15 text-accent-green ring-accent-green/30`;
+      if (a === 'UPDATE') return `${base} bg-accent-yellow/15 text-accent-yellow ring-accent-yellow/30`;
+      if (a === 'DELETE') return `${base} bg-accent-red/15 text-accent-red ring-accent-red/30`;
+      return `${base} bg-white/10 text-ink ring-white/10`;
     }
-  }
 
-  function openModal(anteriores, nuevos) {
-    datosAnteriores.textContent = prettyJSON(anteriores);
-    datosNuevos.textContent = prettyJSON(nuevos);
-    modal.classList.remove("hidden");
-    modal.classList.add("flex");
-  }
-
-  function closeModal() {
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-  }
-
-  async function loadAuditoria() {
-    const res = await fetch(API);
-    const data = await res.json();
-    tbody.innerHTML = "";
-
-    if (!Array.isArray(data) || !data.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Sin registros</td></tr>`;
-      return;
+    function safeParseJSON(maybeJson){
+      if (!maybeJson) return null;
+      if (typeof maybeJson === 'object') return maybeJson;
+      try { return JSON.parse(maybeJson); } catch { return null; }
     }
 
-    data.forEach(row => {
-      const tr = document.createElement("tr");
-      const fecha = row.fecha ? new Date(row.fecha).toLocaleString() : "-";
-      tr.innerHTML = `
-        <td class="px-4 py-2">${fecha}</td>
-        <td class="px-4 py-2 font-semibold">${row.accion || "-"}</td>
-        <td class="px-4 py-2">${row.tabla_afectada || "-"}</td>
-        <td class="px-4 py-2">${row.id_registro || "-"}</td>
-        <td class="px-4 py-2">${row.descripcion || "-"}</td>
-        <td class="px-4 py-2 text-center">
-          <button class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500">
-            Ver
-          </button>
-        </td>
-      `;
-      tr.querySelector("button").addEventListener("click", () =>
-        openModal(row.datos_anteriores, row.datos_nuevos)
+    // Devuelve solo los campos que cambiaron (o existen en uno y no en otro)
+    function computeDiff(oldObj, newObj){
+      const before = safeParseJSON(oldObj) || {};
+      const after  = safeParseJSON(newObj) || {};
+      const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+      const rows = [];
+      for (const k of keys){
+        const v1 = before[k];
+        const v2 = after[k];
+        // stringify valores complejos para mostrarlos elegante
+        const s1 = (v1 === null || v1 === undefined) ? '' : (typeof v1 === 'object' ? JSON.stringify(v1) : String(v1));
+        const s2 = (v2 === null || v2 === undefined) ? '' : (typeof v2 === 'object' ? JSON.stringify(v2) : String(v2));
+        if (s1 === s2) continue; // solo mostrar cambios
+        rows.push({ field: k, before: s1, after: s2 });
+      }
+      return rows;
+    }
+
+    function highlightCell(text){
+      if (text === '' || text === null || text === undefined) return '<span class="text-ink-dim italic">—</span>';
+      return text
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('&','&amp;');
+    }
+
+    function renderDiffPanel(item){
+      const rows = computeDiff(item.datos_anteriores, item.datos_nuevos);
+      const frag = diffTpl.content.cloneNode(true);
+      const tbody = frag.querySelector('tbody');
+      if (rows.length === 0){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="3" class="px-4 sm:px-6 py-3 text-ink-dim">Sin diferencias para mostrar.</td>`;
+        tbody.appendChild(tr);
+      } else {
+        for (const r of rows){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="px-4 sm:px-6 py-2 text-ink">${highlightCell(r.field)}</td>
+            <td class="px-4 sm:px-6 py-2 text-ink-dim">${highlightCell(r.before)}</td>
+            <td class="px-4 sm:px-6 py-2 text-ink">${highlightCell(r.after)}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+      }
+      return frag;
+    }
+
+    function rowMatchesSearch(item, q){
+      if (!q) return true;
+      q = q.toLowerCase();
+      return (
+        (item.usuario || '').toLowerCase().includes(q) ||
+        (item.accion || '').toLowerCase().includes(q) ||
+        (item.tabla_afectada || '').toLowerCase().includes(q) ||
+        (item.id_registro || '').toLowerCase().includes(q) ||
+        (item.fecha || '').toLowerCase().includes(q) ||
+        (item.descripcion || '').toLowerCase().includes(q)
       );
-      tbody.appendChild(tr);
+    }
+
+    function renderTable(data){
+      bodyEl.innerHTML = '';
+      if (!data || data.length === 0){
+        bodyEl.innerHTML = `
+          <tr>
+            <td colspan="7" class="px-4 sm:px-6 py-6 text-center text-ink-dim">No hay registros de auditoría.</td>
+          </tr>`;
+        return;
+      }
+
+      const q = searchInput.value.trim();
+      const filtered = data.filter(d => rowMatchesSearch(d, q));
+
+      if (filtered.length === 0){
+        bodyEl.innerHTML = `
+          <tr>
+            <td colspan="7" class="px-4 sm:px-6 py-6 text-center text-ink-dim">Sin coincidencias para "${q}".</td>
+          </tr>`;
+        return;
+      }
+
+      for (const item of filtered){
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-white/5 transition';
+
+        tr.innerHTML = `
+          <td class="align-top px-4 sm:px-6 py-3 text-ink">${item.fecha || ''}</td>
+          <td class="align-top px-4 sm:px-6 py-3">
+            <div class="text-ink">${item.usuario || '—'}</div>
+            <div class="text-ink-dim text-xs">${(item.ip_origen || '')}</div>
+          </td>
+          <td class="align-top px-4 sm:px-6 py-3">
+            <span class="${badgeForAction(item.accion)}">${item.accion || '—'}</span>
+          </td>
+          <td class="align-top px-4 sm:px-6 py-3">
+            <div class="text-ink">${item.tabla_afectada || '—'}</div>
+          </td>
+          <td class="align-top px-4 sm:px-6 py-3">
+            <div class="text-ink">${item.id_registro || '—'}</div>
+          </td>
+          <td class="align-top px-4 sm:px-6 py-3">
+            <div class="text-ink">${item.descripcion ? item.descripcion : '<span class="text-ink-dim italic">—</span>'}</div>
+          </td>
+          <td class="align-top px-4 sm:px-6 py-3 text-right">
+            <button class="verDetalle px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-ink text-xs">
+              Ver cambios
+            </button>
+          </td>
+        `;
+
+        // Fila de detalle (oculta hasta click)
+        const trDetail = document.createElement('tr');
+        trDetail.className = 'hidden';
+        const td = document.createElement('td');
+        td.colSpan = 7;
+        td.className = 'px-4 sm:px-6 pb-4';
+        td.appendChild(renderDiffPanel(item));
+        trDetail.appendChild(td);
+
+        bodyEl.appendChild(tr);
+        bodyEl.appendChild(trDetail);
+
+        const btn = tr.querySelector('.verDetalle');
+        btn.addEventListener('click', () => {
+          trDetail.classList.toggle('hidden');
+          btn.textContent = trDetail.classList.contains('hidden') ? 'Ver cambios' : 'Ocultar';
+        });
+      }
+
+      // Texto de total aproximado
+      const showingFrom = offset + 1;
+      const showingTo   = offset + filtered.length;
+      totalEl.textContent = `Mostrando ${showingFrom}–${showingTo} (página ${page}, límite ${limit})`;
+      pageEl.textContent = String(page);
+    }
+
+    async function loadData(){
+      const url = new URL(API, window.location.origin);
+      url.searchParams.set('limit', String(limit));
+      url.searchParams.set('offset', String(offset));
+      const res = await fetch(url.toString());
+      if (!res.ok) {
+        bodyEl.innerHTML = `
+          <tr>
+            <td colspan="7" class="px-4 sm:px-6 py-6 text-center text-red-400">
+              Error al cargar auditoría (${res.status})
+            </td>
+          </tr>`;
+        return;
+      }
+      cache = await res.json();
+      renderTable(cache);
+      prevBtn.disabled = offset <= 0;
+      nextBtn.disabled = cache.length < limit;
+    }
+
+    // === Events ===
+    prevBtn.addEventListener('click', () => {
+      if (offset <= 0) return;
+      offset -= limit; if (offset < 0) offset = 0;
+      page = Math.max(1, page - 1);
+      loadData();
     });
-  }
 
-  loadAuditoria();
-</script>
+    nextBtn.addEventListener('click', () => {
+      if (cache.length < limit) return; // probablemente no hay más
+      offset += limit;
+      page += 1;
+      loadData();
+    });
 
+    limitSelect.addEventListener('change', () => {
+      limit = parseInt(limitSelect.value, 10) || 50;
+      page = 1; offset = 0;
+      loadData();
+    });
+
+    searchInput.addEventListener('input', () => {
+      renderTable(cache);
+    });
+
+    refreshBtn.addEventListener('click', loadData);
+
+    // === Init ===
+    document.addEventListener('DOMContentLoaded', () => {
+      limitSelect.value = String(limit);
+      loadData();
+    });
+  </script>
 </body>
 </html>
