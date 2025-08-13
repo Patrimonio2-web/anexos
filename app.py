@@ -437,9 +437,10 @@ def registrar_auditoria(accion, tabla, id_registro, datos_anteriores=None, datos
 
 from sqlalchemy import text
 
+from sqlalchemy import text
+
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
-    # paginación opcional (?limit=50&offset=0)
     try:
         limit = int(request.args.get('limit', 100))
         offset = int(request.args.get('offset', 0))
@@ -449,27 +450,29 @@ def get_auditoria():
     sql = text("""
         SELECT
             id,
-            to_char(fecha AT TIME ZONE 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI') AS fecha,
+            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya se guarda en hora Argentina
+            usuario,
             accion,
             tabla_afectada,
             id_registro,
             datos_anteriores,
             datos_nuevos,
-            descripcion
+            descripcion,
+            ip_origen,
+            user_agent
         FROM auditoria
         ORDER BY fecha DESC
         LIMIT :limit OFFSET :offset
     """)
 
     try:
-        # maneja apertura/cierre de conexión automáticamente
         with db.engine.connect() as conn:
             result = conn.execute(sql, {"limit": limit, "offset": offset})
-            # .mappings() para obtener dicts directamente (SQLAlchemy 1.4+)
             data = [dict(row._mapping) for row in result]
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # --- vista para ver la auditoría ---
 @app.route("/auditoria")
