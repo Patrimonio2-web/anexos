@@ -1148,23 +1148,18 @@ def subdependencias_por_anexo(anexo_id):
     subdeps = Subdependencia.query.filter_by(id_anexo=anexo_id).all()
     return jsonify([{"id": s.id, "nombre": s.nombre} for s in subdeps])
 
-# --- Serializer simple para Mobiliario como lo espera el frontend ---
+# --- Serializer simple para enviar lo que la vista espera ---
 def mob_to_dict(m):
     def iso(d):
-        if not d: 
-            return None
-        try:
-            return d.isoformat()[:10]
-        except:
-            # por si viene string
-            return str(d)[:10]
-
+        if not d: return None
+        try: return d.isoformat()[:10]
+        except: return str(d)[:10]
     return {
         "id": m.id,
         "ubicacion_id": m.ubicacion_id,
         "descripcion": m.descripcion or "",
         "estado_conservacion": m.estado_conservacion or "",
-        "resolucion": m.resolucion or "",          # tu modelo ya guarda el texto listo
+        "resolucion": m.resolucion or "",
         "fecha_resolucion": iso(m.fecha_resolucion),
         "no_dado": bool(m.no_dado),
         "para_reparacion": bool(m.para_reparacion),
@@ -1176,11 +1171,13 @@ def mob_to_dict(m):
         "foto_url": m.foto_url or "",
     }
 
-# --- Listar mobiliario por subdependencia (para la tabla de la vista nueva) ---
+# --- Listar mobiliario por subdependencia ---
 @app.route('/api/mobiliario_por_subdependencia/<int:sub_id>', methods=['GET'])
 def mobiliario_por_subdependencia(sub_id):
-    items = Mobiliario.query.filter_by(ubicacion_id=sub_id).order_by(Mobiliario.id.asc()).all()
+    items = Mobiliario.query.filter_by(ubicacion_id=sub_id)\
+                            .order_by(Mobiliario.id.asc()).all()
     return jsonify([mob_to_dict(m) for m in items])
+
 
 
 @app.route('/api/mobiliario_filtrado', methods=['POST'])
@@ -1665,8 +1662,8 @@ def dashboard_data():
         return jsonify({"error": str(e)}), 500
 # ---------- /DASHBOARD ----------
 #LISTADO DE CONTROL-------------------------------------------------------------------------------------
-@app.route('/imprimir_marcable')
-def imprimir_marcable():
+@app.route('/control')
+def control():
     return render_template('control.html')
 
 
