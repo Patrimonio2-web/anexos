@@ -12,6 +12,8 @@ import os, tempfile, io
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
+from sqlalchemy import asc
+
 import pandas as pd
 # from copy import deepcopy  # ← opcional: borrar si no se usa
 from functools import wraps
@@ -1146,6 +1148,40 @@ def subdependencias_por_anexo(anexo_id):
     subdeps = Subdependencia.query.filter_by(id_anexo=anexo_id).all()
     return jsonify([{"id": s.id, "nombre": s.nombre} for s in subdeps])
 
+# --- Serializer simple para Mobiliario como lo espera el frontend ---
+def mob_to_dict(m):
+    def iso(d):
+        if not d: 
+            return None
+        try:
+            return d.isoformat()[:10]
+        except:
+            # por si viene string
+            return str(d)[:10]
+
+    return {
+        "id": m.id,
+        "ubicacion_id": m.ubicacion_id,
+        "descripcion": m.descripcion or "",
+        "estado_conservacion": m.estado_conservacion or "",
+        "resolucion": m.resolucion or "",          # tu modelo ya guarda el texto listo
+        "fecha_resolucion": iso(m.fecha_resolucion),
+        "no_dado": bool(m.no_dado),
+        "para_reparacion": bool(m.para_reparacion),
+        "para_baja": bool(m.para_baja),
+        "faltante": bool(m.faltante),
+        "sobrante": bool(m.sobrante),
+        "problema_etiqueta": bool(m.problema_etiqueta),
+        "comentarios": m.comentarios or "",
+        "foto_url": m.foto_url or "",
+    }
+
+# --- Listar mobiliario por subdependencia (para la tabla de la vista nueva) ---
+@app.route('/api/mobiliario_por_subdependencia/<int:sub_id>', methods=['GET'])
+def mobiliario_por_subdependencia(sub_id):
+    items = Mobiliario.query.filter_by(ubicacion_id=sub_id).order_by(Mobiliario.id.asc()).all()
+    return jsonify([mob_to_dict(m) for m in items])
+
 
 @app.route('/api/mobiliario_filtrado', methods=['POST'])
 def mobiliario_filtrado():
@@ -1628,6 +1664,11 @@ def dashboard_data():
         print("🔴 Error /api/dashboard:", e)
         return jsonify({"error": str(e)}), 500
 # ---------- /DASHBOARD ----------
+#LISTADO DE CONTROL-------------------------------------------------------------------------------------
+@app.route('/imprimir_marcable')
+def imprimir_marcable():
+    return render_template('control.html')
+
 
 
 
