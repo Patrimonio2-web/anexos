@@ -1,165 +1,166 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Control de Mobiliario</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Control de mobiliario</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    .row-marked { background-color: #dcfce7; }
-    .row-hover:hover { background-color: #f8fafc; }
-    .btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg transition active:scale-[.98]; }
-    .btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700; }
-    .btn-ghost { @apply hover:bg-slate-100 text-slate-700; }
-    .chip { @apply text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600; }
-    .card { @apply bg-white shadow-sm rounded-2xl; }
-    .field { @apply w-full border rounded-lg px-3 py-2; }
+    .row-marked{background-color:#e8fff0}
+    .row-hover:hover{background-color:#f8fafc}
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen">
-  <!-- Topbar -->
-  <header class="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-      <i data-lucide="layout-grid" class="w-5 h-5 text-blue-600"></i>
-      <h1 class="text-lg sm:text-xl font-semibold">Control de Mobiliario</h1>
-      <span class="chip hidden sm:inline">Marcá filas con un click</span>
-      <div class="ml-auto flex items-center gap-2">
-        <button id="btnImprimir" class="btn btn-ghost"><i data-lucide="printer" class="w-4 h-4"></i> Imprimir</button>
-        <button id="btnLimpiarMarcados" class="btn btn-primary disabled:opacity-50"><i data-lucide="check-square" class="w-4 h-4"></i> Limpiar marcados</button>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-800">
+  <!-- Header -->
+  <header class="sticky top-0 z-20 border-b bg-white/80 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-indigo-600 text-white grid place-content-center shadow-md">
+          <i data-lucide="layout-grid" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-semibold">Control de mobiliario</h1>
+          <p class="text-xs text-slate-500">Marcar filas, editar ítems y tomar foto</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="btnLimpiarMarcados" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
+          <i data-lucide="eraser" class="w-4 h-4"></i><span>Limpiar marcados</span>
+        </button>
+        <button onclick="window.print()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-900">
+          <i data-lucide="printer" class="w-4 h-4"></i><span>Imprimir</span>
+        </button>
       </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
     <!-- Filtros -->
-    <section class="card p-4 sm:p-5">
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+    <section class="bg-white rounded-2xl shadow-md border p-4 sm:p-5 mb-5">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Anexo</label>
-          <select id="anexoSelect" class="field"></select>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Anexo</label>
+          <select id="anexoSelect" class="w-full rounded-xl border-slate-200 focus:ring-2 focus:ring-indigo-500 px-3 py-2"></select>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Subdependencia</label>
-          <select id="subSelect" class="field" disabled></select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Estado</label>
-          <select id="estadoSelect" class="field">
-            <option value="">Todos</option>
-            <option>Nuevo</option>
-            <option>Bueno</option>
-            <option>Regular</option>
-            <option>Inútil</option>
-          </select>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Subdependencia</label>
+          <select id="subSelect" class="w-full rounded-xl border-slate-200 focus:ring-2 focus:ring-indigo-500 px-3 py-2" disabled></select>
         </div>
         <div class="flex items-end">
-          <button id="btnBuscar" class="btn btn-primary w-full"><i data-lucide="search" class="w-4 h-4"></i> Buscar</button>
+          <button id="btnBuscar" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">
+            <i data-lucide="search" class="w-4 h-4"></i><span>Buscar</span>
+          </button>
         </div>
       </div>
     </section>
 
     <!-- Tabla -->
-    <section class="card overflow-hidden">
-      <div class="p-4 border-b flex items-center gap-2">
-        <i data-lucide="list" class="w-4 h-4 text-blue-600"></i>
-        <h2 class="font-medium">Listado</h2>
-        <span id="badgeCount" class="chip ml-auto">0 ítems</span>
-      </div>
+    <section class="bg-white rounded-2xl shadow-md border overflow-hidden">
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 text-slate-600 text-xs uppercase">
-            <tr>
-              <th class="px-3 py-2 text-left w-[120px]">ID</th>
-              <th class="px-3 py-2 text-left">Descripción</th>
-              <th class="px-3 py-2 text-left w-[120px]">Acciones</th>
+          <thead class="bg-slate-50 border-b">
+            <tr class="text-slate-600">
+              <th class="px-4 py-3 text-left font-medium">ID</th>
+              <th class="px-4 py-3 text-left font-medium">Descripción</th>
+              <th class="px-4 py-3 text-left font-medium w-32">Acciones</th>
             </tr>
           </thead>
           <tbody id="tbody" class="divide-y divide-slate-100">
-            <tr><td colspan="3" class="px-3 py-6 text-center text-slate-500">Elegí Anexo y Subdependencia y presioná <b>Buscar</b>…</td></tr>
+            <tr><td colspan="3" class="px-4 py-6 text-center text-slate-500">Seleccione Anexo y Subdependencia y presione <b>Buscar</b>.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
   </main>
 
-  <!-- Modal edición -->
-  <div id="modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
-      <div class="p-4 border-b flex justify-between items-center">
-        <h3 class="text-lg font-semibold flex items-center gap-2"><i data-lucide="pencil" class="w-4 h-4 text-blue-600"></i> Editar mobiliario</h3>
-        <button class="text-slate-500 hover:text-slate-700" id="cerrarModal"><i data-lucide="x" class="w-5 h-5"></i></button>
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50">
+    <div class="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden">
+      <div class="px-4 sm:px-6 py-4 border-b flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Editar mobiliario</h3>
+        <button id="cerrarModal" class="text-slate-500 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
-      <form id="formEditar" class="p-4 space-y-5">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+      <form id="formEditar" class="p-4 sm:p-6 space-y-5">
+        <!-- ID + Ubicación -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label class="text-sm font-medium">ID</label>
-            <input name="id" class="field bg-slate-100" readonly />
+            <label class="block text-xs font-medium text-slate-600 mb-1">ID</label>
+            <input name="id" class="w-full rounded-xl border-slate-200 bg-slate-100 px-3 py-2" readonly/>
           </div>
           <div>
-            <label class="text-sm font-medium">Anexo</label>
-            <select name="modal_anexo" id="modal_anexo" class="field"></select>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Anexo</label>
+            <select id="modalAnexo" class="w-full rounded-xl border-slate-200 px-3 py-2"></select>
           </div>
           <div>
-            <label class="text-sm font-medium">Subdependencia</label>
-            <select name="modal_sub" id="modal_sub" class="field" disabled></select>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Subdependencia</label>
+            <select id="modalSub" name="ubicacion_id" class="w-full rounded-xl border-slate-200 px-3 py-2" disabled></select>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <!-- Descripción -->
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+          <textarea name="descripcion" rows="3" class="w-full rounded-xl border-slate-200 px-3 py-2"></textarea>
+        </div>
+
+        <!-- Estados -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label class="text-sm font-medium">Estado de conservación</label>
-            <select name="estado_conservacion" class="field">
+            <label class="block text-xs font-medium text-slate-600 mb-1">Estado de conservación</label>
+            <select name="estado_conservacion" class="w-full rounded-xl border-slate-200 px-3 py-2">
               <option value="">(Sin estado)</option>
-              <option>Nuevo</option>
-              <option>Bueno</option>
-              <option>Regular</option>
-              <option>Inútil</option>
+              <option>Nuevo</option><option>Bueno</option><option>Regular</option><option>Inútil</option>
             </select>
           </div>
-          <div class="md:col-span-2">
-            <label class="text-sm font-medium">Resolución (texto)</label>
-            <input name="resolucion" class="field" />
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label class="text-sm font-medium">Fecha Resolución</label>
-            <input type="date" name="fecha_resolucion" class="field" />
+            <label class="block text-xs font-medium text-slate-600 mb-1">Resolución (texto)</label>
+            <input name="resolucion" class="w-full rounded-xl border-slate-200 px-3 py-2"/>
           </div>
-          <div class="md:col-span-2">
-            <label class="text-sm font-medium">Descripción</label>
-            <textarea name="descripcion" rows="3" class="field"></textarea>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fecha Resolución</label>
+            <input type="date" name="fecha_resolucion" class="w-full rounded-xl border-slate-200 px-3 py-2"/>
           </div>
         </div>
 
-        <fieldset class="border rounded-xl p-3">
-          <legend class="text-sm font-medium">Etiquetas / Flags</legend>
-          <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-            <label class="inline-flex items-center gap-2"><input type="checkbox" name="no_dado"> No dado</label>
-            <label class="inline-flex items-center gap-2"><input type="checkbox" name="para_reparacion"> Para reparación</label>
-            <label class="inline-flex items-center gap-2"><input type="checkbox" name="para_baja"> Para baja</label>
-            <label class="inline-flex items-center gap-2"><input type="checkbox" name="faltante"> Faltante</label>
-            <label class="inline-flex items-center gap-2"><input type="checkbox" name="sobrante"> Sobrante</label>
-            <label class="inline-flex items-center gap-2"><input type="checkbox" name="problema_etiqueta"> Problema etiqueta</label>
+        <!-- Flags -->
+        <fieldset class="border rounded-2xl p-3">
+          <legend class="text-xs px-2 text-slate-600">Etiquetas</legend>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="no_dado" class="rounded"> No dado</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="para_reparacion" class="rounded"> Para reparación</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="para_baja" class="rounded"> Para baja</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="faltante" class="rounded"> Faltante</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="sobrante" class="rounded"> Sobrante</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="problema_etiqueta" class="rounded"> Problema etiqueta</label>
           </div>
         </fieldset>
 
-        <!-- Cámara -->
+        <!-- Comentarios -->
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Comentarios</label>
+          <textarea name="comentarios" rows="3" class="w-full rounded-xl border-slate-200 px-3 py-2"></textarea>
+        </div>
+
+        <!-- Foto -->
         <div class="space-y-2">
-          <label class="text-sm font-medium">Foto</label>
-          <div class="flex flex-wrap items-center gap-3">
-            <input id="fotoInput" type="file" accept="image/*" capture="environment" class="hidden" />
-            <button type="button" id="btnTomarFoto" class="btn btn-ghost"><i data-lucide="camera" class="w-4 h-4"></i> Tomar foto</button>
-            <img id="fotoPreview" alt="Sin foto" class="h-16 w-16 object-cover rounded-lg border hidden" />
-            <span id="fotoNombre" class="text-xs text-slate-500"></span>
+          <label class="block text-xs font-medium text-slate-600">Foto</label>
+          <div class="flex items-center gap-3">
+            <input id="inputFoto" type="file" accept="image/*" capture="environment" class="hidden"/>
+            <button type="button" id="btnTomarFoto" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">
+              <i data-lucide="camera" class="w-4 h-4"></i><span>Tomar foto</span>
+            </button>
+            <span id="estadoUpload" class="text-xs text-slate-500"></span>
           </div>
+          <img id="previewFoto" class="hidden w-40 h-40 object-cover rounded-xl border"/>
         </div>
 
         <div class="flex justify-end gap-2 pt-2">
-          <button type="button" id="cancelarEditar" class="btn btn-ghost">Cancelar</button>
-          <button class="btn btn-primary" id="btnGuardar"><i data-lucide="save" class="w-4 h-4"></i> Guardar cambios</button>
+          <button type="button" id="cancelarEditar" class="px-4 py-2 rounded-xl border hover:bg-slate-50">Cancelar</button>
+          <button class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 inline-flex items-center gap-2">
+            <i data-lucide="save" class="w-4 h-4"></i><span>Guardar cambios</span>
+          </button>
         </div>
       </form>
     </div>
@@ -167,171 +168,169 @@
 
   <script>
     // ====== CONFIG ======
-    const API = "https://anexos.onrender.com"; // <-- ajustado a tu dominio Render
+    const API = "https://anexos.onrender.com"; // ajustá si corresponde
     const ENDPOINT_ANEXOS = `${API}/api/anexos`;
     const ENDPOINT_SUBS_BY_ANEXO = (anexoId) => `${API}/api/subdependencias_por_anexo/${anexoId}`;
     const ENDPOINT_MOBILIARIO_BY_SUBDEP = (subId) => `${API}/api/mobiliario_por_subdependencia/${subId}`;
-    const ENDPOINT_UPDATE_MOBILIARIO = (id) => `${API}/api/mobiliario/${encodeURIComponent(id)}`; // PUT
+    const ENDPOINT_UPDATE_MOBILIARIO = (id) => `${API}/api/mobiliario/${encodeURIComponent(id)}`;
     const ENDPOINT_UPLOAD = `${API}/api/uploads`;
 
     // ====== ELEMENTOS ======
     const anexoSelect = document.getElementById('anexoSelect');
     const subSelect = document.getElementById('subSelect');
-    const estadoSelect = document.getElementById('estadoSelect');
     const btnBuscar = document.getElementById('btnBuscar');
     const btnLimpiarMarcados = document.getElementById('btnLimpiarMarcados');
-    const btnImprimir = document.getElementById('btnImprimir');
     const tbody = document.getElementById('tbody');
-    const badgeCount = document.getElementById('badgeCount');
 
     const modal = document.getElementById('modal');
     const cerrarModal = document.getElementById('cerrarModal');
     const cancelarEditar = document.getElementById('cancelarEditar');
     const formEditar = document.getElementById('formEditar');
-    const modalAnexo = document.getElementById('modal_anexo');
-    const modalSub = document.getElementById('modal_sub');
-    const fotoInput = document.getElementById('fotoInput');
+
+    const modalAnexo = document.getElementById('modalAnexo');
+    const modalSub = document.getElementById('modalSub');
+
+    const inputFoto = document.getElementById('inputFoto');
     const btnTomarFoto = document.getElementById('btnTomarFoto');
-    const fotoPreview = document.getElementById('fotoPreview');
-    const fotoNombre = document.getElementById('fotoNombre');
+    const previewFoto = document.getElementById('previewFoto');
+    const estadoUpload = document.getElementById('estadoUpload');
 
+    let cacheSubdeps = [];         // para filtros
+    let cacheSubdepsModal = [];    // para modal
     let itemsActuales = [];
+    let fotoURLSubida = "";        // guarda url tras /api/uploads
 
-    // ====== LOCALSTORAGE ======
-    const keyMarcados = () => {
-      const a = anexoSelect.value || 'na';
-      const s = subSelect.value || 'na';
-      return `mobiliarioMarcado:${a}:${s}`;
-    };
-    const getMarcados = () => { try { return new Set(JSON.parse(localStorage.getItem(keyMarcados()) || '[]')); } catch { return new Set(); } };
+    // Key por contexto para LocalStorage
+    const keyMarcados = () => `mobiliarioMarcado:${anexoSelect.value||'na'}:${subSelect.value||'na'}`;
+    const getMarcados = () => { try { return new Set(JSON.parse(localStorage.getItem(keyMarcados())||'[]')); } catch { return new Set(); } };
     const setMarcados = (set) => localStorage.setItem(keyMarcados(), JSON.stringify([...set]));
 
-    // ====== LOADERS ======
-    async function cargarAnexos(selectEl) {
-      const el = selectEl || anexoSelect;
-      el.innerHTML = `<option value="">Seleccionar…</option>`;
+    // ====== CARGA INICIAL ======
+    async function cargarAnexos(selectEl){
+      selectEl.innerHTML = `<option value="">Seleccionar…</option>`;
       try {
         const r = await fetch(ENDPOINT_ANEXOS);
         const data = await r.json();
-        (Array.isArray(data) ? data : data.data || []).forEach(a => {
+        (Array.isArray(data)?data:data.data||[]).forEach(a=>{
           const opt = document.createElement('option');
-          opt.value = a.id; opt.textContent = a.nombre; el.appendChild(opt);
+          opt.value = a.id; opt.textContent = a.nombre;
+          selectEl.appendChild(opt);
         });
-      } catch (e) { console.error(e); }
+      } catch(e){ console.error(e); }
     }
 
-    async function cargarSubdependencias(anexoId, selectEl) {
-      const el = selectEl || subSelect;
-      el.innerHTML = `<option value="">Cargando…</option>`;
-      el.disabled = true;
-      try {
+    async function cargarSubdependencias(anexoId, selectEl, setCache=true){
+      selectEl.innerHTML = `<option value="">Cargando…</option>`;
+      selectEl.disabled = true;
+      try{
         const r = await fetch(ENDPOINT_SUBS_BY_ANEXO(anexoId));
         const data = await r.json();
-        el.innerHTML = `<option value="">Seleccionar…</option>`;
-        (Array.isArray(data) ? data : data.data || []).forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.id; opt.textContent = s.nombre + (s.piso != null ? ` (Piso ${s.piso})` : '');
-          el.appendChild(opt);
+        const lista = Array.isArray(data)?data:(data.data||[]);
+        if(setCache){
+          if(selectEl===subSelect) cacheSubdeps = lista;
+          if(selectEl===modalSub) cacheSubdepsModal = lista;
+        }
+        selectEl.innerHTML = `<option value="">Seleccionar…</option>`;
+        lista.forEach(s=>{
+          const opt=document.createElement('option');
+          opt.value=s.id; opt.textContent=s.nombre+(s.piso!=null?` (Piso ${s.piso})`:'');
+          selectEl.appendChild(opt);
         });
-        el.disabled = false;
-      } catch (e) { console.error(e); el.innerHTML = `<option value="">Error</option>`; }
+        selectEl.disabled=false;
+      }catch(e){ console.error(e); selectEl.innerHTML=`<option value="">Error</option>`; }
     }
 
-    async function cargarMobiliario() {
-      const subId = subSelect.value; if (!subId) return;
-      tbody.innerHTML = `<tr><td colspan="3" class="px-3 py-6 text-center text-slate-500">Cargando…</td></tr>`;
-      try {
+    async function cargarMobiliario(){
+      const subId = subSelect.value; if(!subId) return;
+      tbody.innerHTML = `<tr><td colspan="3" class="px-4 py-6 text-center text-slate-500">Cargando…</td></tr>`;
+      try{
         const r = await fetch(ENDPOINT_MOBILIARIO_BY_SUBDEP(subId));
-        const data = await r.json();
-        itemsActuales = Array.isArray(data) ? data : data.data || [];
+        itemsActuales = await r.json();
         renderTabla();
-      } catch (e) {
+      }catch(e){
         console.error(e);
-        tbody.innerHTML = `<tr><td colspan="3" class="px-3 py-6 text-center text-red-600">Error al cargar</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="3" class="px-4 py-6 text-center text-red-600">Error al cargar</td></tr>`;
       }
     }
 
-    // ====== RENDER ======
-    function renderTabla() {
-      const estadoFiltro = (estadoSelect.value || '').toLowerCase();
+    // ====== TABLA ======
+    function renderTabla(){
       const marcados = getMarcados();
-      const rows = itemsActuales
-        .filter(it => !estadoFiltro || (it.estado_conservacion || '').toLowerCase() === estadoFiltro)
-        .sort((a,b) => String(a.id).localeCompare(String(b.id)))
-        .map(it => buildRow(it, marcados));
-
       tbody.innerHTML = '';
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="3" class="px-3 py-6 text-center text-slate-500">Sin resultados…</td></tr>`;
-      } else {
-        rows.forEach(tr => tbody.appendChild(tr));
+      if(!Array.isArray(itemsActuales) || itemsActuales.length===0){
+        tbody.innerHTML = `<tr><td colspan="3" class="px-4 py-6 text-center text-slate-500">Sin resultados…</td></tr>`;
+        actualizarBtnLimpiar(); return;
       }
-      badgeCount.textContent = `${rows.length} ítems`;
+      itemsActuales
+        .sort((a,b)=>String(a.id).localeCompare(String(b.id)))
+        .forEach(it=>{
+          const tr=document.createElement('tr');
+          tr.className = `row-hover ${marcados.has(String(it.id))?'row-marked':''}`;
+          tr.dataset.id = String(it.id);
+          tr.innerHTML = `
+            <td class="px-4 py-3 font-medium">${esc(it.id)}</td>
+            <td class="px-4 py-3">${esc(it.descripcion || '')}</td>
+            <td class="px-4 py-3">
+              <button class="editar-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+                <i data-lucide="pencil" class="w-4 h-4"></i><span>Editar</span>
+              </button>
+            </td>
+          `;
+          // marcar / desmarcar
+          tr.addEventListener('click', (ev)=>{
+            if (ev.target.closest('.editar-btn')) return;
+            const id = tr.dataset.id;
+            const set = marcados;
+            if(set.has(id)) set.delete(id); else set.add(id);
+            setMarcados(set);
+            tr.classList.toggle('row-marked');
+            actualizarBtnLimpiar();
+          });
+          // editar
+          tr.querySelector('.editar-btn').addEventListener('click', (ev)=>{
+            ev.stopPropagation();
+            abrirModalEdicion(it);
+          });
+
+          tbody.appendChild(tr);
+        });
       actualizarBtnLimpiar();
+      lucide.createIcons();
     }
 
-    function buildRow(it, marcados) {
-      const tr = document.createElement('tr');
-      tr.className = `row-hover ${marcados.has(String(it.id)) ? 'row-marked' : ''}`;
-      tr.dataset.id = String(it.id);
-      tr.innerHTML = `
-        <td class="px-3 py-3 font-medium">${esc(it.id)}</td>
-        <td class="px-3 py-3">${esc(it.descripcion || '')}</td>
-        <td class="px-3 py-2">
-          <div class="flex items-center gap-2">
-            <button class="btn btn-ghost editar-btn" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-          </div>
-        </td>`;
-      tr.addEventListener('click', (ev) => {
-        if (ev.target.closest('.editar-btn')) return; // evitar marcar si clic en editar
-        const id = tr.dataset.id;
-        if (marcados.has(id)) marcados.delete(id); else marcados.add(id);
-        setMarcados(marcados);
-        tr.classList.toggle('row-marked');
-        actualizarBtnLimpiar();
-      });
-      tr.querySelector('.editar-btn').addEventListener('click', () => abrirModalEdicion(it));
-      return tr;
-    }
-
-    function actualizarBtnLimpiar() { btnLimpiarMarcados.disabled = getMarcados().size === 0; }
+    function actualizarBtnLimpiar(){ btnLimpiarMarcados.disabled = getMarcados().size===0; }
 
     // ====== MODAL ======
-    let currentItem = null; let uploadedPhotoURL = null;
-
-    async function abrirModalEdicion(item) {
-      currentItem = item; uploadedPhotoURL = null;
+    async function abrirModalEdicion(item){
       formEditar.reset();
+      fotoURLSubida = item.foto_url || "";
+      estadoUpload.textContent = "";
+      previewFoto.classList.add('hidden');
+      previewFoto.src = "";
+
+      // ID
       formEditar.elements['id'].value = item.id ?? '';
-      formEditar.elements['estado_conservacion'].value = item.estado_conservacion ?? '';
+
+      // anexo / subdep actuales: necesitamos saber a qué anexo pertenece la subdep
+      // si tu API de detalle ya trae id_anexo, podés usarlo. Si no, asumimos el anexo del filtro actual por simplicidad.
+      await cargarAnexos(modalAnexo);
+      if (anexoSelect.value) modalAnexo.value = anexoSelect.value;
+      if (modalAnexo.value) await cargarSubdependencias(modalAnexo.value, modalSub, true);
+
+      // set subdep actual
+      if (item.ubicacion_id) modalSub.value = String(item.ubicacion_id);
+
+      // demás campos
       formEditar.elements['descripcion'].value = item.descripcion ?? '';
+      formEditar.elements['estado_conservacion'].value = item.estado_conservacion ?? '';
       formEditar.elements['resolucion'].value = item.resolucion ?? '';
       formEditar.elements['fecha_resolucion'].value = item.fecha_resolucion ? fmtDateISO(item.fecha_resolucion) : '';
+      ['no_dado','para_reparacion','para_baja','faltante','sobrante','problema_etiqueta'].forEach(k=>{
+        formEditar.elements[k].checked = !!item[k];
+      });
+      formEditar.elements['comentarios'].value = item.comentarios ?? '';
 
-      // Cargar selects (anexo/sub) en el modal
-      await cargarAnexos(modalAnexo);
-      // Preseleccionar anexo/subdep actuales si los podemos inferir desde la grilla
-      // Pedimos subdependencias del anexo seleccionado en filtros si coincide
-      if (anexoSelect.value) modalAnexo.value = anexoSelect.value; // fallback rápido
-      // Si no, dejamos que el usuario elija.
-      if (modalAnexo.value) {
-        await cargarSubdependencias(modalAnexo.value, modalSub);
-      } else {
-        modalSub.innerHTML = `<option value="">Seleccione anexo…</option>`; modalSub.disabled = true;
-      }
-      // Si sabemos la subdep del item (ubicacion_id), intentamos setearla
-      if (item.ubicacion_id && modalSub.options.length > 1) {
-        modalSub.value = String(item.ubicacion_id);
-      }
-
-      // Foto inicial
-      fotoPreview.src = item.foto_url || '';
-      fotoPreview.classList.toggle('hidden', !item.foto_url);
-      fotoNombre.textContent = '';
-      fotoInput.value = '';
-
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
+      modal.classList.remove('hidden'); modal.classList.add('flex');
       lucide.createIcons();
     }
 
@@ -339,84 +338,110 @@
     cerrarModal.addEventListener('click', cerrar);
     cancelarEditar.addEventListener('click', cerrar);
 
-    // Enlazar selects del modal
-    modalAnexo.addEventListener('change', async () => {
-      const id = modalAnexo.value;
-      if (!id) { modalSub.innerHTML = `<option value="">Seleccione anexo…</option>`; modalSub.disabled = true; return; }
-      await cargarSubdependencias(id, modalSub);
+    modalAnexo.addEventListener('change', async ()=>{
+      const idA = modalAnexo.value;
+      if(!idA){ modalSub.innerHTML = `<option value="">Seleccione anexo…</option>`; modalSub.disabled=true; return; }
+      await cargarSubdependencias(idA, modalSub, true);
     });
 
-    // Cámara
-    btnTomarFoto.addEventListener('click', () => fotoInput.click());
-    fotoInput.addEventListener('change', () => {
-      const file = fotoInput.files?.[0];
-      if (!file) return;
+    // Tomar foto
+    btnTomarFoto.addEventListener('click', ()=> inputFoto.click());
+    inputFoto.addEventListener('change', async ()=>{
+      const file = inputFoto.files?.[0];
+      if(!file) return;
+      // preview
       const url = URL.createObjectURL(file);
-      fotoPreview.src = url; fotoPreview.classList.remove('hidden');
-      fotoNombre.textContent = file.name;
-      uploadedPhotoURL = null; // aún no subimos
+      previewFoto.src = url; previewFoto.classList.remove('hidden');
+
+      // subir
+      try{
+        estadoUpload.textContent = "Subiendo foto…";
+        const fd = new FormData();
+        fd.append('foto', file);
+        const r = await fetch(ENDPOINT_UPLOAD, { method:'POST', body: fd });
+        const data = await r.json();
+        if(!r.ok || !data.url) throw new Error(data.error || 'Error al subir');
+        fotoURLSubida = data.url;
+        estadoUpload.textContent = "Foto subida ✔";
+      }catch(e){
+        console.error(e);
+        estadoUpload.textContent = "Error al subir foto";
+        fotoURLSubida = "";
+      }
     });
 
-    async function uploadPhotoIfNeeded() {
-      const file = fotoInput.files?.[0];
-      if (!file) return null;
-      const fd = new FormData();
-      fd.append('foto', file);
-      const r = await fetch(ENDPOINT_UPLOAD, { method: 'POST', body: fd });
-      if (!r.ok) throw new Error('No se pudo subir la foto');
-      const data = await r.json();
-      return data.url;
-    }
-
-    formEditar.addEventListener('submit', async (e) => {
+    // Guardar
+    formEditar.addEventListener('submit', async (e)=>{
       e.preventDefault();
       const payload = formToJSON(formEditar);
-      // Normalizaciones
+      // normalizaciones
       payload.no_dado = !!payload.no_dado;
       payload.para_reparacion = !!payload.para_reparacion;
       payload.para_baja = !!payload.para_baja;
       payload.faltante = !!payload.faltante;
       payload.sobrante = !!payload.sobrante;
       payload.problema_etiqueta = !!payload.problema_etiqueta;
+      payload.foto_url = fotoURLSubida || "";
 
-      // Ubicación desde selects del modal
-      payload.ubicacion_id = modalSub.value || currentItem?.ubicacion_id || null;
-
-      try {
-        // Subimos foto si corresponde
-        const maybeURL = await uploadPhotoIfNeeded();
-        if (maybeURL) payload.foto_url = maybeURL;
-
+      try{
         const r = await fetch(ENDPOINT_UPDATE_MOBILIARIO(payload.id), {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+          method: 'PUT',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify(payload)
         });
-        if (!r.ok) throw new Error('No se pudo actualizar');
+        if(!r.ok) throw new Error('No se pudo actualizar');
 
-        // Refrescar en memoria el item editado y re-render
-        const idx = itemsActuales.findIndex(x => String(x.id) === String(payload.id));
-        if (idx >= 0) itemsActuales[idx] = { ...itemsActuales[idx], ...payload };
-        renderTabla(); cerrar();
-      } catch (e) {
-        alert('Error al guardar cambios: ' + e.message);
+        // refrescar item en memoria
+        const idx = itemsActuales.findIndex(x=>String(x.id)===String(payload.id));
+        if(idx>=0){
+          itemsActuales[idx] = { ...itemsActuales[idx], ...payload, ubicacion_id: payload.ubicacion_id };
+        }
+        renderTabla();
+        cerrar();
+      }catch(e){
+        alert('Error al guardar cambios: '+e.message);
       }
     });
 
-    // ====== UTIL ======
-    function esc(v) { return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])); }
-    function fmtDateISO(d){ const s = String(d); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const dt = new Date(s); return isNaN(dt) ? '' : dt.toISOString().slice(0,10); }
-    function formToJSON(form){ const data = new FormData(form); const o = {}; data.forEach((v,k)=>{ if (o[k]!==undefined){ if(!Array.isArray(o[k])) o[k]=[o[k]]; o[k].push(v);} else { o[k]=v; } }); ['no_dado','para_reparacion','para_baja','faltante','sobrante','problema_etiqueta'].forEach(k=>{ o[k] = form.elements[k].checked; }); return o; }
+    // ====== UTILS ======
+    function esc(v){ return String(v??'').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])); }
+    function fmtDateISO(d){
+      const s=String(d);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const dt=new Date(s); if(!isNaN(dt)) return dt.toISOString().slice(0,10);
+      return '';
+    }
+    function formToJSON(form){
+      const data=new FormData(form); const o={};
+      data.forEach((v,k)=>{ if(o[k]!==undefined){ if(!Array.isArray(o[k])) o[k]=[o[k]]; o[k].push(v);} else { o[k]=v; } });
+      ['no_dado','para_reparacion','para_baja','faltante','sobrante','problema_etiqueta'].forEach(k=>{ o[k]=form.elements[k].checked; });
+      return o;
+    }
 
     // ====== EVENTOS ======
-    anexoSelect.addEventListener('change', () => {
-      const id = anexoSelect.value; if (!id) { subSelect.innerHTML = `<option value="">Seleccione anexo…</option>`; subSelect.disabled = true; return; }
-      cargarSubdependencias(id, subSelect);
+    anexoSelect.addEventListener('change', async ()=>{
+      const id = anexoSelect.value;
+      if(!id){ subSelect.innerHTML = `<option value="">Seleccione anexo…</option>`; subSelect.disabled = true; return; }
+      await cargarSubdependencias(id, subSelect, true);
     });
-    btnBuscar.addEventListener('click', () => { localStorage.setItem(keyMarcados(), JSON.stringify([])); cargarMobiliario(); });
-    btnLimpiarMarcados.addEventListener('click', () => { setMarcados(new Set()); tbody.querySelectorAll('tr.row-marked').forEach(tr => tr.classList.remove('row-marked')); actualizarBtnLimpiar(); });
-    btnImprimir.addEventListener('click', () => window.print());
 
-    // ====== INIT ======
-    document.addEventListener('DOMContentLoaded', async () => { await cargarAnexos(); lucide.createIcons(); });
+    btnBuscar.addEventListener('click', ()=>{
+      localStorage.setItem(keyMarcados(), JSON.stringify([]));
+      cargarMobiliario();
+    });
+
+    btnLimpiarMarcados.addEventListener('click', ()=>{
+      setMarcados(new Set());
+      tbody.querySelectorAll('tr.row-marked').forEach(tr=>tr.classList.remove('row-marked'));
+      actualizarBtnLimpiar();
+    });
+
+    // INIT
+    document.addEventListener('DOMContentLoaded', async ()=>{
+      await cargarAnexos(anexoSelect);
+      actualizarBtnLimpiar();
+      lucide.createIcons();
+    });
   </script>
 </body>
 </html>
