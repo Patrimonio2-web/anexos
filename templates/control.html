@@ -150,7 +150,7 @@
 
   <script>
     // ====== CONFIG ======
-    const API = ""; // dejar vacío para usar rutas relativas, o poner ej: "https://anexos.onrender.com"
+    const API = "https://anexos.onrender.com";
     const ENDPOINT_ANEXOS = `${API}/api/anexos`;
     const ENDPOINT_SUBS_BY_ANEXO = (anexoId) => `${API}/api/subdependencias_por_anexo/${anexoId}`; // AJUSTAR si tu endpoint es /api/anexos/:id/subdependencias
     const ENDPOINT_MOBILIARIO_BY_SUBDEP = (subId) => `${API}/api/mobiliario_por_subdependencia/${subId}`; // AJUSTAR si usás otro
