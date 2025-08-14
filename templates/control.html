@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imprimir (marcable + edición)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    .row-marked { background-color: #dcfce7; } /* verde suave */
+    .row-hover:hover { background-color: #f1f5f9; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-7xl mx-auto p-4 sm:p-6">
+    <header class="mb-4">
+      <h1 class="text-2xl font-bold flex items-center gap-2">
+        <i data-lucide="printer"></i>
+        Vista de Impresión (marcable) & edición
+      </h1>
+      <p class="text-sm text-gray-600">Igual a "imprimir", con: marcado por fila (verde, guardado en LocalStorage), botón para limpiar marcados y botón "Editar" por ítem.</p>
+    </header>
+
+    <!-- Filtros -->
+    <section class="bg-white rounded-xl shadow p-4 mb-4">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">Anexo</label>
+          <select id="anexoSelect" class="w-full border rounded-lg px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">Subdependencia</label>
+          <select id="subSelect" class="w-full border rounded-lg px-3 py-2" disabled></select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">Estado</label>
+          <select id="estadoSelect" class="w-full border rounded-lg px-3 py-2">
+            <option value="">Todos</option>
+            <option>Nuevo</option>
+            <option>Bueno</option>
+            <option>Regular</option>
+            <option>Inútil</option>
+          </select>
+        </div>
+        <div class="flex items-end gap-2">
+          <button id="btnBuscar" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 w-full">Buscar</button>
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button id="btnLimpiarMarcados" class="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50">Limpiar marcados</button>
+        <button id="btnImprimir" class="px-3 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800" onclick="window.print()">Imprimir</button>
+      </div>
+    </section>
+
+    <!-- Tabla -->
+    <section class="bg-white rounded-xl shadow overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-gray-100 text-gray-700">
+            <tr>
+              <th class="px-3 py-2 text-left">ID</th>
+              <th class="px-3 py-2 text-left">Descripción</th>
+              <th class="px-3 py-2 text-left">Estado</th>
+              <th class="px-3 py-2 text-left">Resolución</th>
+              <th class="px-3 py-2 text-left">Flags</th>
+              <th class="px-3 py-2 text-left">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody" class="divide-y divide-gray-100">
+            <tr><td colspan="6" class="px-3 py-4 text-center text-gray-500">Seleccione Anexo y Subdependencia y presione Buscar…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal edición -->
+  <div id="modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <div class="p-4 border-b flex justify-between items-center">
+        <h3 class="text-lg font-semibold">Editar mobiliario</h3>
+        <button class="text-gray-500 hover:text-gray-700" id="cerrarModal">✖</button>
+      </div>
+      <form id="formEditar" class="p-4 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="text-sm text-gray-700">ID</label>
+            <input name="id" class="w-full border rounded-lg px-3 py-2 bg-gray-100" readonly />
+          </div>
+          <div>
+            <label class="text-sm text-gray-700">Ubicación (Subdependencia ID)</label>
+            <input name="ubicacion_id" class="w-full border rounded-lg px-3 py-2" />
+          </div>
+          <div>
+            <label class="text-sm text-gray-700">Estado de conservación</label>
+            <select name="estado_conservacion" class="w-full border rounded-lg px-3 py-2">
+              <option value="">(Sin estado)</option>
+              <option>Nuevo</option>
+              <option>Bueno</option>
+              <option>Regular</option>
+              <option>Inútil</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm text-gray-700">Descripción</label>
+          <textarea name="descripcion" rows="3" class="w-full border rounded-lg px-3 py-2"></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="text-sm text-gray-700">Resolución (texto)</label>
+            <input name="resolucion" class="w-full border rounded-lg px-3 py-2" />
+          </div>
+          <div>
+            <label class="text-sm text-gray-700">Fecha Resolución</label>
+            <input type="date" name="fecha_resolucion" class="w-full border rounded-lg px-3 py-2" />
+          </div>
+          <div>
+            <label class="text-sm text-gray-700">Foto URL</label>
+            <input name="foto_url" class="w-full border rounded-lg px-3 py-2" />
+          </div>
+        </div>
+
+        <fieldset class="border rounded-lg p-3">
+          <legend class="text-sm text-gray-700">Etiquetas / Flags</legend>
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="no_dado"> No dado</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="para_reparacion"> Para reparación</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="para_baja"> Para baja</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="faltante"> Faltante</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="sobrante"> Sobrante</label>
+            <label class="inline-flex items-center gap-2"><input type="checkbox" name="problema_etiqueta"> Problema etiqueta</label>
+          </div>
+        </fieldset>
+
+        <div>
+          <label class="text-sm text-gray-700">Comentarios</label>
+          <textarea name="comentarios" rows="3" class="w-full border rounded-lg px-3 py-2"></textarea>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="cancelarEditar" class="px-4 py-2 border rounded-lg">Cancelar</button>
+          <button class="px-4 py-2 bg-blue-600 text-white rounded-lg">Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // ====== CONFIG ======
+    const API = ""; // dejar vacío para usar rutas relativas, o poner ej: "https://anexos.onrender.com"
+    const ENDPOINT_ANEXOS = `${API}/api/anexos`;
+    const ENDPOINT_SUBS_BY_ANEXO = (anexoId) => `${API}/api/subdependencias_por_anexo/${anexoId}`; // AJUSTAR si tu endpoint es /api/anexos/:id/subdependencias
+    const ENDPOINT_MOBILIARIO_BY_SUBDEP = (subId) => `${API}/api/mobiliario_por_subdependencia/${subId}`; // AJUSTAR si usás otro
+    const ENDPOINT_UPDATE_MOBILIARIO = (id) => `${API}/api/mobiliario/${encodeURIComponent(id)}`; // PUT
+
+    // ====== ELEMENTOS ======
+    const anexoSelect = document.getElementById('anexoSelect');
+    const subSelect = document.getElementById('subSelect');
+    const estadoSelect = document.getElementById('estadoSelect');
+    const btnBuscar = document.getElementById('btnBuscar');
+    const btnLimpiarMarcados = document.getElementById('btnLimpiarMarcados');
+    const tbody = document.getElementById('tbody');
+
+    const modal = document.getElementById('modal');
+    const cerrarModal = document.getElementById('cerrarModal');
+    const cancelarEditar = document.getElementById('cancelarEditar');
+    const formEditar = document.getElementById('formEditar');
+
+    let cacheSubdeps = [];
+    let itemsActuales = [];
+
+    // Key de LocalStorage por contexto (para que no se mezclen anexos diferentes)
+    const keyMarcados = () => {
+      const a = anexoSelect.value || 'na';
+      const s = subSelect.value || 'na';
+      return `mobiliarioMarcado:${a}:${s}`;
+    };
+
+    const getMarcados = () => {
+      try { return new Set(JSON.parse(localStorage.getItem(keyMarcados()) || '[]')); } catch { return new Set(); }
+    };
+    const setMarcados = (set) => localStorage.setItem(keyMarcados(), JSON.stringify([...set]));
+
+    // ====== LOADERS ======
+    async function cargarAnexos() {
+      anexoSelect.innerHTML = `<option value="">Seleccionar…</option>`;
+      subSelect.innerHTML = `<option value="">Seleccione anexo primero…</option>`;
+      subSelect.disabled = true;
+      try {
+        const r = await fetch(ENDPOINT_ANEXOS);
+        const data = await r.json();
+        (Array.isArray(data) ? data : data.data || []).forEach(a => {
+          const opt = document.createElement('option');
+          opt.value = a.id; opt.textContent = a.nombre; anexoSelect.appendChild(opt);
+        });
+      } catch (e) { console.error(e); }
+    }
+
+    async function cargarSubdependencias(anexoId) {
+      subSelect.innerHTML = `<option value="">Cargando…</option>`;
+      subSelect.disabled = true;
+      try {
+        const r = await fetch(ENDPOINT_SUBS_BY_ANEXO(anexoId));
+        const data = await r.json();
+        cacheSubdeps = Array.isArray(data) ? data : data.data || [];
+        subSelect.innerHTML = `<option value="">Seleccionar…</option>`;
+        cacheSubdeps.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id; opt.textContent = s.nombre + (s.piso != null ? ` (Piso ${s.piso})` : '');
+          subSelect.appendChild(opt);
+        });
+        subSelect.disabled = false;
+      } catch (e) { console.error(e); subSelect.innerHTML = `<option value="">Error</option>`; }
+    }
+
+    async function cargarMobiliario() {
+      const subId = subSelect.value; if (!subId) return;
+      tbody.innerHTML = `<tr><td colspan="6" class="px-3 py-4 text-center text-gray-500">Cargando…</td></tr>`;
+      try {
+        const r = await fetch(ENDPOINT_MOBILIARIO_BY_SUBDEP(subId));
+        const data = await r.json();
+        itemsActuales = Array.isArray(data) ? data : data.data || [];
+        renderTabla();
+      } catch (e) {
+        console.error(e);
+        tbody.innerHTML = `<tr><td colspan="6" class="px-3 py-4 text-center text-red-600">Error al cargar</td></tr>`;
+      }
+    }
+
+    // ====== RENDER ======
+    function renderTabla() {
+      const estadoFiltro = (estadoSelect.value || '').toLowerCase();
+      const marcados = getMarcados();
+
+      const rows = itemsActuales
+        .filter(it => !estadoFiltro || (it.estado_conservacion || '').toLowerCase() === estadoFiltro)
+        .sort((a,b) => String(a.id).localeCompare(String(b.id)))
+        .map(it => {
+          const flags = ['no_dado','para_reparacion','para_baja','faltante','sobrante','problema_etiqueta']
+            .filter(k => it[k])
+            .map(k => k.replace('_',' '))
+            .join(', ');
+
+          const reso = [it.resolucion || '', it.fecha_resolucion || '']
+            .filter(Boolean).join(' / ');
+
+          const tr = document.createElement('tr');
+          tr.className = `row-hover ${marcados.has(String(it.id)) ? 'row-marked' : ''}`;
+          tr.dataset.id = String(it.id);
+          tr.innerHTML = `
+            <td class="px-3 py-2 font-medium">${esc(it.id)}</td>
+            <td class="px-3 py-2">${esc(it.descripcion || '')}</td>
+            <td class="px-3 py-2">${esc(it.estado_conservacion || '')}</td>
+            <td class="px-3 py-2">${esc(reso)}</td>
+            <td class="px-3 py-2 text-gray-600">${esc(flags)}</td>
+            <td class="px-3 py-2">
+              <button class="px-2 py-1 text-blue-700 hover:underline editar-btn">Editar</button>
+            </td>`;
+
+          // click para marcar/desmarcar
+          tr.addEventListener('click', (ev) => {
+            if (ev.target.closest('.editar-btn')) return; // no marcar si fue el botón editar
+            const id = tr.dataset.id;
+            if (marcados.has(id)) marcados.delete(id); else marcados.add(id);
+            setMarcados(marcados);
+            tr.classList.toggle('row-marked');
+            actualizarBtnLimpiar();
+          });
+
+          // botón editar
+          tr.querySelector('.editar-btn').addEventListener('click', () => abrirModalEdicion(it));
+
+          return tr;
+        });
+
+      tbody.innerHTML = '';
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="px-3 py-4 text-center text-gray-500">Sin resultados…</td></tr>`;
+      } else {
+        rows.forEach(tr => tbody.appendChild(tr));
+      }
+
+      actualizarBtnLimpiar();
+    }
+
+    function actualizarBtnLimpiar() {
+      btnLimpiarMarcados.disabled = getMarcados().size === 0;
+    }
+
+    // ====== MODAL ======
+    function abrirModalEdicion(item) {
+      formEditar.reset();
+      formEditar.elements['id'].value = item.id ?? '';
+      formEditar.elements['ubicacion_id'].value = item.ubicacion_id ?? '';
+      formEditar.elements['estado_conservacion'].value = item.estado_conservacion ?? '';
+      formEditar.elements['descripcion'].value = item.descripcion ?? '';
+      formEditar.elements['resolucion'].value = item.resolucion ?? '';
+      formEditar.elements['fecha_resolucion'].value = item.fecha_resolucion ? fmtDateISO(item.fecha_resolucion) : '';
+      formEditar.elements['foto_url'].value = item.foto_url ?? '';
+      ['no_dado','para_reparacion','para_baja','faltante','sobrante','problema_etiqueta'].forEach(k => {
+        formEditar.elements[k].checked = !!item[k];
+      });
+      formEditar.elements['comentarios'].value = item.comentarios ?? '';
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    cerrarModal.addEventListener('click', cerrar);
+    cancelarEditar.addEventListener('click', cerrar);
+    function cerrar(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
+
+    formEditar.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = formToJSON(formEditar);
+      // normalizaciones
+      payload.no_dado = !!payload.no_dado;
+      payload.para_reparacion = !!payload.para_reparacion;
+      payload.para_baja = !!payload.para_baja;
+      payload.faltante = !!payload.faltante;
+      payload.sobrante = !!payload.sobrante;
+      payload.problema_etiqueta = !!payload.problema_etiqueta;
+
+      try {
+        const r = await fetch(ENDPOINT_UPDATE_MOBILIARIO(payload.id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!r.ok) throw new Error('No se pudo actualizar');
+        // refrescar en memoria el item editado
+        const idx = itemsActuales.findIndex(x => String(x.id) === String(payload.id));
+        if (idx >= 0) itemsActuales[idx] = { ...itemsActuales[idx], ...payload };
+        renderTabla();
+        cerrar();
+      } catch (e) {
+        alert('Error al guardar cambios: ' + e.message);
+      }
+    });
+
+    // ====== UTIL ======
+    function esc(v) { return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])); }
+    function fmtDateISO(d){
+      // acepta 'YYYY-MM-DD' o 'YYYY-MM-DDTHH:MM:SSZ' y devuelve 'YYYY-MM-DD'
+      const s = String(d);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const dt = new Date(s); if (!isNaN(dt)) return dt.toISOString().slice(0,10);
+      return '';
+    }
+    function formToJSON(form){
+      const data = new FormData(form); const o = {};
+      data.forEach((v,k)=>{ if (o[k]!==undefined){ if(!Array.isArray(o[k])) o[k]=[o[k]]; o[k].push(v);} else { o[k]=v; } });
+      // checkboxes
+      ['no_dado','para_reparacion','para_baja','faltante','sobrante','problema_etiqueta'].forEach(k=>{ o[k] = form.elements[k].checked; });
+      return o;
+    }
+
+    // ====== EVENTOS ======
+    anexoSelect.addEventListener('change', () => {
+      const id = anexoSelect.value; if (!id) { subSelect.innerHTML = `<option value="">Seleccione anexo…</option>`; subSelect.disabled = true; return; }
+      cargarSubdependencias(id);
+    });
+
+    btnBuscar.addEventListener('click', () => {
+      localStorage.setItem(keyMarcados(), JSON.stringify([])); // opcional: limpiar marcados al cambiar de búsqueda
+      cargarMobiliario();
+    });
+
+    btnLimpiarMarcados.addEventListener('click', () => {
+      setMarcados(new Set());
+      // quitar clase en DOM
+      tbody.querySelectorAll('tr.row-marked').forEach(tr => tr.classList.remove('row-marked'));
+      actualizarBtnLimpiar();
+    });
+
+    // ====== INIT ======
+    document.addEventListener('DOMContentLoaded', () => {
+      cargarAnexos();
+      actualizarBtnLimpiar();
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>
