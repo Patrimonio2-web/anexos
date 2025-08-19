@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editar Anexos y Subdependencias</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col items-center py-10">
+
+  <h1 class="text-3xl font-bold mb-6">Gestión de Anexos y Subdependencias</h1>
+
+  <!-- Selección de anexo -->
+  <div class="w-full max-w-2xl bg-gray-800 p-6 rounded-2xl shadow-xl mb-8">
+    <h2 class="text-xl font-semibold mb-3">Seleccionar Anexo</h2>
+    <select id="selectAnexo" class="w-full px-3 py-2 rounded-xl bg-gray-700 border border-gray-600 mb-4"></select>
+
+    <!-- Formulario para editar anexo -->
+    <form id="formAnexo" class="space-y-4">
+      <div>
+        <label class="block text-sm mb-1">Nombre del Anexo</label>
+        <input id="anexoNombre" type="text" class="w-full px-3 py-2 rounded-xl bg-gray-700 border border-gray-600">
+      </div>
+      <button type="submit" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500">Guardar Anexo</button>
+    </form>
+  </div>
+
+  <!-- Tabla de subdependencias -->
+  <div class="w-full max-w-4xl bg-gray-800 p-6 rounded-2xl shadow-xl">
+    <h2 class="text-xl font-semibold mb-3">Subdependencias</h2>
+    <table class="w-full text-sm text-left border-collapse">
+      <thead>
+        <tr class="bg-gray-700">
+          <th class="px-3 py-2">ID</th>
+          <th class="px-3 py-2">Nombre</th>
+          <th class="px-3 py-2">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tablaSubdependencias"></tbody>
+    </table>
+  </div>
+
+  <!-- Modal editar subdependencia -->
+  <div id="modal" class="fixed inset-0 hidden items-center justify-center bg-black/60 z-50">
+    <div class="bg-gray-800 p-6 rounded-2xl w-full max-w-md">
+      <h3 class="text-xl font-semibold mb-4">Editar Subdependencia</h3>
+      <form id="formSub" class="space-y-4">
+        <input type="hidden" id="subId">
+        <div>
+          <label class="block text-sm mb-1">Nombre</label>
+          <input id="subNombre" type="text" class="w-full px-3 py-2 rounded-xl bg-gray-700 border border-gray-600">
+        </div>
+        <div class="flex justify-end space-x-3">
+          <button type="button" onclick="cerrarModal()" class="px-4 py-2 rounded-xl bg-gray-600 hover:bg-gray-500">Cancelar</button>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 hidden px-4 py-2 rounded-xl shadow-lg"></div>
+
+  <script>
+    const selectAnexo = document.getElementById("selectAnexo");
+    const formAnexo = document.getElementById("formAnexo");
+    const tablaSub = document.getElementById("tablaSubdependencias");
+
+    let anexoActual = null;
+
+    function showToast(msg, success=true) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = `fixed bottom-5 right-5 px-4 py-2 rounded-xl shadow-lg text-white ${success ? "bg-green-600" : "bg-red-600"}`;
+      t.style.display = "block";
+      setTimeout(()=>{t.style.display="none";}, 3000);
+    }
+
+    async function cargarAnexos() {
+      const res = await fetch("/api/anexos");
+      const data = await res.json();
+      selectAnexo.innerHTML = "";
+      data.forEach(a => {
+        const opt = document.createElement("option");
+        opt.value = a.id;
+        opt.textContent = `${a.id} - ${a.nombre}`;
+        selectAnexo.appendChild(opt);
+      });
+      if (data.length) {
+        selectAnexo.value = data[0].id;
+        cargarAnexo(data[0].id);
+      }
+    }
+
+    async function cargarAnexo(id) {
+      anexoActual = id;
+      // traer datos del anexo
+      const res = await fetch("/api/anexos");
+      const anexos = await res.json();
+      const anexo = anexos.find(a=>a.id == id);
+      document.getElementById("anexoNombre").value = anexo ? anexo.nombre : "";
+
+      // traer subdependencias
+      const res2 = await fetch(`/api/anexos/${id}/subdependencias`);
+      const subs = await res2.json();
+      tablaSub.innerHTML = "";
+      subs.forEach(s=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="px-3 py-2">${s.id}</td>
+          <td class="px-3 py-2">${s.nombre}</td>
+          <td class="px-3 py-2">
+            <button onclick="abrirModal(${s.id}, '${s.nombre}')" class="px-3 py-1 rounded-xl bg-yellow-600 hover:bg-yellow-500">Editar</button>
+          </td>
+        `;
+        tablaSub.appendChild(tr);
+      });
+    }
+
+    // Guardar Anexo
+    formAnexo.addEventListener("submit", async e=>{
+      e.preventDefault();
+      const nombre = document.getElementById("anexoNombre").value;
+      const res = await fetch(`/api/anexos/${anexoActual}`, {
+        method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({nombre})
+      });
+      const data = await res.json();
+      if(res.ok){ showToast(data.mensaje); cargarAnexos(); }
+      else showToast(data.error||"Error al editar", false);
+    });
+
+    // Modal Subdependencia
+    function abrirModal(id, nombre) {
+      document.getElementById("subId").value = id;
+      document.getElementById("subNombre").value = nombre;
+      document.getElementById("modal").classList.remove("hidden");
+      document.getElementById("modal").classList.add("flex");
+    }
+    function cerrarModal() {
+      document.getElementById("modal").classList.add("hidden");
+      document.getElementById("modal").classList.remove("flex");
+    }
+
+    // Guardar Subdependencia
+    document.getElementById("formSub").addEventListener("submit", async e=>{
+      e.preventDefault();
+      const id = document.getElementById("subId").value;
+      const nombre = document.getElementById("subNombre").value;
+      const res = await fetch(`/api/subdependencias/${id}`, {
+        method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({nombre})
+      });
+      const data = await res.json();
+      if(res.ok){ showToast(data.mensaje); cerrarModal(); cargarAnexo(anexoActual); }
+      else showToast(data.error||"Error al editar", false);
+    });
+
+    selectAnexo.addEventListener("change", ()=>cargarAnexo(selectAnexo.value));
+
+    cargarAnexos();
+  </script>
+</body>
+</html>
