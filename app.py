@@ -500,6 +500,85 @@ def obtener_clase_por_id(clase_bien_id):
         'rubro': rubro.nombre if rubro else 'Sin rubro'
     })
 
+
+#Editar anexos y subdependencias -------------------------------------------------------------------
+from flask import request, jsonify
+from sqlalchemy.exc import IntegrityError
+
+# ======================
+# EDITAR ANEXOS
+# ======================
+@app.route('/api/anexos/<int:id>', methods=['PUT', 'PATCH'])
+def editar_anexo(id):
+    try:
+        data = request.get_json(silent=True) or {}
+        anexo = db.session.get(Anexo, id)
+        if not anexo:
+            return jsonify({'error': 'Anexo no encontrado'}), 404
+
+        # No permitimos cambiar el ID por seguridad/consistencia
+        if 'id' in data and data['id'] != id:
+            return jsonify({'error': 'No se permite cambiar el ID del anexo'}), 400
+
+        if 'nombre' in data:
+            anexo.nombre = (data['nombre'] or '').strip()
+        if 'direccion' in data:
+            anexo.direccion = (data['direccion'] or '').strip()
+
+        db.session.commit()
+        return jsonify({
+            'mensaje': 'Anexo actualizado correctamente',
+            'anexo': {'id': anexo.id, 'nombre': anexo.nombre, 'direccion': anexo.direccion}
+        }), 200
+
+    except IntegrityError as e:
+        db.session.rollback()
+        return jsonify({'error': 'Conflicto de integridad de datos', 'detalle': str(e.orig)}), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ======================
+# EDITAR SUBDEPENDENCIAS
+# ======================
+@app.route('/api/subdependencias/<int:id>', methods=['PUT', 'PATCH'])
+def editar_subdependencia(id):
+    try:
+        data = request.get_json(silent=True) or {}
+        sub = db.session.get(Subdependencia, id)
+        if not sub:
+            return jsonify({'error': 'Subdependencia no encontrada'}), 404
+
+        # No permitimos cambiar el ID por seguridad/consistencia
+        if 'id' in data and data['id'] != id:
+            return jsonify({'error': 'No se permite cambiar el ID de la subdependencia'}), 400
+
+        # Validar cambio de anexo (FK) si viene
+        if 'id_anexo' in data and data['id_anexo'] is not None:
+            anexo_destino = db.session.get(Anexo, data['id_anexo'])
+            if not anexo_destino:
+                return jsonify({'error': 'El anexo destino no existe'}), 400
+            sub.id_anexo = data['id_anexo']
+
+        if 'nombre' in data:
+            sub.nombre = (data['nombre'] or '').strip()
+
+        db.session.commit()
+        return jsonify({
+            'mensaje': 'Subdependencia actualizada correctamente',
+            'subdependencia': {'id': sub.id, 'id_anexo': sub.id_anexo, 'nombre': sub.nombre}
+        }), 200
+
+    except IntegrityError as e:
+        db.session.rollback()
+        return jsonify({'error': 'Conflicto de integridad de datos', 'detalle': str(e.orig)}), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+#---------------------------------------------------------------------------------------------------------
+
+
 # API para AGREGAR anexos
 @app.route('/api/anexos', methods=['POST'])
 def agregar_anexo():
