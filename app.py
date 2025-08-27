@@ -1057,18 +1057,22 @@ import qrcode
 
 @app.route('/api/mobiliario/etiqueta/png/<string:id>')
 def generar_etiqueta_png(id):
-    import os
+    import os, io
+    from datetime import datetime
+    from flask import send_file
+    from PIL import Image, ImageDraw, ImageFont
+    import qrcode
+
     size_px = 283  # 24 mm a 300 dpi
     etiqueta = Image.new('RGB', (size_px, size_px), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
     try:
         # Fuentes compatibles con Linux/Render
-        font_titulo = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
-        font_fecha = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 35)
+        font_titulo = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+        font_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 45)
+        font_fecha = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
     except:
-        # En caso de falla, usar fuente por defecto
         font_titulo = font_id = font_fecha = ImageFont.load_default()
 
     # Función para centrar texto
@@ -1081,17 +1085,26 @@ def generar_etiqueta_png(id):
     y = centrar("Dir. de Patrimonio", font_titulo, y)
     y = centrar(f"{id.zfill(6)}", font_id, y)
 
-    # Código 
-    qr_size = 150
-    qr = qrcode.make(f"https://anexos.onrender.com/ver?id={id}").resize((qr_size, qr_size))
-    qr_y = (size_px - qr_size) // 2 + 20
-    etiqueta.paste(qr, ((size_px - qr_size) // 2, qr_y))
+    # Generar QR más grande y con borde mínimo
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=1
+    )
+    qr.add_data(f"https://anexos.onrender.com/ver?id={id}")
+    qr.make(fit=True)
+    img_qr = qr.make_image(fill_color="black", back_color="white").resize((220, 220))
 
-    # Año actual
+    # Posición centrada más abajo
+    qr_y = (size_px - 220) // 2 + 20
+    etiqueta.paste(img_qr, ((size_px - 220) // 2, qr_y))
+
+    # Año actual en la parte inferior
     fecha = datetime.now().strftime("%Y")
-    centrar(fecha, font_fecha, size_px - 44)
+    centrar(fecha, font_fecha, size_px - 36)
 
-    # Convertir a imagen PNG
+    # Convertir a PNG
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
