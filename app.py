@@ -1068,24 +1068,19 @@ def generar_etiqueta_png(id):
     draw = ImageDraw.Draw(etiqueta)
 
     try:
-        # Fuentes compatibles con Linux/Render
+        # Fuentes
         font_titulo = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
-        font_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 45)
-        font_fecha = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+        font_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+        font_fecha = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
     except:
         font_titulo = font_id = font_fecha = ImageFont.load_default()
 
-    # Función para centrar texto
-    def centrar(texto, fuente, y):
-        w, h = draw.textbbox((0, 0), texto, font=fuente)[2:]
-        draw.text(((size_px - w) // 2, y), texto, font=fuente, fill='white')
-        return y + h + 4
+    # Título arriba
+    titulo = "Dir. de Patrimonio"
+    w, h = draw.textbbox((0, 0), titulo, font=font_titulo)[2:]
+    draw.text(((size_px - w) // 2, 5), titulo, font=font_titulo, fill='white')
 
-    y = 5
-    y = centrar("Dir. de Patrimonio", font_titulo, y)
-    y = centrar(f"{id.zfill(6)}", font_id, y)
-
-    # Generar QR más grande y con borde mínimo
+    # Generar QR grande
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -1094,17 +1089,24 @@ def generar_etiqueta_png(id):
     )
     qr.add_data(f"https://anexos.onrender.com/ver?id={id}")
     qr.make(fit=True)
-    img_qr = qr.make_image(fill_color="black", back_color="white").resize((220, 220))
+    img_qr = qr.make_image(fill_color="black", back_color="white").resize((200, 200))
 
-    # Posición centrada más abajo
-    qr_y = (size_px - 220) // 2 + 20
-    etiqueta.paste(img_qr, ((size_px - 220) // 2, qr_y))
+    # Pegar QR centrado en el medio
+    qr_x = (size_px - 200) // 2
+    qr_y = (size_px - 200) // 2
+    etiqueta.paste(img_qr, (qr_x, qr_y))
 
-    # Año actual en la parte inferior
+    # Número ID debajo del QR
+    texto_id = f"{id.zfill(6)}"
+    w, h = draw.textbbox((0, 0), texto_id, font=font_id)[2:]
+    draw.text(((size_px - w) // 2, qr_y + 200 + 2), texto_id, font=font_id, fill='white')
+
+    # Año en la parte de abajo
     fecha = datetime.now().strftime("%Y")
-    centrar(fecha, font_fecha, size_px - 36)
+    w, h = draw.textbbox((0, 0), fecha, font=font_fecha)[2:]
+    draw.text(((size_px - w) // 2, size_px - h - 5), fecha, font=font_fecha, fill='white')
 
-    # Convertir a PNG
+    # Exportar PNG
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
