@@ -1101,10 +1101,7 @@ def generar_etiqueta_png(id):
     w, h = draw.textbbox((0, 0), texto_id, font=font_id)[2:]
     draw.text(((size_px - w) // 2, qr_y + 200 + 2), texto_id, font=font_id, fill='white')
 
-    # Año en la parte de abajo
-    fecha = datetime.now().strftime("%Y")
-    w, h = draw.textbbox((0, 0), fecha, font=font_fecha)[2:]
-    draw.text(((size_px - w) // 2, size_px - h - 5), fecha, font=font_fecha, fill='white')
+  
 
     # Exportar PNG
     buffer = io.BytesIO()
