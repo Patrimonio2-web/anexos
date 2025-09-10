@@ -419,18 +419,27 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
 
 from sqlalchemy import text
 
+from datetime import datetime, timedelta
+
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
     try:
         limit = int(request.args.get('limit', 100))
         offset = int(request.args.get('offset', 0))
+        query = request.args.get('query', '').strip()
+        desde = request.args.get('desde')
+        hasta = request.args.get('hasta')
     except ValueError:
-        return jsonify({"error": "limit/offset inválidos"}), 400
+        return jsonify({"error": "Parámetros inválidos"}), 400
 
-    sql = text("""
+    # ✅ Último mes por defecto
+    if not desde and not hasta:
+        desde = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        hasta = datetime.utcnow().strftime("%Y-%m-%d")
+
+    sql = """
         SELECT
             id,
-            -- Forzamos hora de Argentina al mostrar
             to_char(
                 timezone('America/Argentina/Buenos_Aires', fecha::timestamptz),
                 'DD/MM/YYYY HH24:MI'
@@ -445,18 +454,40 @@ def get_auditoria():
             ip_origen,
             user_agent
         FROM auditoria
-        ORDER BY fecha DESC
-        LIMIT :limit OFFSET :offset
-    """)
+        WHERE 1=1
+    """
+    params = {}
+
+    if query:
+        sql += """
+            AND (
+                LOWER(usuario) LIKE :q OR
+                LOWER(accion) LIKE :q OR
+                LOWER(tabla_afectada) LIKE :q OR
+                LOWER(id_registro) LIKE :q OR
+                LOWER(descripcion) LIKE :q
+            )
+        """
+        params["q"] = f"%{query.lower()}%"
+
+    if desde:
+        sql += " AND fecha >= :desde"
+        params["desde"] = desde
+    if hasta:
+        sql += " AND fecha <= :hasta"
+        params["hasta"] = hasta
+
+    sql += " ORDER BY fecha DESC LIMIT :limit OFFSET :offset"
+    params["limit"] = limit
+    params["offset"] = offset
 
     try:
         with db.engine.connect() as conn:
-            result = conn.execute(sql, {"limit": limit, "offset": offset})
+            result = conn.execute(text(sql), params)
             data = [dict(row._mapping) for row in result]
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # --- vista para ver la auditoría ---
 @app.route("/auditoria")
