@@ -46,8 +46,16 @@
       </div>
 
       <div class="flex items-center gap-2">
-        <input id="searchInput" type="text" placeholder="Buscar (usuario, tabla, acción, id)..."
+        <input id="searchInput" type="text" placeholder="Buscar (usuario, tabla, acción, id, descripción)..."
                class="w-72 px-3 py-2 rounded-lg bg-bg-soft text-ink placeholder:text-ink-dim border border-white/10 focus:outline-none focus:ring-2 focus:ring-primary-ring/60">
+        <input type="date" id="desdeInput"
+               class="px-2 py-2 rounded-lg bg-bg-soft text-ink border border-white/10">
+        <input type="date" id="hastaInput"
+               class="px-2 py-2 rounded-lg bg-bg-soft text-ink border border-white/10">
+        <button id="filterBtn"
+                class="px-3 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition">
+          Filtrar
+        </button>
         <button id="refreshBtn"
                 class="px-3 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition">
           Actualizar
@@ -129,17 +137,13 @@
   </template>
 
   <script>
-    // === Config ===
-    const API = '/api/auditoria'; // Ajustá si tu backend vive en otro host/origen.
+    const API = '/api/auditoria';
 
-    // === State ===
     let limit  = 50;
     let offset = 0;
     let page   = 1;
-    let cache  = []; // última página cargada (para buscar en cliente)
-    let totalKnown = null; // desconocido (API no devuelve total), mostramos rango aprox.
+    let cache  = [];
 
-    // === DOM ===
     const bodyEl      = document.getElementById('auditoriaBody');
     const totalEl     = document.getElementById('totalSpan');
     const pageEl      = document.getElementById('pageSpan');
@@ -150,11 +154,10 @@
     const refreshBtn  = document.getElementById('refreshBtn');
     const diffTpl     = document.getElementById('diffTemplate');
 
-    // === Utils ===
     function badgeForAction(action){
       const a = (action || '').toUpperCase();
       const base = 'inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ring-1 ring-inset';
-      if (a === 'INSERT') return `${base} bg-accent-green/15 text-accent-green ring-accent-green/30`;
+      if (a === 'INSERT' || a === 'CREATE') return `${base} bg-accent-green/15 text-accent-green ring-accent-green/30`;
       if (a === 'UPDATE') return `${base} bg-accent-yellow/15 text-accent-yellow ring-accent-yellow/30`;
       if (a === 'DELETE') return `${base} bg-accent-red/15 text-accent-red ring-accent-red/30`;
       return `${base} bg-white/10 text-ink ring-white/10`;
@@ -166,7 +169,6 @@
       try { return JSON.parse(maybeJson); } catch { return null; }
     }
 
-    // Devuelve solo los campos que cambiaron (o existen en uno y no en otro)
     function computeDiff(oldObj, newObj){
       const before = safeParseJSON(oldObj) || {};
       const after  = safeParseJSON(newObj) || {};
@@ -175,10 +177,9 @@
       for (const k of keys){
         const v1 = before[k];
         const v2 = after[k];
-        // stringify valores complejos para mostrarlos elegante
         const s1 = (v1 === null || v1 === undefined) ? '' : (typeof v1 === 'object' ? JSON.stringify(v1) : String(v1));
         const s2 = (v2 === null || v2 === undefined) ? '' : (typeof v2 === 'object' ? JSON.stringify(v2) : String(v2));
-        if (s1 === s2) continue; // solo mostrar cambios
+        if (s1 === s2) continue;
         rows.push({ field: k, before: s1, after: s2 });
       }
       return rows;
@@ -186,10 +187,7 @@
 
     function highlightCell(text){
       if (text === '' || text === null || text === undefined) return '<span class="text-ink-dim italic">—</span>';
-      return text
-        .replaceAll('<','&lt;')
-        .replaceAll('>','&gt;')
-        .replaceAll('&','&amp;');
+      return text.replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('&','&amp;');
     }
 
     function renderDiffPanel(item){
@@ -214,70 +212,29 @@
       return frag;
     }
 
-    function rowMatchesSearch(item, q){
-      if (!q) return true;
-      q = q.toLowerCase();
-      return (
-        (item.usuario || '').toLowerCase().includes(q) ||
-        (item.accion || '').toLowerCase().includes(q) ||
-        (item.tabla_afectada || '').toLowerCase().includes(q) ||
-        (item.id_registro || '').toLowerCase().includes(q) ||
-        (item.fecha || '').toLowerCase().includes(q) ||
-        (item.descripcion || '').toLowerCase().includes(q)
-      );
-    }
-
     function renderTable(data){
       bodyEl.innerHTML = '';
       if (!data || data.length === 0){
-        bodyEl.innerHTML = `
-          <tr>
-            <td colspan="7" class="px-4 sm:px-6 py-6 text-center text-ink-dim">No hay registros de auditoría.</td>
-          </tr>`;
+        bodyEl.innerHTML = `<tr><td colspan="7" class="px-4 sm:px-6 py-6 text-center text-ink-dim">No hay registros de auditoría.</td></tr>`;
         return;
       }
-
-      const q = searchInput.value.trim();
-      const filtered = data.filter(d => rowMatchesSearch(d, q));
-
-      if (filtered.length === 0){
-        bodyEl.innerHTML = `
-          <tr>
-            <td colspan="7" class="px-4 sm:px-6 py-6 text-center text-ink-dim">Sin coincidencias para "${q}".</td>
-          </tr>`;
-        return;
-      }
-
-      for (const item of filtered){
+      for (const item of data){
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-white/5 transition';
-
         tr.innerHTML = `
           <td class="align-top px-4 sm:px-6 py-3 text-ink">${item.fecha || ''}</td>
           <td class="align-top px-4 sm:px-6 py-3">
             <div class="text-ink">${item.usuario || '—'}</div>
             <div class="text-ink-dim text-xs">${(item.ip_origen || '')}</div>
           </td>
-          <td class="align-top px-4 sm:px-6 py-3">
-            <span class="${badgeForAction(item.accion)}">${item.accion || '—'}</span>
-          </td>
-          <td class="align-top px-4 sm:px-6 py-3">
-            <div class="text-ink">${item.tabla_afectada || '—'}</div>
-          </td>
-          <td class="align-top px-4 sm:px-6 py-3">
-            <div class="text-ink">${item.id_registro || '—'}</div>
-          </td>
-          <td class="align-top px-4 sm:px-6 py-3">
-            <div class="text-ink">${item.descripcion ? item.descripcion : '<span class="text-ink-dim italic">—</span>'}</div>
-          </td>
+          <td class="align-top px-4 sm:px-6 py-3"><span class="${badgeForAction(item.accion)}">${item.accion || '—'}</span></td>
+          <td class="align-top px-4 sm:px-6 py-3"><div class="text-ink">${item.tabla_afectada || '—'}</div></td>
+          <td class="align-top px-4 sm:px-6 py-3"><div class="text-ink">${item.id_registro || '—'}</div></td>
+          <td class="align-top px-4 sm:px-6 py-3"><div class="text-ink">${item.descripcion ? item.descripcion : '<span class="text-ink-dim italic">—</span>'}</div></td>
           <td class="align-top px-4 sm:px-6 py-3 text-right">
-            <button class="verDetalle px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-ink text-xs">
-              Ver cambios
-            </button>
+            <button class="verDetalle px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-ink text-xs">Ver cambios</button>
           </td>
         `;
-
-        // Fila de detalle (oculta hasta click)
         const trDetail = document.createElement('tr');
         trDetail.className = 'hidden';
         const td = document.createElement('td');
@@ -285,20 +242,16 @@
         td.className = 'px-4 sm:px-6 pb-4';
         td.appendChild(renderDiffPanel(item));
         trDetail.appendChild(td);
-
         bodyEl.appendChild(tr);
         bodyEl.appendChild(trDetail);
-
         const btn = tr.querySelector('.verDetalle');
         btn.addEventListener('click', () => {
           trDetail.classList.toggle('hidden');
           btn.textContent = trDetail.classList.contains('hidden') ? 'Ver cambios' : 'Ocultar';
         });
       }
-
-      // Texto de total aproximado
       const showingFrom = offset + 1;
-      const showingTo   = offset + filtered.length;
+      const showingTo   = offset + data.length;
       totalEl.textContent = `Mostrando ${showingFrom}–${showingTo} (página ${page}, límite ${limit})`;
       pageEl.textContent = String(page);
     }
@@ -307,14 +260,16 @@
       const url = new URL(API, window.location.origin);
       url.searchParams.set('limit', String(limit));
       url.searchParams.set('offset', String(offset));
+      const q = searchInput.value.trim();
+      if (q) url.searchParams.set('query', q);
+      const desde = document.getElementById('desdeInput').value;
+      const hasta = document.getElementById('hastaInput').value;
+      if (desde) url.searchParams.set('desde', desde);
+      if (hasta) url.searchParams.set('hasta', hasta);
+
       const res = await fetch(url.toString());
-      if (!res.ok) {
-        bodyEl.innerHTML = `
-          <tr>
-            <td colspan="7" class="px-4 sm:px-6 py-6 text-center text-red-400">
-              Error al cargar auditoría (${res.status})
-            </td>
-          </tr>`;
+      if (!res.ok){
+        bodyEl.innerHTML = `<tr><td colspan="7" class="px-4 sm:px-6 py-6 text-center text-red-400">Error al cargar auditoría (${res.status})</td></tr>`;
         return;
       }
       cache = await res.json();
@@ -323,36 +278,42 @@
       nextBtn.disabled = cache.length < limit;
     }
 
-    // === Events ===
     prevBtn.addEventListener('click', () => {
       if (offset <= 0) return;
       offset -= limit; if (offset < 0) offset = 0;
       page = Math.max(1, page - 1);
       loadData();
     });
-
     nextBtn.addEventListener('click', () => {
-      if (cache.length < limit) return; // probablemente no hay más
-      offset += limit;
-      page += 1;
+      if (cache.length < limit) return;
+      offset += limit; page += 1;
       loadData();
     });
-
     limitSelect.addEventListener('change', () => {
       limit = parseInt(limitSelect.value, 10) || 50;
+      page = 1; offset = 0; loadData();
+    });
+    searchInput.addEventListener('input', () => {
+      page = 1; offset = 0; loadData();
+    });
+    refreshBtn.addEventListener('click', () => {
       page = 1; offset = 0;
+      const today = new Date();
+      const lastMonth = new Date(); lastMonth.setDate(today.getDate() - 30);
+      document.getElementById('hastaInput').value = today.toISOString().split('T')[0];
+      document.getElementById('desdeInput').value = lastMonth.toISOString().split('T')[0];
       loadData();
     });
-
-    searchInput.addEventListener('input', () => {
-      renderTable(cache);
+    document.getElementById('filterBtn').addEventListener('click', () => {
+      page = 1; offset = 0; loadData();
     });
 
-    refreshBtn.addEventListener('click', loadData);
-
-    // === Init ===
     document.addEventListener('DOMContentLoaded', () => {
       limitSelect.value = String(limit);
+      const today = new Date();
+      const lastMonth = new Date(); lastMonth.setDate(today.getDate() - 30);
+      document.getElementById('hastaInput').value = today.toISOString().split('T')[0];
+      document.getElementById('desdeInput').value = lastMonth.toISOString().split('T')[0];
       loadData();
     });
   </script>
