@@ -427,9 +427,9 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
 
 
 
-from sqlalchemy import text
-
 from datetime import datetime, timedelta
+
+from sqlalchemy import text
 
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
@@ -437,21 +437,14 @@ def get_auditoria():
         limit = int(request.args.get('limit', 100))
         offset = int(request.args.get('offset', 0))
         query = request.args.get('query', '').strip()
-        desde = request.args.get('desde')
-        hasta = request.args.get('hasta')
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
-
-    # ✅ Último mes por defecto (incluye el día actual completo)
-    if not desde and not hasta:
-        desde = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-        hasta = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")  # mañana
 
     sql = """
         SELECT
             id,
             to_char(
-                timezone('America/Argentina/Buenos_Aires', fecha::timestamptz),
+                fecha,  -- ✅ ya está en hora AR, no volvemos a aplicar timezone
                 'DD/MM/YYYY HH24:MI'
             ) AS fecha,
             usuario,
@@ -468,6 +461,7 @@ def get_auditoria():
     """
     params = {}
 
+    # 🔍 Filtro por texto opcional
     if query:
         sql += """
             AND (
@@ -480,13 +474,6 @@ def get_auditoria():
         """
         params["q"] = f"%{query.lower()}%"
 
-    if desde:
-        sql += " AND fecha >= :desde"
-        params["desde"] = desde
-    if hasta:
-        sql += " AND fecha < :hasta"   # 👈 incluye todo el día de hoy
-        params["hasta"] = hasta
-
     sql += " ORDER BY fecha DESC LIMIT :limit OFFSET :offset"
     params["limit"] = limit
     params["offset"] = offset
@@ -498,6 +485,7 @@ def get_auditoria():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # --- vista para ver la auditoría ---
 @app.route("/auditoria")
