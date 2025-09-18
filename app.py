@@ -432,10 +432,10 @@ def get_auditoria():
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
-    # ✅ Último mes por defecto
+    # ✅ Último mes por defecto (incluye el día actual completo)
     if not desde and not hasta:
         desde = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-        hasta = datetime.utcnow().strftime("%Y-%m-%d")
+        hasta = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")  # mañana
 
     sql = """
         SELECT
@@ -474,7 +474,7 @@ def get_auditoria():
         sql += " AND fecha >= :desde"
         params["desde"] = desde
     if hasta:
-        sql += " AND fecha <= :hasta"
+        sql += " AND fecha < :hasta"   # 👈 incluye todo el día de hoy
         params["hasta"] = hasta
 
     sql += " ORDER BY fecha DESC LIMIT :limit OFFSET :offset"
