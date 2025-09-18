@@ -143,23 +143,30 @@ class Auditoria(db.Model):
     tabla_afectada = db.Column(db.String(100), nullable=False)
     id_registro = db.Column(db.String(50), nullable=False)
     accion = db.Column(db.String(50), nullable=False)
-    cambios = db.Column(db.Text)
+    cambios = db.Column(db.Text)  # 👈 existe en la tabla
+    datos_anteriores = db.Column(db.JSON)
+    datos_nuevos = db.Column(db.JSON)
+    descripcion = db.Column(db.Text)
     ip_origen = db.Column(db.String(50))
     user_agent = db.Column(db.Text)
-    usuario = db.Column(db.String(100))  # 👈 nuevo campo
+    usuario = db.Column(db.String(100))
 
     def to_dict(self):
         return {
             "id": self.id,
-            "fecha": self.fecha.strftime("%d/%m/%Y %H:%M"),
+            "fecha": self.fecha.strftime("%d/%m/%Y %H:%M") if self.fecha else None,
             "tabla_afectada": self.tabla_afectada,
             "id_registro": self.id_registro,
             "accion": self.accion,
             "cambios": self.cambios,
+            "datos_anteriores": self.datos_anteriores,
+            "datos_nuevos": self.datos_nuevos,
+            "descripcion": self.descripcion,
             "ip_origen": self.ip_origen,
             "user_agent": self.user_agent,
             "usuario": self.usuario
         }
+
 
 
 
@@ -358,40 +365,42 @@ import json
 from flask import session, request
 
 def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
-    """
-    Inserta una fila en auditoria.
-    - Toma usuario de sesión o header X-User.
-    - Guarda IP y User-Agent.
-    - Fecha en hora de Argentina (se calcula en Postgres).
-    - before/after como JSONB.
-    - NO hace commit: comparte transacción con la operación que la llame.
-    """
     try:
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
         ip = request.remote_addr
         ua = request.headers.get("User-Agent")
 
+        diff = None
+        if before and after:
+            diff = {}
+            keys = set(before.keys()) | set(after.keys())
+            for k in sorted(keys):
+                if before.get(k) != after.get(k):
+                    diff[k] = [before.get(k), after.get(k)]
+
         db.session.execute(
             text("""
                 INSERT INTO auditoria (
-                    fecha,               -- hora AR calculada en el server DB
+                    fecha,
                     accion,
                     tabla_afectada,
                     id_registro,
                     datos_anteriores,
                     datos_nuevos,
+                    cambios,
                     descripcion,
                     usuario,
                     ip_origen,
                     user_agent
                 )
                 VALUES (
-                    timezone('America/Argentina/Buenos_Aires', now()),  -- 👈 acá forzamos AR
+                    timezone('America/Argentina/Buenos_Aires', now()),
                     :accion,
                     :tabla,
                     :id_registro,
                     CAST(:before AS JSONB),
                     CAST(:after  AS JSONB),
+                    :cambios,
                     :descripcion,
                     :usuario,
                     :ip,
@@ -404,15 +413,16 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
                 "id_registro": str(id_registro),
                 "before": json.dumps(before) if before else None,
                 "after":  json.dumps(after)  if after  else None,
+                "cambios": json.dumps(diff) if diff else None,
                 "descripcion": descripcion,
                 "usuario": usuario,
                 "ip": ip,
                 "ua": ua
             }
         )
-        # sin commit aquí
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
+
 
 
 
