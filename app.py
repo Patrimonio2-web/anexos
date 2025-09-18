@@ -15,7 +15,7 @@ import qrcode
 from sqlalchemy import asc
 
 import pandas as pd
-# from copy import deepcopy  # ← opcional: borrar si no se usa
+# from copy import deepcopy  # ← opcional: borrar si no se usa ..
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
 from openpyxl import Workbook
