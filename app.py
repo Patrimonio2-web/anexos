@@ -184,6 +184,7 @@ class Mobiliario(db.Model):
     estado_conservacion = db.Column(db.String(20))
     estado_control = db.Column(db.String(20))
     historial_movimientos = db.Column(db.Text)
+    valor = db.Column(db.Numeric(12, 2), default=0)  # 👈 nuevo campo
 
     no_dado = db.Column(db.Boolean, default=False)
     para_reparacion = db.Column(db.Boolean, default=False)
@@ -707,6 +708,8 @@ def ultimos_mobiliarios():
             m.privado,   -- 👈 nuevo campo
             m.comentarios,
             m.foto_url,
+            m.privado,  # 👈 nuevo campo
+            m.valor,
             m.fecha_creacion,
             m.fecha_actualizacion,
             m.historial_movimientos,
@@ -888,6 +891,8 @@ def editar_mobiliario(id):
         mobiliario.para_baja = data.get("para_baja", mobiliario.para_baja)
         mobiliario.faltante = data.get("faltante", mobiliario.faltante)
         mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
+        mobiliario.privado = data.get("privado", mobiliario.privado)
+        mobiliario.valor = data.get("valor", mobiliario.valor)  # 👈 nuevo campo
         mobiliario.problema_etiqueta = data.get("problema_etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
@@ -971,6 +976,8 @@ def registrar_mobiliario():
             faltante=data.get("faltante", False),
             sobrante=data.get("sobrante", False),
             problema_etiqueta=data.get("problema_etiqueta", False),
+            privado=data.get("privado", False),
+            valor=data.get("valor", 0),   # 👈 nuevo campo
             comentarios=comentarios,
             foto_url=data.get("foto_url", "")
         )
@@ -1057,11 +1064,13 @@ def obtener_mobiliario_por_id(id):
         "para_baja": m.para_baja,
         "faltante": m.faltante,
         "sobrante": m.sobrante,
+        "privado": m.privado,  # 👈 nuevo campo
         "problema_etiqueta": m.problema_etiqueta,
         "fecha_creacion": (m.fecha_creacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_creacion else None,
         "fecha_actualizacion": (m.fecha_actualizacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_actualizacion else None,
         "clase_bien_id": id_clase,
         "clase": clase_desc,
+        "valor": float(m.valor) if m.valor is not None else 0,
         "rubro_id": id_rubro,
         "rubro": rubro_nombre
     })
