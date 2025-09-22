@@ -191,6 +191,7 @@ class Mobiliario(db.Model):
     faltante = db.Column(db.Boolean, default=False)
     sobrante = db.Column(db.Boolean, default=False)
     problema_etiqueta = db.Column(db.Boolean, default=False)
+    privado = db.Column(db.Boolean, default=False)  # 👈 nuevo campo
 
     comentarios = db.Column(db.Text)
     foto_url = db.Column(db.String(255))
@@ -703,6 +704,7 @@ def ultimos_mobiliarios():
             m.faltante,
             m.sobrante,
             m.problema_etiqueta,
+            m.privado,   -- 👈 nuevo campo
             m.comentarios,
             m.foto_url,
             m.fecha_creacion,
@@ -750,9 +752,6 @@ def ultimos_mobiliarios():
     except Exception as e:
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
-
-
-
 
 
 
