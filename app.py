@@ -708,7 +708,6 @@ def ultimos_mobiliarios():
             m.privado,   -- 👈 nuevo campo
             m.comentarios,
             m.foto_url,
-            m.privado,  # 👈 nuevo campo
             m.valor,
             m.fecha_creacion,
             m.fecha_actualizacion,
