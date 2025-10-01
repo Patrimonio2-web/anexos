@@ -1818,6 +1818,51 @@ def to_float(value):
 # 📎 Registrar el filtro en la app Flask (no en el Blueprint)
 app.add_template_filter(to_float, 'to_float')
 
+# VER ANEXOS Y FILTRAR MOBILIARIOS POR RUBRO Y CLASE
+@app.route('/api/mobiliario_por_anexo/<int:anexo_id>', methods=['GET'])
+def mobiliario_por_anexo(anexo_id):
+    rubro_id = request.args.get('rubro_id', type=int)
+    clase_id = request.args.get('clase_id', type=int)   # 👈 nuevo
+    sub_id = request.args.get('subdependencia_id', type=int)
+    descripcion = request.args.get('descripcion', type=str)
+
+    query = db.session.query(
+        Mobiliario.id,
+        Mobiliario.descripcion,
+        Mobiliario.estado_conservacion,
+        Mobiliario.estado_control,
+        Rubro.id_rubro,
+        Rubro.nombre.label("rubro"),
+        ClaseBien.id_clase,
+        ClaseBien.descripcion.label("clase_bien"),
+        Subdependencia.id.label("subdependencia_id"),
+        Subdependencia.nombre.label("subdependencia"),
+        Anexo.nombre.label("anexo")
+    ).join(
+        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
+    ).join(
+        Anexo, Subdependencia.id_anexo == Anexo.id
+    ).outerjoin(
+        Rubro, Mobiliario.rubro_id == Rubro.id_rubro
+    ).outerjoin(
+        ClaseBien, Mobiliario.clase_bien_id == ClaseBien.id_clase
+    ).filter(
+        Anexo.id == anexo_id
+    )
+
+    # Filtros dinámicos
+    if rubro_id:
+        query = query.filter(Mobiliario.rubro_id == rubro_id)
+    if clase_id:
+        query = query.filter(Mobiliario.clase_bien_id == clase_id)  # 👈 nuevo filtro
+    if sub_id:
+        query = query.filter(Subdependencia.id == sub_id)
+    if descripcion:
+        query = query.filter(Mobiliario.descripcion.ilike(f"%{descripcion}%"))
+
+    resultados = [dict(r._mapping) for r in query.all()]
+    return jsonify(resultados)
+
 
 
 
