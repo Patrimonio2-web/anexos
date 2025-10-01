@@ -1863,6 +1863,11 @@ def mobiliario_por_anexo(anexo_id):
     resultados = [dict(r._mapping) for r in query.all()]
     return jsonify(resultados)
 
+@app.route('/mobiliario_filtros')
+def mobiliario_filtros():
+    anexos = Anexo.query.order_by(Anexo.nombre).all()
+    rubros = Rubro.query.order_by(Rubro.nombre).all()
+    return render_template("mobiliario_filtros.html", anexos=anexos, rubros=rubros)
 
 
 
