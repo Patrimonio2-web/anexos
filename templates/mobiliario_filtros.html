@@ -1,0 +1,170 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Consulta de Mobiliario</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen">
+  <div class="max-w-7xl mx-auto py-10 px-6">
+
+    <!-- Encabezado -->
+    <div class="flex items-center justify-between mb-8">
+      <h1 class="text-2xl font-bold flex items-center gap-2">
+        <i data-lucide="boxes" class="w-6 h-6 text-blue-600"></i>
+        Consulta de Mobiliario
+      </h1>
+      <button onclick="imprimirListado()" 
+              class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">
+        <i data-lucide="printer" class="w-5 h-5"></i>
+        Imprimir
+      </button>
+    </div>
+
+    <!-- Filtros -->
+    <div class="bg-white shadow rounded-lg p-6 mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-sm font-semibold text-gray-700">Anexo</label>
+        <select id="anexo" class="w-full mt-1 border-gray-300 rounded-lg">
+          {% for a in anexos %}
+            <option value="{{ a.id }}">{{ a.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700">Subdependencia</label>
+        <select id="subdependencia" class="w-full mt-1 border-gray-300 rounded-lg"></select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700">Rubro</label>
+        <select id="rubro" class="w-full mt-1 border-gray-300 rounded-lg">
+          <option value="">Todos</option>
+          {% for r in rubros %}
+            <option value="{{ r.id_rubro }}">{{ r.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700">Clase</label>
+        <select id="clase" class="w-full mt-1 border-gray-300 rounded-lg">
+          <option value="">Todas</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700">Descripción</label>
+        <input type="text" id="descripcion" class="w-full mt-1 border-gray-300 rounded-lg">
+      </div>
+
+      <div class="flex items-end">
+        <button onclick="cargarMobiliario()" 
+                class="w-full bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 flex items-center justify-center gap-2">
+          <i data-lucide="search" class="w-5 h-5"></i> Buscar
+        </button>
+      </div>
+    </div>
+
+    <!-- Resultados -->
+    <div class="bg-white shadow rounded-lg p-6">
+      <h2 class="text-lg font-semibold mb-4">Resultados</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm text-left border">
+          <thead class="bg-gray-100 border-b text-gray-700 uppercase">
+            <tr>
+              <th class="px-4 py-2">ID</th>
+              <th class="px-4 py-2">Descripción</th>
+              <th class="px-4 py-2">Rubro</th>
+              <th class="px-4 py-2">Clase</th>
+              <th class="px-4 py-2">Subdependencia</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-mobiliario" class="divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+lucide.createIcons();
+
+// Cargar subdependencias al cambiar anexo
+document.getElementById("anexo").addEventListener("change", async function() {
+  const res = await fetch(`/api/anexos/${this.value}/subdependencias`);
+  const data = await res.json();
+  const subSelect = document.getElementById("subdependencia");
+  subSelect.innerHTML = '<option value="">Todas</option>';
+  data.forEach(sd => {
+    subSelect.innerHTML += `<option value="${sd.id}">${sd.nombre}</option>`;
+  });
+});
+
+// Cargar clases al cambiar rubro
+document.getElementById("rubro").addEventListener("change", async function() {
+  const claseSelect = document.getElementById("clase");
+  claseSelect.innerHTML = '<option value="">Todas</option>';
+  if (this.value) {
+    const res = await fetch(`/api/clases-por-rubro?rubro_id=${this.value}`);
+    const data = await res.json();
+    data.forEach(c => {
+      claseSelect.innerHTML += `<option value="${c.id_clase}">${c.descripcion}</option>`;
+    });
+  }
+});
+
+// Cargar mobiliario con filtros
+async function cargarMobiliario() {
+  const anexo = document.getElementById("anexo").value;
+  const sub = document.getElementById("subdependencia").value;
+  const rubro = document.getElementById("rubro").value;
+  const clase = document.getElementById("clase").value;
+  const desc = document.getElementById("descripcion").value;
+
+  let url = `/api/mobiliario_por_anexo/${anexo}?`;
+  if (sub) url += `subdependencia_id=${sub}&`;
+  if (rubro) url += `rubro_id=${rubro}&`;
+  if (clase) url += `clase_id=${clase}&`;
+  if (desc) url += `descripcion=${desc}&`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  const tbody = document.getElementById("tabla-mobiliario");
+  tbody.innerHTML = "";
+  data.forEach(m => {
+    tbody.innerHTML += `
+      <tr class="hover:bg-blue-50">
+        <td class="px-4 py-2">${m.id}</td>
+        <td class="px-4 py-2">${m.descripcion || ''}</td>
+        <td class="px-4 py-2">${m.rubro || ''}</td>
+        <td class="px-4 py-2">${m.clase_bien || ''}</td>
+        <td class="px-4 py-2">${m.subdependencia || ''}</td>
+      </tr>`;
+  });
+}
+
+// Redirigir a impresión con los filtros actuales
+function imprimirListado() {
+  const anexo = document.getElementById("anexo").value;
+  const sub = document.getElementById("subdependencia").value;
+  const rubro = document.getElementById("rubro").value;
+  const clase = document.getElementById("clase").value;
+  const desc = document.getElementById("descripcion").value;
+
+  let url = `/imprimir_listado?anexo=${anexo}&subdependencia=${sub}&`;
+  if (rubro) url += `rubro_id=${rubro}&`;
+  if (clase) url += `clase_id=${clase}&`;
+  if (desc) url += `descripcion=${desc}&`;
+
+  window.open(url, "_blank");
+}
+</script>
+</body>
+</html>
