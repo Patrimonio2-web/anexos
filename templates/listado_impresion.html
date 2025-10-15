@@ -45,12 +45,19 @@
     <!-- 📍 Información del anexo -->
     <div class="mb-4 text-gray-800">
       <p><strong>Anexo:</strong> {{ anexo_nombre }}</p>
-      <p><strong>Subdependencia:</strong> {{ subdependencia_nombre }} <span class="text-gray-500">(Oficina N.º {{ subdependencia_id }})</span></p>
+      <p><strong>Subdependencia:</strong> {{ subdependencia_nombre }} 
+        <span class="text-gray-500">(Oficina N.º {{ subdependencia_id }})</span>
+      </p>
     </div>
 
     <!-- 📊 Tabla agrupada por rubro -->
     {% set total_general = 0 %}
+    {% set total_rubros = 0 %}
     {% for rubro, items in agrupado.items() %}
+      {% set subtotal = items|length %}
+      {% set total_general = total_general + subtotal %}
+      {% set total_rubros = total_rubros + 1 %}
+
       <div class="mb-10">
         <h2 class="text-lg font-semibold bg-gray-200 px-4 py-2 border border-gray-300 rounded-t">
           {{ rubro }}
@@ -64,17 +71,16 @@
               </tr>
             </thead>
             <tbody>
-              {% set subtotal = 0 %}
               {% for desc, id in items %}
               <tr class="{% if loop.index0 % 2 == 0 %}bg-white{% else %}bg-gray-50{% endif %}">
                 <td class="px-4 py-1 align-top">{{ desc }}</td>
                 <td class="px-4 py-1 align-top">{{ id }}</td>
               </tr>
-              {% set subtotal = subtotal + 1 %}
-              {% set total_general = total_general + 1 %}
               {% endfor %}
               <tr class="bg-gray-100 font-semibold">
-                <td colspan="2" class="px-4 py-1 text-right">Total {{ rubro }}: {{ subtotal }}</td>
+                <td colspan="2" class="px-4 py-1 text-right">
+                  Total {{ rubro }}: {{ subtotal }}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -83,8 +89,9 @@
     {% endfor %}
 
     <!-- 📦 Totales -->
-    <div class="mt-8 text-right font-semibold text-gray-800">
+    <div class="mt-8 text-right font-semibold text-gray-800 border-t pt-4">
       <p>Total general de bienes listados: {{ total_general }}</p>
+      <p class="text-gray-600 text-sm">Distribuidos en {{ total_rubros }} rubros</p>
     </div>
 
     <!-- ✍️ Firmas -->
