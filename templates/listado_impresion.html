@@ -19,15 +19,14 @@
       font-family: 'Inter', sans-serif;
     }
     @media print {
-      .no-print {
-        display: none;
-      }
+      .no-print { display: none; }
     }
   </style>
 </head>
 <body class="bg-white text-black p-10 text-sm leading-relaxed">
   <div class="max-w-6xl mx-auto">
-    <!-- Encabezado con logo más grande -->
+
+    <!-- 🧾 Encabezado institucional -->
     <div class="flex items-center justify-between mb-8 border-b pb-4">
       <div class="flex items-center gap-6">
         <img src="{{ url_for('static', filename='images/logo_legislatura.jpeg') }}" alt="Logo Legislatura" class="h-24 w-auto">
@@ -43,89 +42,85 @@
       </div>
     </div>
 
-    <!-- Información del Anexo y Subdependencia -->
+    <!-- 📍 Información del anexo -->
     <div class="mb-4 text-gray-800">
-      <p><strong>Anexo:</strong> {{ anexo_nombre }} <span class="text-gray-500"></span></p>
+      <p><strong>Anexo:</strong> {{ anexo_nombre }}</p>
       <p><strong>Subdependencia:</strong> {{ subdependencia_nombre }} <span class="text-gray-500">(Oficina N.º {{ subdependencia_id }})</span></p>
     </div>
 
-    <!-- Tabla de Mobiliario -->
-    <div class="overflow-x-auto border rounded-lg shadow">
-    <table class="min-w-full divide-y divide-gray-300 border border-gray-300 text-xs">
-        <thead class="bg-gray-200 text-gray-800 uppercase tracking-wide">
-        <tr>
-            <th class="px-4 py-1 text-left">Descripción</th>
-            <th class="px-4 py-1 text-left">ID</th>
-        </tr>
-        </thead>
-        <tbody>
-        {% for m in mobiliarios %}
-        <tr class="{% if loop.index0 % 2 == 0 %}bg-white{% else %}bg-gray-100{% endif %} hover:bg-blue-50">
-            <td class="px-4 py-1 align-top">{{ m[0] }}</td>
-            <td class="px-4 py-1 align-top">{{ m[1] }}</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <!-- 📊 Tabla agrupada por rubro -->
+    {% set total_general = 0 %}
+    {% for rubro, items in agrupado.items() %}
+      <div class="mb-10">
+        <h2 class="text-lg font-semibold bg-gray-200 px-4 py-2 border border-gray-300 rounded-t">
+          {{ rubro }}
+        </h2>
+        <div class="overflow-x-auto border border-t-0 rounded-b-lg">
+          <table class="min-w-full divide-y divide-gray-300 text-xs">
+            <thead class="bg-gray-100 text-gray-800 uppercase tracking-wide">
+              <tr>
+                <th class="px-4 py-1 text-left">Descripción</th>
+                <th class="px-4 py-1 text-left">ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set subtotal = 0 %}
+              {% for desc, id in items %}
+              <tr class="{% if loop.index0 % 2 == 0 %}bg-white{% else %}bg-gray-50{% endif %}">
+                <td class="px-4 py-1 align-top">{{ desc }}</td>
+                <td class="px-4 py-1 align-top">{{ id }}</td>
+              </tr>
+              {% set subtotal = subtotal + 1 %}
+              {% set total_general = total_general + 1 %}
+              {% endfor %}
+              <tr class="bg-gray-100 font-semibold">
+                <td colspan="2" class="px-4 py-1 text-right">Total {{ rubro }}: {{ subtotal }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+
+    <!-- 📦 Totales -->
+    <div class="mt-8 text-right font-semibold text-gray-800">
+      <p>Total general de bienes listados: {{ total_general }}</p>
     </div>
 
-    <!-- Pie -->
-    <div class="mt-6 text-right text-xs text-gray-500">
-      <p>Total: {{ mobiliarios|length }} unidades</p>
+    <!-- ✍️ Firmas -->
+    <div class="mt-16 flex justify-around text-center text-sm text-gray-800">
+      <div>
+        <div class="border-t border-dotted border-gray-500 w-64 mx-auto mb-1"></div>
+        Responsable Área
+      </div>
+      <div>
+        <div class="border-t border-dotted border-gray-500 w-64 mx-auto mb-1"></div>
+        Responsable Patrimonio
+      </div>
     </div>
-  </div>
-  <!-- Firmas -->
-<div class="mt-16 flex justify-around text-center text-sm text-gray-800">
-  <div>
-    <div class="border-t border-dotted border-gray-500 w-64 mx-auto mb-1"></div>
-    Responsable Área
-  </div>
-  <div>
-    <div class="border-t border-dotted border-gray-500 w-64 mx-auto mb-1"></div>
-    Responsable Patrimonio
-  </div>
-</div>
 
+  </div>
+
+  <!-- 🎨 Estilos impresión -->
+  <style>
+    @media print {
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        margin: 0;
+        font-size: 0.7rem;
+      }
+      .shadow, .rounded-lg { box-shadow: none !important; }
+      table { border-collapse: collapse !important; }
+      th, td {
+        border: 1px solid #ccc !important;
+        padding: 4px !important;
+      }
+      tr:nth-child(even) { background-color: #f9f9f9 !important; }
+      tr:nth-child(odd) { background-color: white !important; }
+      img { max-height: 60px !important; }
+      @page { size: A4 portrait; margin: 1.5cm; }
+    }
+  </style>
 </body>
 </html>
-
-<style>
-  @media print {
-    body {
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      margin: 0;
-      font-size: 0.7rem;
-    }
-
-    .shadow, .rounded-lg {
-      box-shadow: none !important;
-    }
-
-    table {
-      border-collapse: collapse !important;
-    }
-
-    th, td {
-      border: 1px solid #ccc !important;
-      padding: 4px !important;
-    }
-
-    tr:nth-child(even) {
-      background-color: #f9f9f9 !important;
-    }
-
-    tr:nth-child(odd) {
-      background-color: white !important;
-    }
-
-    img {
-      max-height: 60px !important;
-    }
-
-    @page {
-      size: A4 portrait;
-      margin: 1.5cm;
-    }
-  }
-</style>
