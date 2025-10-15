@@ -1240,22 +1240,22 @@ def imprimir_listado():
     rows = cur.fetchall()
     conn.close()
 
-    # Agrupar por rubro
+    # Agrupar por rubro (incluyendo ID)
     agrupado = {}
     for id_rubro, nombre_rubro, descripcion, id_mob in rows:
-        if nombre_rubro not in agrupado:
-            agrupado[nombre_rubro] = []
-        agrupado[nombre_rubro].append((descripcion, id_mob))
+        clave = f"{id_rubro} - {nombre_rubro}"
+        if clave not in agrupado:
+            agrupado[clave] = []
+        agrupado[clave].append((descripcion, id_mob))
 
     return render_template(
         "listado_impresion.html",
         agrupado=agrupado,
-        ahora=datetime.now()
+        ahora=datetime.now(),
+        anexo_nombre=db.session.get(Anexo, anexo_id).nombre if anexo_id else None,
+        subdependencia_nombre=db.session.get(Subdependencia, sub_id).nombre if sub_id else None,
+        subdependencia_id=sub_id
     )
-
-
-
-
 
 
 
@@ -1350,21 +1350,21 @@ def imprimir_listado_preview():
     rows = cur.fetchall()
     conn.close()
 
-    # Agrupar por rubro
     agrupado = {}
     for id_rubro, nombre_rubro, descripcion, id_mob in rows:
-        if nombre_rubro not in agrupado:
-            agrupado[nombre_rubro] = []
-        agrupado[nombre_rubro].append((descripcion, id_mob))
+        clave = f"{id_rubro} - {nombre_rubro}"
+        if clave not in agrupado:
+            agrupado[clave] = []
+        agrupado[clave].append((descripcion, id_mob))
 
     return render_template_string("""
     {% for rubro, items in agrupado.items() %}
-      <h2 class="text-lg font-bold mt-6 mb-2">{{ rubro }}</h2>
+      <h2 class="text-base font-bold mt-6 mb-2">{{ rubro }}</h2>
       <table class="w-full table-auto border border-gray-300 text-sm mb-6">
         <thead class="bg-gray-100">
           <tr>
-            <th class="border px-2 py-1">Descripción</th>
-            <th class="border px-2 py-1">ID</th>
+            <th class="border px-2 py-1 text-left">Descripción</th>
+            <th class="border px-2 py-1 text-left">ID</th>
           </tr>
         </thead>
         <tbody>
@@ -1381,7 +1381,6 @@ def imprimir_listado_preview():
       <p class="text-center text-gray-500 mt-6">No se encontraron resultados.</p>
     {% endif %}
     """, agrupado=agrupado)
-
 
 
 
