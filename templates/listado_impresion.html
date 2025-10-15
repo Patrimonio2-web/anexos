@@ -15,12 +15,8 @@
     };
   </script>
   <style>
-    body {
-      font-family: 'Inter', sans-serif;
-    }
-    @media print {
-      .no-print { display: none; }
-    }
+    body { font-family: 'Inter', sans-serif; }
+    @media print { .no-print { display: none; } }
   </style>
 </head>
 <body class="bg-white text-black p-10 text-sm leading-relaxed">
@@ -51,11 +47,12 @@
     </div>
 
     <!-- 📊 Tabla agrupada por rubro -->
-    {% set total_general = 0 %}
+    {% set total_general = namespace(valor=0) %}
     {% set total_rubros = 0 %}
+
     {% for rubro, items in agrupado.items() %}
       {% set subtotal = items|length %}
-      {% set total_general = total_general + subtotal %}
+      {% set total_general.valor = total_general.valor + subtotal %}
       {% set total_rubros = total_rubros + 1 %}
 
       <div class="mb-10">
@@ -90,7 +87,7 @@
 
     <!-- 📦 Totales -->
     <div class="mt-8 text-right font-semibold text-gray-800 border-t pt-4">
-      <p>Total general de bienes listados: {{ total_general }}</p>
+      <p>Total general de bienes listados: {{ total_general.valor }}</p>
       <p class="text-gray-600 text-sm">Distribuidos en {{ total_rubros }} rubros</p>
     </div>
 
@@ -119,10 +116,7 @@
       }
       .shadow, .rounded-lg { box-shadow: none !important; }
       table { border-collapse: collapse !important; }
-      th, td {
-        border: 1px solid #ccc !important;
-        padding: 4px !important;
-      }
+      th, td { border: 1px solid #ccc !important; padding: 4px !important; }
       tr:nth-child(even) { background-color: #f9f9f9 !important; }
       tr:nth-child(odd) { background-color: white !important; }
       img { max-height: 60px !important; }
