@@ -1218,57 +1218,40 @@ from datetime import datetime
 def imprimir_listado():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
-    filtros = request.args.get('filtros', '').split(',')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
 
-    campos = {
-        "no_dado": "No Dado",
-        "para_reparacion": "Reparación",
-        "para_baja": "Para baja",
-        "faltante": "Faltante",
-        "sobrante": "Sobrante",
-        "problema_etiqueta": "Problema etiqueta"
-    }
-
     query = """
-        SELECT m.descripcion, m.id
+        SELECT r.id_rubro, r.nombre AS rubro_nombre, m.descripcion, m.id
         FROM mobiliario m
+        JOIN rubros r ON m.rubro_id = r.id_rubro
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
         WHERE a.id = %s AND sd.id = %s
     """
 
-    for campo in filtros:
-        if campo and campo != "faltante":
-            query += f" AND m.{campo} = TRUE"
-
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
+
+    query += " ORDER BY r.nombre, m.id::integer ASC"
 
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, (anexo_id, sub_id))
-    mobiliarios = cur.fetchall()
-
-    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
-    anexo_nombre = cur.fetchone()[0]
-
-    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
-    subdependencia_nombre = cur.fetchone()[0]
-
+    rows = cur.fetchall()
     conn.close()
+
+    # Agrupar por rubro
+    agrupado = {}
+    for id_rubro, nombre_rubro, descripcion, id_mob in rows:
+        if nombre_rubro not in agrupado:
+            agrupado[nombre_rubro] = []
+        agrupado[nombre_rubro].append((descripcion, id_mob))
 
     return render_template(
         "listado_impresion.html",
-        mobiliarios=mobiliarios,
-        campos=campos,
-        ahora=datetime.now(),
-        anexo_nombre=anexo_nombre,
-        subdependencia_nombre=subdependencia_nombre,
-        subdependencia_id=sub_id
+        agrupado=agrupado,
+        ahora=datetime.now()
     )
-
-
 
 
 
@@ -1345,52 +1328,59 @@ from datetime import datetime
 def imprimir_listado_preview():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
-    filtros = request.args.get('filtros', '').split(',')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
 
     query = """
-        SELECT m.descripcion, m.id
+        SELECT r.id_rubro, r.nombre AS rubro_nombre, m.descripcion, m.id
         FROM mobiliario m
+        JOIN rubros r ON m.rubro_id = r.id_rubro
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
         WHERE a.id = %s AND sd.id = %s
     """
 
-    for campo in filtros:
-        if campo and campo != "faltante":
-            query += f" AND m.{campo} = TRUE"
-
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
+
+    query += " ORDER BY r.nombre, m.id::integer ASC"
 
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, (anexo_id, sub_id))
-    mobiliarios = cur.fetchall()
+    rows = cur.fetchall()
     conn.close()
 
-    return render_template_string("""
-    <table class="w-full table-auto border border-gray-300 text-sm mt-4">
-      <thead class="bg-gray-100">
-        <tr>
-          <th class="border px-2 py-1">Descripción</th>
-          <th class="border px-2 py-1">ID</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in mobiliarios %}
-        <tr class="hover:bg-gray-50">
-          <td class="border px-2 py-1">{{ m[0] }}</td>
-          <td class="border px-2 py-1">{{ m[1] }}</td>
-        </tr>
-        {% endfor %}
-        {% if mobiliarios|length == 0 %}
-        <tr><td colspan="2" class="text-center p-4 text-gray-500">No se encontraron resultados.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-    """, mobiliarios=mobiliarios)
+    # Agrupar por rubro
+    agrupado = {}
+    for id_rubro, nombre_rubro, descripcion, id_mob in rows:
+        if nombre_rubro not in agrupado:
+            agrupado[nombre_rubro] = []
+        agrupado[nombre_rubro].append((descripcion, id_mob))
 
+    return render_template_string("""
+    {% for rubro, items in agrupado.items() %}
+      <h2 class="text-lg font-bold mt-6 mb-2">{{ rubro }}</h2>
+      <table class="w-full table-auto border border-gray-300 text-sm mb-6">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="border px-2 py-1">Descripción</th>
+            <th class="border px-2 py-1">ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for desc, id in items %}
+          <tr class="hover:bg-gray-50">
+            <td class="border px-2 py-1">{{ desc }}</td>
+            <td class="border px-2 py-1">{{ id }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+    {% if not agrupado %}
+      <p class="text-center text-gray-500 mt-6">No se encontraron resultados.</p>
+    {% endif %}
+    """, agrupado=agrupado)
 
 
 
