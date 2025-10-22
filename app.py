@@ -691,9 +691,14 @@ from datetime import timedelta
 @app.route('/api/mobiliario/ultimos', methods=['GET'])
 def ultimos_mobiliarios():
     try:
-        query = """
+        # ✅ filtros opcionales (retrocompatibles)
+        ubicacion_id = request.args.get('ubicacion_id', type=int)
+        anexo_id     = request.args.get('anexo_id', type=int)
+
+        sql = """
         SELECT 
             m.id                    AS id_mobiliario,
+            m.ubicacion_id,                              -- ✅ ahora lo devolvemos
             m.descripcion,
             m.estado_conservacion,
             m.estado_control,
@@ -705,7 +710,7 @@ def ultimos_mobiliarios():
             m.faltante,
             m.sobrante,
             m.problema_etiqueta,
-            m.privado,   -- 👈 nuevo campo
+            m.privado,
             m.comentarios,
             m.foto_url,
             m.valor,
@@ -714,7 +719,9 @@ def ultimos_mobiliarios():
             m.historial_movimientos,
             r.nombre               AS rubro,
             cb.descripcion         AS clase_bien,
+            sd.id                  AS subdependencia_id, -- ✅ útil si lo necesitás
             sd.nombre              AS subdependencia,
+            a.id                   AS anexo_id,          -- ✅ útil si lo necesitás
             a.nombre               AS anexo,
             a.direccion            AS direccion_anexo
         FROM    mobiliario m
@@ -723,38 +730,47 @@ def ultimos_mobiliarios():
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
         WHERE m.id ~ '^[0-9]+$'
-        ORDER BY m.id::integer DESC;
         """
+
+        params = []
+
+        if ubicacion_id is not None:
+            sql += " AND m.ubicacion_id = %s"
+            params.append(ubicacion_id)
+
+        if anexo_id is not None:
+            sql += " AND a.id = %s"
+            params.append(anexo_id)
+
+        # mismo orden que tenías:
+        sql += " ORDER BY m.id::integer DESC"
+        # si preferís priorizar actualizaciones recientes:
+        # sql += " ORDER BY m.fecha_actualizacion DESC NULLS LAST, m.id::integer DESC"
 
         conn = db.engine.raw_connection()
         cur  = conn.cursor()
-        cur.execute(query)
+        cur.execute(sql, params)
         columns  = [col[0] for col in cur.description]
         results  = [dict(zip(columns, row)) for row in cur.fetchall()]
         cur.close()
         conn.close()
 
-        # ✅ Formatear fechas y procesar historial
+        # ✅ Formatear fechas y procesar historial (igual que antes)
         for r in results:
-            # Convertir historial en lista
-            historial = r.get("historial_movimientos")
-            if historial:
-                r["historial"] = [line.strip() for line in historial.split('\n') if line.strip()]
-            else:
-                r["historial"] = []
-            del r["historial_movimientos"]
+            hist = r.get("historial_movimientos")
+            r["historial"] = [line.strip() for line in hist.split('\n') if line.strip()] if hist else []
+            r.pop("historial_movimientos", None)
 
-            # Formatear fechas con hora argentina
-            if r["fecha_creacion"]:
+            if r.get("fecha_creacion"):
                 r["fecha_creacion"] = (r["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
-            if r["fecha_actualizacion"]:
+            if r.get("fecha_actualizacion"):
                 r["fecha_actualizacion"] = (r["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
 
-        return jsonify(results)
+        return jsonify(results), 200
+
     except Exception as e:
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
-
 
 
 # ====== HELPERS DE AUDITORÍA ======
