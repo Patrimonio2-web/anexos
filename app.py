@@ -12,6 +12,7 @@ import os, tempfile, io
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
+from sqlalchemy import asc, text #nuevo
 from sqlalchemy import asc
 
 import pandas as pd
@@ -369,11 +370,12 @@ from flask import session, request
 def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
     try:
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
-        ip = request.remote_addr
-        ua = request.headers.get("User-Agent")
+        ip = request.headers.get("X-Forwarded-For") or request.remote_addr
+        ua = request.headers.get("User-Agent") or ""
 
+        # diff liviano (opcional: lo usás si querés guardar la matriz)
         diff = None
-        if before and after:
+        if isinstance(before, dict) and isinstance(after, dict):
             diff = {}
             keys = set(before.keys()) | set(after.keys())
             for k in sorted(keys):
@@ -402,20 +404,20 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
                     :id_registro,
                     CAST(:before AS JSONB),
                     CAST(:after  AS JSONB),
-                    :cambios,
+                    CAST(:cambios AS JSONB),
                     :descripcion,
                     :usuario,
                     :ip,
                     :ua
                 )
-            """),
+            """)),
             {
                 "accion": accion,
-                "tabla": tabla,
+                "tabla": str(tabla).lower() if tabla else None,
                 "id_registro": str(id_registro),
                 "before": json.dumps(before) if before else None,
                 "after":  json.dumps(after)  if after  else None,
-                "cambios": json.dumps(diff) if diff else None,
+                "cambios": json.dumps(diff)  if diff  else None,
                 "descripcion": descripcion,
                 "usuario": usuario,
                 "ip": ip,
@@ -426,29 +428,29 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
         print(f"⚠ Error registrando auditoría: {e}")
 
 
-
-
-
 from datetime import datetime, timedelta
 
 from sqlalchemy import text
 
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
+    # -------- parámetros --------
     try:
-        limit = int(request.args.get('limit', 100))
+        limit  = min(int(request.args.get('limit', 100)), 500)
         offset = int(request.args.get('offset', 0))
-        query = request.args.get('query', '').strip()
+        query  = (request.args.get('query', '') or '').strip().lower()
+        desde  = (request.args.get('desde') or '').strip()   # "YYYY-MM-DD"
+        hasta  = (request.args.get('hasta') or '').strip()   # "YYYY-MM-DD"
+        tabla  = (request.args.get('tabla') or '').strip().lower()
+        id_reg = (request.args.get('id_registro') or '').strip()
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
+    # -------- SQL base --------
     sql = """
         SELECT
             id,
-            to_char(
-                fecha,  -- ✅ ya está en hora AR, no volvemos a aplicar timezone
-                'DD/MM/YYYY HH24:MI'
-            ) AS fecha,
+            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya guardada en AR
             usuario,
             accion,
             tabla_afectada,
@@ -463,23 +465,43 @@ def get_auditoria():
     """
     params = {}
 
-    # 🔍 Filtro por texto opcional
+    # -------- filtros opcionales --------
     if query:
         sql += """
             AND (
-                LOWER(usuario) LIKE :q OR
-                LOWER(accion) LIKE :q OR
-                LOWER(tabla_afectada) LIKE :q OR
-                LOWER(id_registro) LIKE :q OR
-                LOWER(descripcion) LIKE :q
+                LOWER(COALESCE(usuario,''))         LIKE :q OR
+                LOWER(COALESCE(accion,''))          LIKE :q OR
+                LOWER(COALESCE(tabla_afectada,''))  LIKE :q OR
+                LOWER(COALESCE(id_registro,''))     LIKE :q OR
+                LOWER(COALESCE(descripcion,''))     LIKE :q
             )
         """
-        params["q"] = f"%{query.lower()}%"
+        params["q"] = f"%{query}%"
 
-    sql += " ORDER BY fecha DESC LIMIT :limit OFFSET :offset"
-    params["limit"] = limit
+    if desde:
+        # fecha es timestamp (hora AR). Tomamos medianoche local del día 'desde'
+        sql += " AND fecha >= to_timestamp(:desde || ' 00:00', 'YYYY-MM-DD HH24:MI') "
+        params["desde"] = desde
+
+    if hasta:
+        # hasta inclusivo → +1 día y < siguiente medianoche
+        sql += " AND fecha < to_timestamp(:hasta || ' 00:00', 'YYYY-MM-DD HH24:MI') + interval '1 day' "
+        params["hasta"] = hasta
+
+    if tabla:
+        sql += " AND LOWER(tabla_afectada) = :tabla "
+        params["tabla"] = tabla
+
+    if id_reg:
+        sql += " AND id_registro = :id_registro "
+        params["id_registro"] = id_reg
+
+    # -------- orden + paginación --------
+    sql += " ORDER BY fecha DESC, id DESC LIMIT :limit OFFSET :offset "
+    params["limit"]  = limit
     params["offset"] = offset
 
+    # -------- ejecución --------
     try:
         with db.engine.connect() as conn:
             result = conn.execute(text(sql), params)
