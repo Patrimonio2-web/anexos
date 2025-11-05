@@ -1267,7 +1267,7 @@ from datetime import datetime
 def imprimir_listado():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
-    filtros = request.args.getlist('filtros')  # varios checks
+    filtros = request.args.getlist('filtros')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
     estado_conservacion = request.args.get("estado_conservacion")
 
@@ -1280,6 +1280,7 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
+    # 🔹 Consulta sin joins innecesarios
     query = """
         SELECT 
             m.id,
@@ -1290,28 +1291,24 @@ def imprimir_listado():
             m.para_baja,
             m.faltante,
             m.sobrante,
-            m.problema_etiqueta,
-            r.nombre AS rubro,
-            c.nombre AS clase_bien
+            m.problema_etiqueta
         FROM mobiliario m
-        LEFT JOIN rubros r ON m.rubro_id = r.id
-        LEFT JOIN clases_bienes c ON m.clase_bien_id = c.id
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
         WHERE a.id = %s AND sd.id = %s
     """
     params = [anexo_id, sub_id]
 
-    # Filtros por estado
+    # 🔸 Filtros booleanos
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
-    # Incluir o no faltantes
+    # 🔸 Incluir o excluir faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    # Estado de conservación
+    # 🔸 Estado de conservación
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
