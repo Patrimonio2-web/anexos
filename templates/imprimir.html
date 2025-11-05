@@ -4,7 +4,6 @@
     <h1 class="text-3xl font-bold mb-6 text-center">Listado de Mobiliario</h1>
 
     <form method="get" action="{{ url_for('imprimir_listado') }}" class="space-y-6 bg-gray-800 p-6 rounded-lg">
-        <!-- Selección de anexo y subdependencia -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
                 <label class="block mb-2 font-semibold">Anexo:</label>
@@ -14,14 +13,12 @@
                     {% endfor %}
                 </select>
             </div>
-
             <div>
                 <label class="block mb-2 font-semibold">Subdependencia (ID numérico):</label>
                 <input type="text" name="subdependencia" class="w-full p-2 bg-gray-700 rounded" required>
             </div>
         </div>
 
-        <!-- Filtros por estado -->
         <div>
             <h2 class="text-xl font-semibold mb-2">Filtrar por estado</h2>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -41,9 +38,8 @@
             </div>
         </div>
 
-        <!-- Filtro por estado de conservación -->
         <div>
-            <h2 class="text-xl font-semibold mb-2">Filtrar por estado de conservación</h2>
+            <h2 class="text-xl font-semibold mb-2">Estado de conservación</h2>
             <select name="estado_conservacion" class="p-2 bg-gray-700 rounded">
                 <option value="">Todos</option>
                 <option value="Bueno">Bueno</option>
@@ -52,7 +48,6 @@
             </select>
         </div>
 
-        <!-- Mostrar u ocultar faltantes -->
         <div>
             <label class="flex items-center space-x-2">
                 <input type="checkbox" name="incluir_faltantes" value="true" class="accent-teal-500">
@@ -66,4 +61,5 @@
     </form>
 </div>
 {% endblock %}
+
 
