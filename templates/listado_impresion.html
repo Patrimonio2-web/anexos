@@ -1,39 +1,184 @@
-{% extends "base.html" %}
-{% block content %}
-<div class="p-8 bg-gray-900 text-white min-h-screen">
-    <div class="text-center mb-6">
-        <h1 class="text-3xl font-bold mb-2">Listado de Mobiliario</h1>
-        <p class="text-gray-400">
-            Anexo: {{ anexo_nombre }} — Subdependencia: {{ subdependencia_nombre }}
-        </p>
-        <p class="text-sm text-gray-500">Generado el {{ ahora.strftime('%d/%m/%Y %H:%M') }}</p>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Listado de Mobiliario</title>
+    <style>
+        body {
+            font-family: "Inter", Arial, sans-serif;
+            margin: 30px;
+            color: #000;
+            background: #fff;
+        }
+
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .header img {
+            width: 80px;
+            vertical-align: middle;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            margin: 5px 0;
+        }
+
+        .subtitulo {
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .info {
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            border: 1px solid #000;
+            padding: 6px 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f0f0f0;
+            text-transform: uppercase;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        .totales {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+
+        .firmas {
+            margin-top: 60px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+
+        .firma {
+            text-align: center;
+            width: 45%;
+        }
+
+        .firma span {
+            display: block;
+            margin-top: 3px;
+            border-top: 1px solid #000;
+            width: 100%;
+        }
+
+        .fecha {
+            text-align: right;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        @media print {
+            body {
+                margin: 10mm;
+            }
+            .no-print {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ENCABEZADO -->
+    <div class="header">
+        <img src="https://res.cloudinary.com/dktp1ybbx/image/upload/v1721833082/escudo_rioja_negro_mgvytb.png" alt="Logo">
+        <h1>LEGISLATURA DE LA PROVINCIA DE LA RIOJA</h1>
+        <p class="subtitulo">Inventario de Bienes Muebles</p>
     </div>
 
-    <div class="overflow-x-auto">
-        <table class="min-w-full text-sm border border-gray-700 rounded-lg">
-            <thead class="bg-gray-800">
-                <tr>
-                    <th class="px-3 py-2 text-left">ID</th>
-                    <th class="px-3 py-2 text-left">Descripción</th>
-                    <th class="px-3 py-2 text-left">Estado de conservación</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for mob in mobiliarios %}
-                <tr class="border-b border-gray-700 hover:bg-gray-800 transition">
-                    <td class="px-3 py-2">{{ mob[1] }}</td>
-                    <td class="px-3 py-2">{{ mob[0] }}</td>
-                    <td class="px-3 py-2">{{ mob[2] or '-' }}</td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="3" class="text-center py-4 text-gray-500">
-                        No se encontraron mobiliarios con los filtros aplicados.
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- INFORMACIÓN -->
+    <div class="info">
+        <strong>Anexo:</strong> {{ anexo_nombre }} <br>
+        <strong>Subdependencia:</strong> {{ subdependencia_nombre }} <br>
+        <strong>Fecha de emisión:</strong> {{ ahora.strftime('%d/%m/%Y %H:%M') }} <br>
+
+        {% if filtros or estado_conservacion %}
+        <strong>Filtros aplicados:</strong>
+        <ul>
+            {% for f in filtros %}
+                <li>{{ campos[f] if f in campos else f }}</li>
+            {% endfor %}
+            {% if estado_conservacion %}
+                <li>Estado de conservación: {{ estado_conservacion }}</li>
+            {% endif %}
+        </ul>
+        {% endif %}
     </div>
-</div>
-{% endblock %}
+
+    <!-- TABLA -->
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 5%;">ID</th>
+                <th style="width: 55%;">Descripción</th>
+                <th style="width: 20%;">Estado de conservación</th>
+                <th style="width: 20%;">Observaciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for mob in mobiliarios %}
+            <tr>
+                <td>{{ mob[0] }}</td>
+                <td>{{ mob[1] }}</td>
+                <td>{{ mob[2] or '' }}</td>
+                <td>
+                    {% set observaciones = [] %}
+                    {% if mob[3] %} {% set _ = observaciones.append('No dado') %} {% endif %}
+                    {% if mob[4] %} {% set _ = observaciones.append('Para reparación') %} {% endif %}
+                    {% if mob[5] %} {% set _ = observaciones.append('Para baja') %} {% endif %}
+                    {% if mob[6] %} {% set _ = observaciones.append('Faltante') %} {% endif %}
+                    {% if mob[7] %} {% set _ = observaciones.append('Sobrante') %} {% endif %}
+                    {% if mob[8] %} {% set _ = observaciones.append('Problema etiqueta') %} {% endif %}
+                    {{ observaciones|join(', ') }}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" style="text-align:center; color: #555;">No se encontraron bienes con los filtros aplicados.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- TOTALES -->
+    <p class="totales">
+        Total de bienes listados: {{ mobiliarios|length }}
+    </p>
+
+    <!-- FIRMAS -->
+    <div class="firmas">
+        <div class="firma">
+            <span></span>
+            Responsable del Área
+        </div>
+        <div class="firma">
+            <span></span>
+            Patrimonio
+        </div>
+    </div>
+
+</body>
+</html>
+
