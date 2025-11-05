@@ -80,7 +80,7 @@
     // Si tenías tu lógica original de carga dinámica de subdependencias, la mantenemos igual:
     document.getElementById('anexo').addEventListener('change', function () {
         const anexoId = this.value;
-        fetch(`/get_subdependencias?anexo_id=${anexoId}`)
+        fetch(`/api/subdependencias_por_anexo/${anexoId}`)
             .then(res => res.json())
             .then(data => {
                 const subSelect = document.getElementById('subdependencia');
@@ -95,5 +95,6 @@
     });
 </script>
 {% endblock %}
+
 
 
