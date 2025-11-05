@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-6 bg-gray-900 text-white min-h-screen">
+  <h1 class="text-3xl font-bold mb-6 text-center">Gestión de Agentes</h1>
+
+  <!-- 🔍 Barra de búsqueda -->
+  <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+    <input
+      id="busqueda"
+      type="text"
+      placeholder="Buscar por nombre o apellido..."
+      class="px-4 py-2 rounded w-full md:w-1/3 text-gray-900"
+      oninput="filtrarAgentes()"
+    >
+    <button
+      onclick="abrirModalNuevo()"
+      class="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded text-white font-semibold"
+    >
+      ➕ Nuevo agente
+    </button>
+  </div>
+
+  <!-- 📋 Tabla -->
+  <div class="overflow-x-auto rounded-lg shadow">
+    <table class="min-w-full text-sm text-left border border-gray-700">
+      <thead class="bg-gray-800 text-gray-300 uppercase">
+        <tr>
+          <th class="py-3 px-4">Legajo</th>
+          <th class="py-3 px-4">Apellido</th>
+          <th class="py-3 px-4">Nombre</th>
+          <th class="py-3 px-4">Anexo</th>
+          <th class="py-3 px-4">Subdependencia</th>
+          <th class="py-3 px-4">Cargo</th>
+          <th class="py-3 px-4 text-center">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-agentes" class="divide-y divide-gray-700"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 🧩 MODAL -->
+<div id="modal-agente" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white text-gray-900 rounded-lg shadow-lg p-6 w-full max-w-lg relative">
+    <h2 id="modal-titulo" class="text-xl font-semibold mb-4">Nuevo agente</h2>
+
+    <form id="form-agente" class="space-y-3">
+      <input type="hidden" id="agente_id">
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium">Legajo</label>
+          <input id="legajo" class="w-full p-2 border rounded" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">DNI/CUIL</label>
+          <input id="dni_cuil" class="w-full p-2 border rounded" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Apellido</label>
+          <input id="apellido" class="w-full p-2 border rounded" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Nombre</label>
+          <input id="nombre" class="w-full p-2 border rounded" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Anexo (ID)</label>
+          <input id="id_anexo" type="number" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Subdependencia (ID)</label>
+          <input id="id_subdependencia" type="number" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Cargo</label>
+          <input id="cargo" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Categoría</label>
+          <input id="categoria" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Tipo</label>
+          <input id="tipo" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Teléfono</label>
+          <input id="telefono" class="w-full p-2 border rounded">
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium">Email</label>
+          <input id="email" type="email" class="w-full p-2 border rounded">
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm font-medium">Foto URL</label>
+          <input id="foto_url" class="w-full p-2 border rounded">
+        </div>
+      </div>
+
+      <div class="flex justify-end mt-4 gap-2">
+        <button type="button" onclick="cerrarModal()" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400">
+          Cancelar
+        </button>
+        <button type="submit" class="px-4 py-2 rounded bg-teal-600 text-white hover:bg-teal-700">
+          Guardar
+        </button>
+      </div>
+    </form>
+
+    <button
+      onclick="cerrarModal()"
+      class="absolute top-2 right-3 text-gray-600 hover:text-gray-900 text-xl"
+    >&times;</button>
+  </div>
+</div>
+
+<script>
+const API_URL = '/api/agentes';
+let agentes = [];
+
+// 🔄 Cargar lista de agentes al iniciar
+document.addEventListener('DOMContentLoaded', cargarAgentes);
+
+// =======================
+// 📥 Cargar agentes
+// =======================
+async function cargarAgentes() {
+  const res = await fetch(API_URL);
+  agentes = await res.json();
+  renderTabla(agentes);
+}
+
+// =======================
+// 🧾 Renderizar tabla
+// =======================
+function renderTabla(lista) {
+  const tbody = document.getElementById('tabla-agentes');
+  tbody.innerHTML = '';
+  if (lista.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-gray-400">No hay agentes registrados</td></tr>`;
+    return;
+  }
+  lista.forEach(a => {
+    tbody.innerHTML += `
+      <tr class="hover:bg-gray-800 transition">
+        <td class="px-4 py-2">${a.legajo || '-'}</td>
+        <td class="px-4 py-2">${a.apellido}</td>
+        <td class="px-4 py-2">${a.nombre}</td>
+        <td class="px-4 py-2">${a.anexo || '-'}</td>
+        <td class="px-4 py-2">${a.subdependencia || '-'}</td>
+        <td class="px-4 py-2">${a.cargo || '-'}</td>
+        <td class="px-4 py-2 text-center">
+          <button onclick="editarAgente(${a.id})" class="bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-white">✏️</button>
+          <button onclick="eliminarAgente(${a.id})" class="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-white">🗑️</button>
+        </td>
+      </tr>
+    `;
+  });
+}
+
+// =======================
+// 🔍 Filtro local
+// =======================
+function filtrarAgentes() {
+  const q = document.getElementById('busqueda').value.toLowerCase();
+  const filtrados = agentes.filter(a =>
+    a.nombre.toLowerCase().includes(q) || a.apellido.toLowerCase().includes(q)
+  );
+  renderTabla(filtrados);
+}
+
+// =======================
+// ➕ Abrir modal nuevo
+// =======================
+function abrirModalNuevo() {
+  document.getElementById('modal-titulo').innerText = 'Nuevo agente';
+  document.getElementById('form-agente').reset();
+  document.getElementById('agente_id').value = '';
+  document.getElementById('modal-agente').classList.remove('hidden');
+  document.getElementById('modal-agente').classList.add('flex');
+}
+
+// =======================
+// ✏️ Editar agente
+// =======================
+function editarAgente(id) {
+  const a = agentes.find(x => x.id === id);
+  if (!a) return;
+
+  document.getElementById('modal-titulo').innerText = 'Editar agente';
+  document.getElementById('agente_id').value = a.id;
+  for (let campo in a) {
+    const el = document.getElementById(campo);
+    if (el) el.value = a[campo] ?? '';
+  }
+
+  document.getElementById('modal-agente').classList.remove('hidden');
+  document.getElementById('modal-agente').classList.add('flex');
+}
+
+// =======================
+// 💾 Guardar (nuevo o editado)
+// =======================
+document.getElementById('form-agente').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const id = document.getElementById('agente_id').value;
+  const payload = {
+    legajo: legajo.value,
+    dni_cuil: dni_cuil.value,
+    apellido: apellido.value,
+    nombre: nombre.value,
+    id_anexo: parseInt(id_anexo.value) || null,
+    id_subdependencia: parseInt(id_subdependencia.value) || null,
+    categoria: categoria.value,
+    tipo: tipo.value,
+    cargo: cargo.value,
+    telefono: telefono.value,
+    email: email.value,
+    foto_url: foto_url.value
+  };
+
+  const res = await fetch(id ? `${API_URL}/${id}` : API_URL, {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (res.ok) {
+    await cargarAgentes();
+    cerrarModal();
+  } else {
+    alert('Error al guardar el agente.');
+  }
+});
+
+// =======================
+// ❌ Eliminar agente
+// =======================
+async function eliminarAgente(id) {
+  if (!confirm('¿Seguro que querés eliminar este agente?')) return;
+  const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+  if (res.ok) cargarAgentes();
+  else alert('Error al eliminar.');
+}
+
+// =======================
+// 🚪 Cerrar modal
+// =======================
+function cerrarModal() {
+  document.getElementById('modal-agente').classList.add('hidden');
+  document.getElementById('modal-agente').classList.remove('flex');
+}
+</script>
+{% endblock %}
