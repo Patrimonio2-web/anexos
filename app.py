@@ -1263,16 +1263,14 @@ from datetime import datetime
 
 from flask import request, render_template
 from datetime import datetime
-
 @app.route('/imprimir_listado')
 def imprimir_listado():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
-    filtros = request.args.get('filtros', '').split(',')
+    filtros = request.args.getlist('filtros')  # ✅ ahora permite múltiples checks
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
     estado_conservacion = request.args.get("estado_conservacion")
 
-    # Diccionario de campos (usado para mostrar etiquetas en la plantilla)
     campos = {
         "no_dado": "No Dado",
         "para_reparacion": "Reparación",
@@ -1282,9 +1280,8 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
-    # Base de la consulta
     query = """
-        SELECT m.descripcion, m.id, m.estado_conservacion
+        SELECT m.id, m.descripcion, m.estado_conservacion
         FROM mobiliario m
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
@@ -1292,27 +1289,27 @@ def imprimir_listado():
     """
     params = [anexo_id, sub_id]
 
-    # Filtros booleanos
+    # aplicar los filtros booleanos
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
-    # Incluir o no los faltantes
+    # incluir o no faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    # Filtro por estado de conservación
+    # filtro por estado de conservación
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    # Ejecutar la consulta
+    query += " ORDER BY m.id ASC"
+
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, tuple(params))
     mobiliarios = cur.fetchall()
 
-    # Obtener nombres del anexo y subdependencia
     cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
     anexo_nombre = cur.fetchone()[0]
 
@@ -1321,7 +1318,6 @@ def imprimir_listado():
 
     conn.close()
 
-    # Renderizar listado
     return render_template(
         "listado_impresion.html",
         mobiliarios=mobiliarios,
@@ -1329,8 +1325,11 @@ def imprimir_listado():
         ahora=datetime.now(),
         anexo_nombre=anexo_nombre,
         subdependencia_nombre=subdependencia_nombre,
-        subdependencia_id=sub_id
+        subdependencia_id=sub_id,
+        filtros=filtros,
+        estado_conservacion=estado_conservacion
     )
+
 
 
 
