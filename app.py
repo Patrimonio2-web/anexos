@@ -4,21 +4,25 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from datetime import datetime, timedelta
+
+from sqlalchemy import text, asc  # <- text y asc en una sola línea
+
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
-import pytz 
-import os, tempfile, io
+
+from datetime import datetime, timedelta
+
+import os, tempfile, io, json
+import pytz
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
-from sqlalchemy import asc
-
 import pandas as pd
-# from copy import deepcopy  # ← opcional: borrar si no se usa
+
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
 from openpyxl import Workbook
+
 
 # ===================== APP & CONFIG =====================
 app = Flask(__name__)
@@ -394,46 +398,52 @@ def clases_por_rubro():
 
 
 #AUDITORIAS----------------------------------------------------------------------------------------------------------
-from datetime import datetime
-import json
 
-from flask import session, request
 
 def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
     """
-    Inserta una fila en auditoria.
-    - Toma usuario de sesión o header X-User.
-    - Guarda IP y User-Agent.
-    - Fecha en hora de Argentina (se calcula en Postgres).
-    - before/after como JSONB.
-    - NO hace commit: comparte transacción con la operación que la llame.
+    Registra un evento de auditoría.
+    - fecha se guarda en hora AR (timezone('America/Argentina/Buenos_Aires', now())).
+    - 'cambios' guarda un diff liviano cuando before/after son dicts.
     """
     try:
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
-        ip = request.remote_addr
-        ua = request.headers.get("User-Agent")
+        # Respetar proxies / balancers
+        ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+        ua = request.headers.get("User-Agent") or ""
+
+        # diff liviano (solo si ambos son dict)
+        diff = None
+        if isinstance(before, dict) and isinstance(after, dict):
+            diff = {}
+            keys = set(before.keys()) | set(after.keys())
+            for k in sorted(keys):
+                if before.get(k) != after.get(k):
+                    diff[k] = [before.get(k), after.get(k)]
 
         db.session.execute(
             text("""
                 INSERT INTO auditoria (
-                    fecha,               -- hora AR calculada en el server DB
+                    fecha,
                     accion,
                     tabla_afectada,
                     id_registro,
                     datos_anteriores,
                     datos_nuevos,
+                    cambios,
                     descripcion,
                     usuario,
                     ip_origen,
                     user_agent
                 )
                 VALUES (
-                    timezone('America/Argentina/Buenos_Aires', now()),  -- 👈 acá forzamos AR
+                    timezone('America/Argentina/Buenos_Aires', now()),
                     :accion,
                     :tabla,
                     :id_registro,
                     CAST(:before AS JSONB),
                     CAST(:after  AS JSONB),
+                    CAST(:cambios AS JSONB),
                     :descripcion,
                     :usuario,
                     :ip,
@@ -442,41 +452,46 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
             """),
             {
                 "accion": accion,
-                "tabla": tabla,
+                "tabla": str(tabla).lower() if tabla else None,
                 "id_registro": str(id_registro),
-                "before": json.dumps(before) if before else None,
-                "after":  json.dumps(after)  if after  else None,
+                "before": json.dumps(before) if before is not None else None,
+                "after":  json.dumps(after)  if after  is not None else None,
+                "cambios": json.dumps(diff)  if diff  is not None else None,
                 "descripcion": descripcion,
                 "usuario": usuario,
                 "ip": ip,
                 "ua": ua
             }
         )
-        # sin commit aquí
+        # Importante: NO hacemos commit acá; se hace en el flujo del endpoint que llama.
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
 
-
-
-from sqlalchemy import text
-
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
+    """
+    Listado de auditoría con orden descendente por fecha.
+    Filtros opcionales: query, desde, hasta, tabla, id_registro, limit/offset.
+    - 'desde' y 'hasta' en formato YYYY-MM-DD (ambos inclusivos).
+    """
+    # -------- parámetros --------
     try:
-        limit = int(request.args.get('limit', 100))
+        limit  = min(int(request.args.get('limit', 100)), 500)
         offset = int(request.args.get('offset', 0))
-        query = request.args.get('query', '').strip()
+        query  = (request.args.get('query') or '').strip().lower()
+        desde  = (request.args.get('desde') or '').strip()   # "YYYY-MM-DD"
+        hasta  = (request.args.get('hasta') or '').strip()   # "YYYY-MM-DD"
+        tabla  = (request.args.get('tabla') or '').strip().lower()
+        id_reg = (request.args.get('id_registro') or '').strip()
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
+    # -------- SQL base --------
     sql = """
         SELECT
             id,
-            to_char(
-                timezone('America/Argentina/Buenos_Aires', fecha::timestamptz),
-                'DD/MM/YYYY HH24:MI'
-            ) AS fecha,
+            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya guardada en AR
             usuario,
             accion,
             tabla_afectada,
@@ -491,23 +506,42 @@ def get_auditoria():
     """
     params = {}
 
-    # 🔍 Filtro por texto opcional
+    # -------- filtros opcionales --------
     if query:
         sql += """
             AND (
-                LOWER(usuario) LIKE :q OR
-                LOWER(accion) LIKE :q OR
-                LOWER(tabla_afectada) LIKE :q OR
-                LOWER(id_registro) LIKE :q OR
-                LOWER(descripcion) LIKE :q
+                LOWER(COALESCE(usuario,''))         LIKE :q OR
+                LOWER(COALESCE(accion,''))          LIKE :q OR
+                LOWER(COALESCE(tabla_afectada,''))  LIKE :q OR
+                LOWER(COALESCE(id_registro,''))     LIKE :q OR
+                LOWER(COALESCE(descripcion,''))     LIKE :q
             )
         """
-        params["q"] = f"%{query.lower()}%"
+        params["q"] = f"%{query}%"
 
-    sql += " ORDER BY fecha DESC LIMIT :limit OFFSET :offset"
-    params["limit"] = limit
+    # Día completo (inclusivo) en AR
+    if desde:
+        sql += " AND fecha::date >= :desde::date "
+        params["desde"] = desde
+
+    if hasta:
+        sql += " AND fecha::date <= :hasta::date "
+        params["hasta"] = hasta
+
+    if tabla:
+        sql += " AND LOWER(tabla_afectada) = :tabla "
+        params["tabla"] = tabla
+
+    if id_reg:
+        sql += " AND id_registro = :id_registro "
+        params["id_registro"] = id_reg
+
+    # -------- orden + paginación --------
+    sql += " ORDER BY fecha DESC, id DESC LIMIT :limit OFFSET :offset "
+    params["limit"]  = limit
     params["offset"] = offset
 
+    # -------- ejecución --------
     try:
         with db.engine.connect() as conn:
             result = conn.execute(text(sql), params)
@@ -515,6 +549,7 @@ def get_auditoria():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
