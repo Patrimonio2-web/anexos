@@ -4,22 +4,31 @@
     <h1 class="text-3xl font-bold mb-6 text-center">Listado de Mobiliario</h1>
 
     <form method="get" action="{{ url_for('imprimir_listado') }}" class="space-y-6 bg-gray-800 p-6 rounded-lg">
+        <!-- Selección de Anexo y Subdependencia -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <label class="block mb-2 font-semibold">Anexo:</label>
-                <select name="anexo" class="w-full p-2 bg-gray-700 rounded">
+                <label for="anexo" class="block mb-2 font-semibold">Anexo:</label>
+                <select name="anexo" id="anexo" class="w-full p-2 bg-gray-700 rounded">
                     {% for anexo in anexos %}
                     <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
                     {% endfor %}
                 </select>
             </div>
+
             <div>
-                <label class="block mb-2 font-semibold">Subdependencia (ID numérico):</label>
-                <input type="text" name="subdependencia" class="w-full p-2 bg-gray-700 rounded" required>
+                <label for="subdependencia" class="block mb-2 font-semibold">Subdependencia:</label>
+                <select name="subdependencia" id="subdependencia" class="w-full p-2 bg-gray-700 rounded">
+                    {% if subdependencias %}
+                        {% for sub in subdependencias %}
+                        <option value="{{ sub.id }}">{{ sub.nombre }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
             </div>
         </div>
 
-        <div>
+        <!-- 🔹 NUEVOS FILTROS -->
+        <div class="mt-6">
             <h2 class="text-xl font-semibold mb-2">Filtrar por estado</h2>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {% for key, label in {
@@ -38,7 +47,8 @@
             </div>
         </div>
 
-        <div>
+        <!-- 🔹 Estado de conservación -->
+        <div class="mt-4">
             <h2 class="text-xl font-semibold mb-2">Estado de conservación</h2>
             <select name="estado_conservacion" class="p-2 bg-gray-700 rounded">
                 <option value="">Todos</option>
@@ -48,18 +58,42 @@
             </select>
         </div>
 
-        <div>
+        <!-- 🔹 Incluir faltantes -->
+        <div class="mt-4">
             <label class="flex items-center space-x-2">
                 <input type="checkbox" name="incluir_faltantes" value="true" class="accent-teal-500">
                 <span>Incluir faltantes</span>
             </label>
         </div>
 
-        <button type="submit" class="bg-teal-600 hover:bg-teal-700 px-6 py-2 rounded text-white font-bold">
-            Generar listado
-        </button>
+        <!-- Botón -->
+        <div class="text-center mt-8">
+            <button type="submit"
+                class="bg-teal-600 hover:bg-teal-700 px-6 py-2 rounded text-white font-bold transition">
+                Generar listado
+            </button>
+        </div>
     </form>
 </div>
+
+<script>
+    // Si tenías tu lógica original de carga dinámica de subdependencias, la mantenemos igual:
+    document.getElementById('anexo').addEventListener('change', function () {
+        const anexoId = this.value;
+        fetch(`/get_subdependencias?anexo_id=${anexoId}`)
+            .then(res => res.json())
+            .then(data => {
+                const subSelect = document.getElementById('subdependencia');
+                subSelect.innerHTML = '';
+                data.forEach(sub => {
+                    const opt = document.createElement('option');
+                    opt.value = sub.id;
+                    opt.textContent = sub.nombre;
+                    subSelect.appendChild(opt);
+                });
+            });
+    });
+</script>
 {% endblock %}
 
 
