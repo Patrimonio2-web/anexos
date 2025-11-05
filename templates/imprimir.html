@@ -1,65 +1,69 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="p-6 bg-gray-900 text-white min-h-screen">
+<div class="p-8 bg-gray-900 text-white min-h-screen">
     <h1 class="text-3xl font-bold mb-6 text-center">Listado de Mobiliario</h1>
 
-    <!-- 🔍 Filtros -->
-    <form method="get" action="{{ url_for('imprimir') }}" class="mb-8 bg-gray-800 p-4 rounded-lg">
-        <h2 class="text-xl font-semibold mb-2">Filtrar por estado</h2>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-            {% for key, label in campos.items() %}
-            <label class="flex items-center space-x-2">
-                <input type="checkbox" name="estado" value="{{ key }}" {% if key in filtros_estado %}checked{% endif %}
-                    class="accent-teal-500">
-                <span>{{ label }}</span>
-            </label>
-            {% endfor %}
+    <form method="get" action="{{ url_for('imprimir_listado') }}" class="space-y-6 bg-gray-800 p-6 rounded-lg">
+        <!-- Selección de anexo y subdependencia -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block mb-2 font-semibold">Anexo:</label>
+                <select name="anexo" class="w-full p-2 bg-gray-700 rounded">
+                    {% for anexo in anexos %}
+                    <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block mb-2 font-semibold">Subdependencia (ID numérico):</label>
+                <input type="text" name="subdependencia" class="w-full p-2 bg-gray-700 rounded" required>
+            </div>
         </div>
 
-        <h2 class="text-xl font-semibold mb-2">Filtrar por estado de conservación</h2>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-            {% for conservacion in ['Bueno', 'Regular', 'Malo'] %}
-            <label class="flex items-center space-x-2">
-                <input type="checkbox" name="conservacion" value="{{ conservacion }}" {% if conservacion in filtros_conservacion %}checked{% endif %}
-                    class="accent-teal-500">
-                <span>{{ conservacion }}</span>
-            </label>
-            {% endfor %}
+        <!-- Filtros por estado -->
+        <div>
+            <h2 class="text-xl font-semibold mb-2">Filtrar por estado</h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {% for key, label in {
+                    "no_dado": "No Dado",
+                    "para_reparacion": "Reparación",
+                    "para_baja": "Para baja",
+                    "faltante": "Faltante",
+                    "sobrante": "Sobrante",
+                    "problema_etiqueta": "Problema etiqueta"
+                }.items() %}
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" name="filtros" value="{{ key }}" class="accent-teal-500">
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
         </div>
 
-        <button type="submit" class="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded text-white font-bold">
-            Aplicar filtros
+        <!-- Filtro por estado de conservación -->
+        <div>
+            <h2 class="text-xl font-semibold mb-2">Filtrar por estado de conservación</h2>
+            <select name="estado_conservacion" class="p-2 bg-gray-700 rounded">
+                <option value="">Todos</option>
+                <option value="Bueno">Bueno</option>
+                <option value="Regular">Regular</option>
+                <option value="Malo">Malo</option>
+            </select>
+        </div>
+
+        <!-- Mostrar u ocultar faltantes -->
+        <div>
+            <label class="flex items-center space-x-2">
+                <input type="checkbox" name="incluir_faltantes" value="true" class="accent-teal-500">
+                <span>Incluir faltantes</span>
+            </label>
+        </div>
+
+        <button type="submit" class="bg-teal-600 hover:bg-teal-700 px-6 py-2 rounded text-white font-bold">
+            Generar listado
         </button>
     </form>
-
-    <!-- 📋 Tabla de resultados -->
-    <div class="overflow-x-auto">
-        <table class="min-w-full border border-gray-700 text-sm">
-            <thead class="bg-gray-700">
-                <tr>
-                    <th class="px-4 py-2 text-left">ID</th>
-                    <th class="px-4 py-2 text-left">Descripción</th>
-                    <th class="px-4 py-2 text-left">Estado de Conservación</th>
-                    <th class="px-4 py-2 text-left">Estados</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for mob in mobiliario %}
-                <tr class="border-b border-gray-700 hover:bg-gray-800">
-                    <td class="px-4 py-2">{{ mob[0] }}</td>
-                    <td class="px-4 py-2">{{ mob[1] }}</td>
-                    <td class="px-4 py-2">{{ mob[2] or '-' }}</td>
-                    <td class="px-4 py-2">
-                        {% for key, label in campos.items() %}
-                            {% if mob[campos.keys()|list.index(key) + 3] %}
-                                <span class="bg-teal-700 px-2 py-1 rounded text-xs">{{ label }}</span>
-                            {% endif %}
-                        {% endfor %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
 </div>
 {% endblock %}
+
