@@ -12,11 +12,10 @@ import os, tempfile, io
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
-from sqlalchemy import asc, text #nuevo
 from sqlalchemy import asc
 
 import pandas as pd
-# from copy import deepcopy  # ← opcional: borrar si no se usa ..
+# from copy import deepcopy  # ← opcional: borrar si no se usa
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
 from openpyxl import Workbook
@@ -144,30 +143,65 @@ class Auditoria(db.Model):
     tabla_afectada = db.Column(db.String(100), nullable=False)
     id_registro = db.Column(db.String(50), nullable=False)
     accion = db.Column(db.String(50), nullable=False)
-    cambios = db.Column(db.Text)  # 👈 existe en la tabla
-    datos_anteriores = db.Column(db.JSON)
-    datos_nuevos = db.Column(db.JSON)
-    descripcion = db.Column(db.Text)
+    cambios = db.Column(db.Text)
     ip_origen = db.Column(db.String(50))
     user_agent = db.Column(db.Text)
-    usuario = db.Column(db.String(100))
+    usuario = db.Column(db.String(100))  # 👈 nuevo campo
 
     def to_dict(self):
         return {
             "id": self.id,
-            "fecha": self.fecha.strftime("%d/%m/%Y %H:%M") if self.fecha else None,
+            "fecha": self.fecha.strftime("%d/%m/%Y %H:%M"),
             "tabla_afectada": self.tabla_afectada,
             "id_registro": self.id_registro,
             "accion": self.accion,
             "cambios": self.cambios,
-            "datos_anteriores": self.datos_anteriores,
-            "datos_nuevos": self.datos_nuevos,
-            "descripcion": self.descripcion,
             "ip_origen": self.ip_origen,
             "user_agent": self.user_agent,
             "usuario": self.usuario
         }
 
+class Agente(db.Model):
+    __tablename__ = 'agentes'
+    id = db.Column(db.Integer, primary_key=True)
+    legajo = db.Column(db.String(20), unique=True, nullable=False)
+    dni_cuil = db.Column(db.String(20), nullable=False)
+    apellido = db.Column(db.String(100), nullable=False)
+    nombre = db.Column(db.String(100), nullable=False)
+
+    id_anexo = db.Column(db.Integer, db.ForeignKey('anexos.id', ondelete='SET NULL'))
+    id_subdependencia = db.Column(db.Integer, db.ForeignKey('subdependencias.id', ondelete='SET NULL'))
+
+    categoria = db.Column(db.String(10))
+    tipo = db.Column(db.String(50))
+    cargo = db.Column(db.String(100))
+    telefono = db.Column(db.String(30))
+    email = db.Column(db.String(150))
+    foto_url = db.Column(db.Text)
+    fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
+
+    anexo = db.relationship('Anexo', backref='agentes', lazy=True)
+    subdependencia = db.relationship('Subdependencia', backref='agentes', lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "legajo": self.legajo,
+            "dni_cuil": self.dni_cuil,
+            "apellido": self.apellido,
+            "nombre": self.nombre,
+            "categoria": self.categoria,
+            "tipo": self.tipo,
+            "cargo": self.cargo,
+            "telefono": self.telefono,
+            "email": self.email,
+            "foto_url": self.foto_url,
+            "id_anexo": self.id_anexo,
+            "id_subdependencia": self.id_subdependencia,
+            "anexo": self.anexo.nombre if self.anexo else None,
+            "subdependencia": self.subdependencia.nombre if self.subdependencia else None,
+            "fecha_creacion": self.fecha_creacion.strftime("%d/%m/%Y %H:%M") if self.fecha_creacion else None
+        }
 
 
 
@@ -185,7 +219,6 @@ class Mobiliario(db.Model):
     estado_conservacion = db.Column(db.String(20))
     estado_control = db.Column(db.String(20))
     historial_movimientos = db.Column(db.Text)
-    valor = db.Column(db.Numeric(12, 2), default=0)  # 👈 nuevo campo
 
     no_dado = db.Column(db.Boolean, default=False)
     para_reparacion = db.Column(db.Boolean, default=False)
@@ -193,7 +226,6 @@ class Mobiliario(db.Model):
     faltante = db.Column(db.Boolean, default=False)
     sobrante = db.Column(db.Boolean, default=False)
     problema_etiqueta = db.Column(db.Boolean, default=False)
-    privado = db.Column(db.Boolean, default=False)  # 👈 nuevo campo
 
     comentarios = db.Column(db.Text)
     foto_url = db.Column(db.String(255))
@@ -368,89 +400,83 @@ import json
 from flask import session, request
 
 def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
+    """
+    Inserta una fila en auditoria.
+    - Toma usuario de sesión o header X-User.
+    - Guarda IP y User-Agent.
+    - Fecha en hora de Argentina (se calcula en Postgres).
+    - before/after como JSONB.
+    - NO hace commit: comparte transacción con la operación que la llame.
+    """
     try:
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
-        ip = request.headers.get("X-Forwarded-For") or request.remote_addr
-        ua = request.headers.get("User-Agent") or ""
-
-        # diff liviano (opcional: lo usás si querés guardar la matriz)
-        diff = None
-        if isinstance(before, dict) and isinstance(after, dict):
-            diff = {}
-            keys = set(before.keys()) | set(after.keys())
-            for k in sorted(keys):
-                if before.get(k) != after.get(k):
-                    diff[k] = [before.get(k), after.get(k)]
+        ip = request.remote_addr
+        ua = request.headers.get("User-Agent")
 
         db.session.execute(
             text("""
                 INSERT INTO auditoria (
-                    fecha,
+                    fecha,               -- hora AR calculada en el server DB
                     accion,
                     tabla_afectada,
                     id_registro,
                     datos_anteriores,
                     datos_nuevos,
-                    cambios,
                     descripcion,
                     usuario,
                     ip_origen,
                     user_agent
                 )
                 VALUES (
-                    timezone('America/Argentina/Buenos_Aires', now()),
+                    timezone('America/Argentina/Buenos_Aires', now()),  -- 👈 acá forzamos AR
                     :accion,
                     :tabla,
                     :id_registro,
                     CAST(:before AS JSONB),
                     CAST(:after  AS JSONB),
-                    CAST(:cambios AS JSONB),
                     :descripcion,
                     :usuario,
                     :ip,
                     :ua
                 )
-            """)),
+            """),
             {
                 "accion": accion,
-                "tabla": str(tabla).lower() if tabla else None,
+                "tabla": tabla,
                 "id_registro": str(id_registro),
                 "before": json.dumps(before) if before else None,
                 "after":  json.dumps(after)  if after  else None,
-                "cambios": json.dumps(diff)  if diff  else None,
                 "descripcion": descripcion,
                 "usuario": usuario,
                 "ip": ip,
                 "ua": ua
             }
         )
+        # sin commit aquí
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
 
-from datetime import datetime, timedelta
+
 
 from sqlalchemy import text
 
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
-    # -------- parámetros --------
     try:
-        limit  = min(int(request.args.get('limit', 100)), 500)
+        limit = int(request.args.get('limit', 100))
         offset = int(request.args.get('offset', 0))
-        query  = (request.args.get('query', '') or '').strip().lower()
-        desde  = (request.args.get('desde') or '').strip()   # "YYYY-MM-DD"
-        hasta  = (request.args.get('hasta') or '').strip()   # "YYYY-MM-DD"
-        tabla  = (request.args.get('tabla') or '').strip().lower()
-        id_reg = (request.args.get('id_registro') or '').strip()
+        query = request.args.get('query', '').strip()
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
-    # -------- SQL base --------
     sql = """
         SELECT
             id,
-            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya guardada en AR
+            to_char(
+                timezone('America/Argentina/Buenos_Aires', fecha::timestamptz),
+                'DD/MM/YYYY HH24:MI'
+            ) AS fecha,
             usuario,
             accion,
             tabla_afectada,
@@ -465,43 +491,23 @@ def get_auditoria():
     """
     params = {}
 
-    # -------- filtros opcionales --------
+    # 🔍 Filtro por texto opcional
     if query:
         sql += """
             AND (
-                LOWER(COALESCE(usuario,''))         LIKE :q OR
-                LOWER(COALESCE(accion,''))          LIKE :q OR
-                LOWER(COALESCE(tabla_afectada,''))  LIKE :q OR
-                LOWER(COALESCE(id_registro,''))     LIKE :q OR
-                LOWER(COALESCE(descripcion,''))     LIKE :q
+                LOWER(usuario) LIKE :q OR
+                LOWER(accion) LIKE :q OR
+                LOWER(tabla_afectada) LIKE :q OR
+                LOWER(id_registro) LIKE :q OR
+                LOWER(descripcion) LIKE :q
             )
         """
-        params["q"] = f"%{query}%"
+        params["q"] = f"%{query.lower()}%"
 
-    if desde:
-        # fecha es timestamp (hora AR). Tomamos medianoche local del día 'desde'
-        sql += " AND fecha >= to_timestamp(:desde || ' 00:00', 'YYYY-MM-DD HH24:MI') "
-        params["desde"] = desde
-
-    if hasta:
-        # hasta inclusivo → +1 día y < siguiente medianoche
-        sql += " AND fecha < to_timestamp(:hasta || ' 00:00', 'YYYY-MM-DD HH24:MI') + interval '1 day' "
-        params["hasta"] = hasta
-
-    if tabla:
-        sql += " AND LOWER(tabla_afectada) = :tabla "
-        params["tabla"] = tabla
-
-    if id_reg:
-        sql += " AND id_registro = :id_registro "
-        params["id_registro"] = id_reg
-
-    # -------- orden + paginación --------
-    sql += " ORDER BY fecha DESC, id DESC LIMIT :limit OFFSET :offset "
-    params["limit"]  = limit
+    sql += " ORDER BY fecha DESC LIMIT :limit OFFSET :offset"
+    params["limit"] = limit
     params["offset"] = offset
 
-    # -------- ejecución --------
     try:
         with db.engine.connect() as conn:
             result = conn.execute(text(sql), params)
@@ -509,6 +515,7 @@ def get_auditoria():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 # --- vista para ver la auditoría ---
@@ -713,14 +720,9 @@ from datetime import timedelta
 @app.route('/api/mobiliario/ultimos', methods=['GET'])
 def ultimos_mobiliarios():
     try:
-        # ✅ filtros opcionales (retrocompatibles)
-        ubicacion_id = request.args.get('ubicacion_id', type=int)
-        anexo_id     = request.args.get('anexo_id', type=int)
-
-        sql = """
+        query = """
         SELECT 
             m.id                    AS id_mobiliario,
-            m.ubicacion_id,                              -- ✅ ahora lo devolvemos
             m.descripcion,
             m.estado_conservacion,
             m.estado_control,
@@ -732,18 +734,14 @@ def ultimos_mobiliarios():
             m.faltante,
             m.sobrante,
             m.problema_etiqueta,
-            m.privado,
             m.comentarios,
             m.foto_url,
-            m.valor,
             m.fecha_creacion,
             m.fecha_actualizacion,
             m.historial_movimientos,
             r.nombre               AS rubro,
             cb.descripcion         AS clase_bien,
-            sd.id                  AS subdependencia_id, -- ✅ útil si lo necesitás
             sd.nombre              AS subdependencia,
-            a.id                   AS anexo_id,          -- ✅ útil si lo necesitás
             a.nombre               AS anexo,
             a.direccion            AS direccion_anexo
         FROM    mobiliario m
@@ -752,47 +750,41 @@ def ultimos_mobiliarios():
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
         WHERE m.id ~ '^[0-9]+$'
+        ORDER BY m.id::integer DESC;
         """
-
-        params = []
-
-        if ubicacion_id is not None:
-            sql += " AND m.ubicacion_id = %s"
-            params.append(ubicacion_id)
-
-        if anexo_id is not None:
-            sql += " AND a.id = %s"
-            params.append(anexo_id)
-
-        # mismo orden que tenías:
-        sql += " ORDER BY m.id::integer DESC"
-        # si preferís priorizar actualizaciones recientes:
-        # sql += " ORDER BY m.fecha_actualizacion DESC NULLS LAST, m.id::integer DESC"
 
         conn = db.engine.raw_connection()
         cur  = conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(query)
         columns  = [col[0] for col in cur.description]
         results  = [dict(zip(columns, row)) for row in cur.fetchall()]
         cur.close()
         conn.close()
 
-        # ✅ Formatear fechas y procesar historial (igual que antes)
+        # ✅ Formatear fechas y procesar historial
         for r in results:
-            hist = r.get("historial_movimientos")
-            r["historial"] = [line.strip() for line in hist.split('\n') if line.strip()] if hist else []
-            r.pop("historial_movimientos", None)
+            # Convertir historial en lista
+            historial = r.get("historial_movimientos")
+            if historial:
+                r["historial"] = [line.strip() for line in historial.split('\n') if line.strip()]
+            else:
+                r["historial"] = []
+            del r["historial_movimientos"]
 
-            if r.get("fecha_creacion"):
+            # Formatear fechas con hora argentina
+            if r["fecha_creacion"]:
                 r["fecha_creacion"] = (r["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
-            if r.get("fecha_actualizacion"):
+            if r["fecha_actualizacion"]:
                 r["fecha_actualizacion"] = (r["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
 
-        return jsonify(results), 200
-
+        return jsonify(results)
     except Exception as e:
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
+
+
+
+
 
 
 # ====== HELPERS DE AUDITORÍA ======
@@ -928,8 +920,6 @@ def editar_mobiliario(id):
         mobiliario.para_baja = data.get("para_baja", mobiliario.para_baja)
         mobiliario.faltante = data.get("faltante", mobiliario.faltante)
         mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
-        mobiliario.privado = data.get("privado", mobiliario.privado)
-        mobiliario.valor = data.get("valor", mobiliario.valor)  # 👈 nuevo campo
         mobiliario.problema_etiqueta = data.get("problema_etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
@@ -1013,8 +1003,6 @@ def registrar_mobiliario():
             faltante=data.get("faltante", False),
             sobrante=data.get("sobrante", False),
             problema_etiqueta=data.get("problema_etiqueta", False),
-            privado=data.get("privado", False),
-            valor=data.get("valor", 0),   # 👈 nuevo campo
             comentarios=comentarios,
             foto_url=data.get("foto_url", "")
         )
@@ -1101,13 +1089,11 @@ def obtener_mobiliario_por_id(id):
         "para_baja": m.para_baja,
         "faltante": m.faltante,
         "sobrante": m.sobrante,
-        "privado": m.privado,  # 👈 nuevo campo
         "problema_etiqueta": m.problema_etiqueta,
         "fecha_creacion": (m.fecha_creacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_creacion else None,
         "fecha_actualizacion": (m.fecha_actualizacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M") if m.fecha_actualizacion else None,
         "clase_bien_id": id_clase,
         "clase": clase_desc,
-        "valor": float(m.valor) if m.valor is not None else 0,
         "rubro_id": id_rubro,
         "rubro": rubro_nombre
     })
@@ -1242,7 +1228,33 @@ def ver_mobiliario():
 @app.route('/imprimir')
 def imprimir():
     anexos = Anexo.query.all()
-    return render_template('imprimir.html', anexos=anexos)
+
+    # Diccionario de campos (etiquetas de los filtros)
+    campos = {
+        "no_dado": "No Dado",
+        "para_reparacion": "Reparación",
+        "para_baja": "Para baja",
+        "faltante": "Faltante",
+        "sobrante": "Sobrante",
+        "problema_etiqueta": "Problema etiqueta"
+    }
+
+    # Filtros seleccionados (desde los checkboxes del GET)
+    filtros_estado = request.args.getlist('estado')
+    filtros_conservacion = request.args.getlist('conservacion')
+
+    # Si todavía no hay búsqueda, mostrás todos o vacío
+    mobiliario = []
+
+    return render_template(
+        'imprimir.html',
+        anexos=anexos,
+        campos=campos,
+        filtros_estado=filtros_estado,
+        filtros_conservacion=filtros_conservacion,
+        mobiliario=mobiliario
+    )
+
 
 
 from datetime import datetime
@@ -1256,44 +1268,75 @@ from datetime import datetime
 def imprimir_listado():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
+    filtros = request.args.get('filtros', '').split(',')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
+    estado_conservacion = request.args.get("estado_conservacion")
 
+    # Diccionario de campos (usado para mostrar etiquetas en la plantilla)
+    campos = {
+        "no_dado": "No Dado",
+        "para_reparacion": "Reparación",
+        "para_baja": "Para baja",
+        "faltante": "Faltante",
+        "sobrante": "Sobrante",
+        "problema_etiqueta": "Problema etiqueta"
+    }
+
+    # Base de la consulta
     query = """
-        SELECT r.id_rubro, r.nombre AS rubro_nombre, m.descripcion, m.id
+        SELECT m.descripcion, m.id, m.estado_conservacion
         FROM mobiliario m
-        JOIN rubros r ON m.rubro_id = r.id_rubro
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
         WHERE a.id = %s AND sd.id = %s
     """
+    params = [anexo_id, sub_id]
 
+    # Filtros booleanos
+    for campo in filtros:
+        if campo and campo != "faltante":
+            query += f" AND m.{campo} = TRUE"
+
+    # Incluir o no los faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    query += " ORDER BY r.nombre, m.id::integer ASC"
+    # Filtro por estado de conservación
+    if estado_conservacion:
+        query += " AND m.estado_conservacion = %s"
+        params.append(estado_conservacion)
 
+    # Ejecutar la consulta
     conn = db.engine.raw_connection()
     cur = conn.cursor()
-    cur.execute(query, (anexo_id, sub_id))
-    rows = cur.fetchall()
+    cur.execute(query, tuple(params))
+    mobiliarios = cur.fetchall()
+
+    # Obtener nombres del anexo y subdependencia
+    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
+    anexo_nombre = cur.fetchone()[0]
+
+    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
+    subdependencia_nombre = cur.fetchone()[0]
+
     conn.close()
 
-    # Agrupar por rubro (incluyendo ID)
-    agrupado = {}
-    for id_rubro, nombre_rubro, descripcion, id_mob in rows:
-        clave = f"{id_rubro} - {nombre_rubro}"
-        if clave not in agrupado:
-            agrupado[clave] = []
-        agrupado[clave].append((descripcion, id_mob))
-
+    # Renderizar listado
     return render_template(
         "listado_impresion.html",
-        agrupado=agrupado,
+        mobiliarios=mobiliarios,
+        campos=campos,
         ahora=datetime.now(),
-        anexo_nombre=db.session.get(Anexo, anexo_id).nombre if anexo_id else None,
-        subdependencia_nombre=db.session.get(Subdependencia, sub_id).nombre if sub_id else None,
+        anexo_nombre=anexo_nombre,
+        subdependencia_nombre=subdependencia_nombre,
         subdependencia_id=sub_id
     )
+
+
+
+
+
+
 
 
 
@@ -1366,59 +1409,71 @@ from datetime import datetime
 def imprimir_listado_preview():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
+    filtros = request.args.get('filtros', '').split(',')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
+    estado_conservacion = request.args.get("estado_conservacion")
 
+    # Base de la consulta
     query = """
-        SELECT r.id_rubro, r.nombre AS rubro_nombre, m.descripcion, m.id
+        SELECT m.descripcion, m.id, m.estado_conservacion
         FROM mobiliario m
-        JOIN rubros r ON m.rubro_id = r.id_rubro
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
         WHERE a.id = %s AND sd.id = %s
     """
+    params = [anexo_id, sub_id]
 
+    # Filtros booleanos (checkboxes)
+    for campo in filtros:
+        if campo and campo != "faltante":
+            query += f" AND m.{campo} = TRUE"
+
+    # Incluir o excluir faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    query += " ORDER BY r.nombre, m.id::integer ASC"
+    # Filtro por estado de conservación
+    if estado_conservacion:
+        query += " AND m.estado_conservacion = %s"
+        params.append(estado_conservacion)
 
+    # Ejecutar consulta
     conn = db.engine.raw_connection()
     cur = conn.cursor()
-    cur.execute(query, (anexo_id, sub_id))
-    rows = cur.fetchall()
+    cur.execute(query, tuple(params))
+    mobiliarios = cur.fetchall()
     conn.close()
 
-    agrupado = {}
-    for id_rubro, nombre_rubro, descripcion, id_mob in rows:
-        clave = f"{id_rubro} - {nombre_rubro}"
-        if clave not in agrupado:
-            agrupado[clave] = []
-        agrupado[clave].append((descripcion, id_mob))
-
+    # Render rápido en HTML (preview)
     return render_template_string("""
-    {% for rubro, items in agrupado.items() %}
-      <h2 class="text-base font-bold mt-6 mb-2">{{ rubro }}</h2>
-      <table class="w-full table-auto border border-gray-300 text-sm mb-6">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="border px-2 py-1 text-left">Descripción</th>
-            <th class="border px-2 py-1 text-left">ID</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for desc, id in items %}
-          <tr class="hover:bg-gray-50">
-            <td class="border px-2 py-1">{{ desc }}</td>
-            <td class="border px-2 py-1">{{ id }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endfor %}
-    {% if not agrupado %}
-      <p class="text-center text-gray-500 mt-6">No se encontraron resultados.</p>
-    {% endif %}
-    """, agrupado=agrupado)
+    <table class="w-full table-auto border border-gray-300 text-sm mt-4">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="border px-2 py-1 text-left">Descripción</th>
+          <th class="border px-2 py-1 text-center">ID</th>
+          <th class="border px-2 py-1 text-center">Estado de conservación</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in mobiliarios %}
+        <tr class="hover:bg-gray-50">
+          <td class="border px-2 py-1">{{ m[0] }}</td>
+          <td class="border px-2 py-1 text-center">{{ m[1] }}</td>
+          <td class="border px-2 py-1 text-center">{{ m[2] or '-' }}</td>
+        </tr>
+        {% endfor %}
+        {% if mobiliarios|length == 0 %}
+        <tr>
+          <td colspan="3" class="text-center p-4 text-gray-500">
+            No se encontraron resultados con los filtros seleccionados.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    """, mobiliarios=mobiliarios)
+
+
 
 
 
@@ -1845,50 +1900,8 @@ def to_float(value):
 # 📎 Registrar el filtro en la app Flask (no en el Blueprint)
 app.add_template_filter(to_float, 'to_float')
 
-# VER ANEXOS Y FILTRAR MOBILIARIOS POR RUBRO Y CLASE
-@app.route('/api/mobiliario_por_anexo/<int:anexo_id>', methods=['GET'])
-def mobiliario_por_anexo(anexo_id):
-    rubro_id = request.args.get('rubro_id', type=int)
-    clase_id = request.args.get('clase_id', type=int)   # 👈 nuevo
-    sub_id = request.args.get('subdependencia_id', type=int)
-    descripcion = request.args.get('descripcion', type=str)
 
-    query = db.session.query(
-        Mobiliario.id,
-        Mobiliario.descripcion,
-        Mobiliario.estado_conservacion,
-        Mobiliario.estado_control,
-        Rubro.id_rubro,
-        Rubro.nombre.label("rubro"),
-        ClaseBien.id_clase,
-        ClaseBien.descripcion.label("clase_bien"),
-        Subdependencia.id.label("subdependencia_id"),
-        Subdependencia.nombre.label("subdependencia"),
-        Anexo.nombre.label("anexo")
-    ).join(
-        Subdependencia, Mobiliario.ubicacion_id == Subdependencia.id
-    ).join(
-        Anexo, Subdependencia.id_anexo == Anexo.id
-    ).outerjoin(
-        Rubro, Mobiliario.rubro_id == Rubro.id_rubro
-    ).outerjoin(
-        ClaseBien, Mobiliario.clase_bien_id == ClaseBien.id_clase
-    ).filter(
-        Anexo.id == anexo_id
-    )
 
-    # Filtros dinámicos
-    if rubro_id:
-        query = query.filter(Mobiliario.rubro_id == rubro_id)
-    if clase_id:
-        query = query.filter(Mobiliario.clase_bien_id == clase_id)  # 👈 nuevo filtro
-    if sub_id:
-        query = query.filter(Subdependencia.id == sub_id)
-    if descripcion:
-        query = query.filter(Mobiliario.descripcion.ilike(f"%{descripcion}%"))
-
-    resultados = [dict(r._mapping) for r in query.all()]
-    return jsonify(resultados)
 
 @app.route('/mobiliario_filtros')
 def mobiliario_filtros():
@@ -1897,11 +1910,191 @@ def mobiliario_filtros():
     return render_template("mobiliario_filtros.html", anexos=anexos, rubros=rubros)
 
 
+#SISTEMA DE PERSONAL ----------------------------------------------------------------------------------------
+# =======================================================
+# 🧭 API REST para la gestión de agentes
+# =======================================================
+
+# 🟢 1️⃣ CREAR UN NUEVO AGENTE -------------------------------------------------
+@app.route('/api/agentes', methods=['POST'])
+def crear_agente():
+    """
+    Crea un nuevo agente en la base de datos.
+    Permite subir una imagen (campo 'foto') que se guarda en Cloudinary.
+    Requiere: legajo, dni_cuil, apellido, nombre.
+    Opcional: id_anexo, id_subdependencia, categoria, tipo, cargo, telefono, email, foto_url.
+    """
+    try:
+        # Si viene JSON (sin archivo)
+        if request.is_json:
+            data = request.get_json() or {}
+            foto_url = data.get("foto_url")
+
+        # Si viene como formulario multipart (con archivo)
+        else:
+            data = request.form.to_dict()
+            foto_url = None
+
+            # 📸 Subir imagen si está presente
+            if "foto" in request.files:
+                file = request.files["foto"]
+                if file and file.filename != "":
+                    # Guardar temporalmente el archivo
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp:
+                        file.save(temp.name)
+                        # Subir a Cloudinary (carpeta agentes)
+                        result = cloudinary.uploader.upload(temp.name, folder="agentes")
+                        foto_url = result.get("secure_url")
+                        os.remove(temp.name)
+
+        # Validar campos obligatorios
+        campos_obligatorios = ['legajo', 'dni_cuil', 'apellido', 'nombre']
+        for campo in campos_obligatorios:
+            if not data.get(campo):
+                return jsonify({"error": f"Falta el campo obligatorio: {campo}"}), 400
+
+        # Crear el nuevo objeto Agente
+        nuevo = Agente(
+            legajo=data['legajo'],
+            dni_cuil=data['dni_cuil'],
+            apellido=data['apellido'],
+            nombre=data['nombre'],
+            id_anexo=data.get('id_anexo'),
+            id_subdependencia=data.get('id_subdependencia'),
+            categoria=data.get('categoria'),
+            tipo=data.get('tipo'),
+            cargo=data.get('cargo'),
+            telefono=data.get('telefono'),
+            email=data.get('email'),
+            foto_url=foto_url  # ✅ se carga automáticamente desde Cloudinary
+        )
+
+        db.session.add(nuevo)
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Agente registrado correctamente",
+            "agente": nuevo.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+# 🟠 2️⃣ LISTAR TODOS LOS AGENTES ----------------------------------------------
+@app.route('/api/agentes', methods=['GET'])
+def listar_agentes():
+    """
+    Devuelve un listado completo de todos los agentes,
+    con sus anexos y subdependencias asociados.
+    """
+    try:
+        agentes = Agente.query.order_by(Agente.apellido, Agente.nombre).all()
+        return jsonify([a.to_dict() for a in agentes]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# 🔵 3️⃣ OBTENER UN AGENTE POR ID ----------------------------------------------
+@app.route('/api/agentes/<int:id>', methods=['GET'])
+def obtener_agente(id):
+    """Obtiene la información detallada de un agente por su ID."""
+    agente = Agente.query.get(id)
+    if not agente:
+        return jsonify({"error": "Agente no encontrado"}), 404
+    return jsonify(agente.to_dict()), 200
+
+
+# 🟣 4️⃣ EDITAR UN AGENTE EXISTENTE --------------------------------------------
+@app.route('/api/agentes/<int:id>', methods=['PUT', 'PATCH'])
+def editar_agente(id):
+    """
+    Actualiza los datos de un agente existente.
+    Permite modificar cualquiera de los campos opcionales.
+    """
+    try:
+        agente = Agente.query.get(id)
+        if not agente:
+            return jsonify({"error": "Agente no encontrado"}), 404
+
+        data = request.get_json() or {}
+
+        # Actualizar solo los campos presentes en el request
+        for campo in [
+            "legajo", "dni_cuil", "apellido", "nombre",
+            "id_anexo", "id_subdependencia",
+            "categoria", "tipo", "cargo", "telefono", "email", "foto_url"
+        ]:
+            if campo in data:
+                setattr(agente, campo, data[campo])
+
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Agente actualizado correctamente",
+            "agente": agente.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# 🔴 5️⃣ ELIMINAR UN AGENTE ----------------------------------------------------
+@app.route('/api/agentes/<int:id>', methods=['DELETE'])
+def eliminar_agente(id):
+    """
+    Elimina un agente por su ID.
+    """
+    try:
+        agente = Agente.query.get(id)
+        if not agente:
+            return jsonify({"error": "Agente no encontrado"}), 404
+
+        db.session.delete(agente)
+        db.session.commit()
+        return jsonify({"mensaje": "Agente eliminado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# 🟡 6️⃣ LISTAR AGENTES POR ANEXO ----------------------------------------------
+@app.route('/api/agentes/anexo/<int:anexo_id>', methods=['GET'])
+def agentes_por_anexo(anexo_id):
+    """
+    Lista todos los agentes que pertenecen a un anexo específico.
+    """
+    try:
+        agentes = Agente.query.filter_by(id_anexo=anexo_id)\
+                              .order_by(Agente.apellido).all()
+        return jsonify([a.to_dict() for a in agentes]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# 🟤 7️⃣ LISTAR AGENTES POR SUBDEPENDENCIA -------------------------------------
+@app.route('/api/agentes/subdependencia/<int:sub_id>', methods=['GET'])
+def agentes_por_subdependencia(sub_id):
+    """
+    Lista todos los agentes que pertenecen a una subdependencia específica.
+    """
+    try:
+        agentes = Agente.query.filter_by(id_subdependencia=sub_id)\
+                              .order_by(Agente.apellido).all()
+        return jsonify([a.to_dict() for a in agentes]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/agentes')
+def agentes():
+    return render_template('agentes.html')
+
 
 
 # ▶️ Ejecutar con python app.py
 if __name__ == '__main__':
     app.run(debug=True)
-
-
 
