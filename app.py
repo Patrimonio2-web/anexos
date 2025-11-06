@@ -399,20 +399,12 @@ def clases_por_rubro():
 
 #AUDITORIAS----------------------------------------------------------------------------------------------------------
 
-
 def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
-    """
-    Registra un evento de auditoría.
-    - fecha se guarda en hora AR (timezone('America/Argentina/Buenos_Aires', now())).
-    - 'cambios' guarda un diff liviano cuando before/after son dicts.
-    """
     try:
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
-        # Respetar proxies / balancers
         ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
         ua = request.headers.get("User-Agent") or ""
 
-        # diff liviano (solo si ambos son dict)
         diff = None
         if isinstance(before, dict) and isinstance(after, dict):
             diff = {}
@@ -424,30 +416,15 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
         db.session.execute(
             text("""
                 INSERT INTO auditoria (
-                    fecha,
-                    accion,
-                    tabla_afectada,
-                    id_registro,
-                    datos_anteriores,
-                    datos_nuevos,
-                    cambios,
-                    descripcion,
-                    usuario,
-                    ip_origen,
-                    user_agent
+                    fecha, accion, tabla_afectada, id_registro,
+                    datos_anteriores, datos_nuevos, cambios, descripcion,
+                    usuario, ip_origen, user_agent
                 )
                 VALUES (
                     timezone('America/Argentina/Buenos_Aires', now()),
-                    :accion,
-                    :tabla,
-                    :id_registro,
-                    CAST(:before AS JSONB),
-                    CAST(:after  AS JSONB),
-                    CAST(:cambios AS JSONB),
-                    :descripcion,
-                    :usuario,
-                    :ip,
-                    :ua
+                    :accion, :tabla, :id_registro,
+                    CAST(:before AS JSONB), CAST(:after AS JSONB), CAST(:cambios AS JSONB), :descripcion,
+                    :usuario, :ip, :ua
                 )
             """),
             {
@@ -463,85 +440,67 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
                 "ua": ua
             }
         )
-        # Importante: NO hacemos commit acá; se hace en el flujo del endpoint que llama.
+        # el commit lo hace quien llama
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
 
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
-    """
-    Listado de auditoría con orden descendente por fecha.
-    Filtros opcionales: query, desde, hasta, tabla, id_registro, limit/offset.
-    - 'desde' y 'hasta' en formato YYYY-MM-DD (ambos inclusivos).
-    """
-    # -------- parámetros --------
     try:
         limit  = min(int(request.args.get('limit', 100)), 500)
-        offset = int(request.args.get('offset', 0))
+        offset = max(int(request.args.get('offset', 0)), 0)
         query  = (request.args.get('query') or '').strip().lower()
-        desde  = (request.args.get('desde') or '').strip()   # "YYYY-MM-DD"
-        hasta  = (request.args.get('hasta') or '').strip()   # "YYYY-MM-DD"
+        desde  = (request.args.get('desde') or '').strip()     # YYYY-MM-DD
+        hasta  = (request.args.get('hasta') or '').strip()     # YYYY-MM-DD
         tabla  = (request.args.get('tabla') or '').strip().lower()
         id_reg = (request.args.get('id_registro') or '').strip()
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
-    # -------- SQL base --------
     sql = """
         SELECT
             id,
-            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya guardada en AR
-            usuario,
-            accion,
-            tabla_afectada,
-            id_registro,
-            datos_anteriores,
-            datos_nuevos,
-            descripcion,
-            ip_origen,
-            user_agent
+            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,
+            usuario, accion, tabla_afectada, id_registro,
+            datos_anteriores, datos_nuevos, descripcion, ip_origen, user_agent
         FROM auditoria
         WHERE 1=1
     """
     params = {}
 
-    # -------- filtros opcionales --------
     if query:
         sql += """
             AND (
-                LOWER(COALESCE(usuario,''))         LIKE :q OR
-                LOWER(COALESCE(accion,''))          LIKE :q OR
-                LOWER(COALESCE(tabla_afectada,''))  LIKE :q OR
-                LOWER(COALESCE(id_registro,''))     LIKE :q OR
-                LOWER(COALESCE(descripcion,''))     LIKE :q
+                LOWER(COALESCE(usuario,''))        LIKE :q OR
+                LOWER(COALESCE(accion,''))         LIKE :q OR
+                LOWER(COALESCE(tabla_afectada,'')) LIKE :q OR
+                LOWER(COALESCE(id_registro,''))    LIKE :q OR
+                LOWER(COALESCE(descripcion,''))    LIKE :q
             )
         """
         params["q"] = f"%{query}%"
 
-    # Día completo (inclusivo) en AR
+    # rango inclusivo: [desde, hasta 23:59:59]
     if desde:
-        sql += " AND fecha::date >= :desde::date "
+        sql += " AND fecha >= (:desde::date) "
         params["desde"] = desde
-
     if hasta:
-        sql += " AND fecha::date <= :hasta::date "
+        sql += " AND fecha <  ((:hasta::date) + INTERVAL '1 day') "
         params["hasta"] = hasta
 
     if tabla:
-        sql += " AND LOWER(tabla_afectada) = :tabla "
+        sql += " AND LOWER(BTRIM(COALESCE(tabla_afectada,''))) = :tabla "
         params["tabla"] = tabla
 
     if id_reg:
         sql += " AND id_registro = :id_registro "
         params["id_registro"] = id_reg
 
-    # -------- orden + paginación --------
     sql += " ORDER BY fecha DESC, id DESC LIMIT :limit OFFSET :offset "
     params["limit"]  = limit
     params["offset"] = offset
 
-    # -------- ejecución --------
     try:
         with db.engine.connect() as conn:
             result = conn.execute(text(sql), params)
@@ -549,8 +508,6 @@ def get_auditoria():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
 
 
 # --- vista para ver la auditoría ---
