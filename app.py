@@ -399,12 +399,25 @@ def clases_por_rubro():
 
 #AUDITORIAS----------------------------------------------------------------------------------------------------------
 
+from flask import request, jsonify, session
+from sqlalchemy import text
+from datetime import date
+import json
+
+# OJO: asumimos que existe `db` (SQLAlchemy) en este módulo.
+
 def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, descripcion=None):
+    """
+    Inserta una fila de auditoría. NO hace commit (lo hace quien llama).
+    Guarda la fecha en AR usando timezone('America/Argentina/Buenos_Aires', now()) en SQL.
+    """
     try:
         usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
+        # Respetar proxies/balancers
         ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
         ua = request.headers.get("User-Agent") or ""
 
+        # diff liviano (si ambos son dict)
         diff = None
         if isinstance(before, dict) and isinstance(after, dict):
             diff = {}
@@ -437,31 +450,53 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
                 "descripcion": descripcion,
                 "usuario": usuario,
                 "ip": ip,
-                "ua": ua
+                "ua": ua,
             }
         )
-        # el commit lo hace quien llama
+        # Importante: el commit lo hace el endpoint que llama a esta función.
     except Exception as e:
         print(f"⚠ Error registrando auditoría: {e}")
 
 
 @app.route('/api/auditoria', methods=['GET'])
 def get_auditoria():
+    """
+    Listado de auditoría (más reciente primero).
+    Filtros: query, desde, hasta, tabla, id_registro, limit/offset.
+      - 'desde' y 'hasta' en formato YYYY-MM-DD (inclusive).
+    """
+    # ---- leer params básicos ----
     try:
         limit  = min(int(request.args.get('limit', 100)), 500)
         offset = max(int(request.args.get('offset', 0)), 0)
         query  = (request.args.get('query') or '').strip().lower()
-        desde  = (request.args.get('desde') or '').strip()     # YYYY-MM-DD
-        hasta  = (request.args.get('hasta') or '').strip()     # YYYY-MM-DD
+        desde  = (request.args.get('desde') or '').strip()      # YYYY-MM-DD
+        hasta  = (request.args.get('hasta') or '').strip()      # YYYY-MM-DD
         tabla  = (request.args.get('tabla') or '').strip().lower()
         id_reg = (request.args.get('id_registro') or '').strip()
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
+    # ---- normalizar fechas ----
+    def _parse(d):
+        try:
+            y, m, dd = map(int, d.split("-"))
+            return date(y, m, dd)
+        except Exception:
+            return None
+
+    d_desde = _parse(desde) if desde else None
+    d_hasta = _parse(hasta) if hasta else None
+
+    # si vienen invertidas, las acomodamos
+    if d_desde and d_hasta and d_desde > d_hasta:
+        d_desde, d_hasta = d_hasta, d_desde
+
+    # ---- SQL base + filtros ----
     sql = """
         SELECT
             id,
-            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,
+            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,  -- ya se guardó en AR
             usuario, accion, tabla_afectada, id_registro,
             datos_anteriores, datos_nuevos, descripcion, ip_origen, user_agent
         FROM auditoria
@@ -481,13 +516,13 @@ def get_auditoria():
         """
         params["q"] = f"%{query}%"
 
-    # rango inclusivo: [desde, hasta 23:59:59]
-    if desde:
+    # rango inclusivo [desde, hasta 23:59:59]
+    if d_desde:
         sql += " AND fecha >= (:desde::date) "
-        params["desde"] = desde
-    if hasta:
+        params["desde"] = d_desde.isoformat()
+    if d_hasta:
         sql += " AND fecha <  ((:hasta::date) + INTERVAL '1 day') "
-        params["hasta"] = hasta
+        params["hasta"] = d_hasta.isoformat()
 
     if tabla:
         sql += " AND LOWER(BTRIM(COALESCE(tabla_afectada,''))) = :tabla "
@@ -497,16 +532,22 @@ def get_auditoria():
         sql += " AND id_registro = :id_registro "
         params["id_registro"] = id_reg
 
+    # orden: más reciente primero
     sql += " ORDER BY fecha DESC, id DESC LIMIT :limit OFFSET :offset "
     params["limit"]  = limit
     params["offset"] = offset
+
+    # log mínimo de diagnóstico
+    print("[/api/auditoria] params:", params)
 
     try:
         with db.engine.connect() as conn:
             result = conn.execute(text(sql), params)
             data = [dict(row._mapping) for row in result]
+        print("[/api/auditoria] rows:", len(data))
         return jsonify(data), 200
     except Exception as e:
+        print("[/api/auditoria] ERROR:", e)
         return jsonify({"error": str(e)}), 500
 
 
