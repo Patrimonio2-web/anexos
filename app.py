@@ -581,6 +581,19 @@ def subdependencias_por_anexo(anexo_id):
     finally:
         conn.close()
 
+@app.route("/api/clases_por_rubro/<id_rubro>")
+def clases_por_rubro(id_rubro):
+    try:
+        if id_rubro.strip() == "" or id_rubro.lower() == "todos":
+            clases = ClaseBien.query.order_by(ClaseBien.descripcion.asc()).all()
+        else:
+            clases = ClaseBien.query.filter_by(id_rubro=id_rubro).order_by(ClaseBien.descripcion.asc()).all()
+
+        data = [{"id_clase": c.id_clase, "descripcion": c.descripcion} for c in clases]
+        return jsonify(data)
+    except Exception as e:
+        print("⚠️ Error al obtener clases:", e)
+        return jsonify({"error": str(e)}), 500
 
 #---------busca por impresora
 @app.route('/api/buscar-clase', methods=['GET'])
@@ -1284,9 +1297,13 @@ def ver_mobiliario():
 
 @app.route('/imprimir')
 def imprimir():
-    anexos = Anexo.query.all()
+    # 🔹 Cargar datos base
+    anexos = Anexo.query.order_by(Anexo.nombre.asc()).all()
+    subdependencias = Subdependencia.query.order_by(Subdependencia.nombre.asc()).all()
+    rubros = Rubro.query.order_by(Rubro.nombre.asc()).all()
+    clases = ClaseBien.query.order_by(ClaseBien.descripcion.asc()).all()
 
-    # Diccionario de campos (etiquetas de los filtros)
+    # 🔹 Diccionario de etiquetas de filtros
     campos = {
         "no_dado": "No Dado",
         "para_reparacion": "Reparación",
@@ -1296,21 +1313,25 @@ def imprimir():
         "problema_etiqueta": "Problema etiqueta"
     }
 
-    # Filtros seleccionados (desde los checkboxes del GET)
+    # 🔹 Filtros seleccionados (desde los checkboxes del GET)
     filtros_estado = request.args.getlist('estado')
     filtros_conservacion = request.args.getlist('conservacion')
 
-    # Si todavía no hay búsqueda, mostrás todos o vacío
+    # 🔹 Inicialmente sin resultados
     mobiliario = []
 
     return render_template(
         'imprimir.html',
         anexos=anexos,
+        subdependencias=subdependencias,
+        rubros=rubros,
+        clases=clases,
         campos=campos,
         filtros_estado=filtros_estado,
         filtros_conservacion=filtros_conservacion,
         mobiliario=mobiliario
     )
+
 
 
 
