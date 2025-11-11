@@ -562,21 +562,13 @@ def subdependencias_por_anexo(anexo_id):
     cur = conn.cursor()
 
     try:
-        # 🟢 Caso "todos" → traer todas las subdependencias
-        if anexo_id == "todos":
-            cur.execute("""
-                SELECT id, nombre 
-                FROM subdependencias 
-                ORDER BY nombre ASC
-            """)
+        if anexo_id.strip().lower() == "todos":
+            cur.execute("SELECT id, nombre FROM subdependencias ORDER BY nombre ASC")
         else:
-            # 🟢 Caso anexo específico
-            cur.execute("""
-                SELECT id, nombre 
-                FROM subdependencias 
-                WHERE id_anexo = %s
-                ORDER BY nombre ASC
-            """, (anexo_id,))
+            cur.execute(
+                "SELECT id, nombre FROM subdependencias WHERE id_anexo = %s ORDER BY nombre ASC",
+                (anexo_id,)
+            )
 
         data = cur.fetchall()
         subdependencias = [{"id": row[0], "nombre": row[1]} for row in data]
@@ -584,10 +576,11 @@ def subdependencias_por_anexo(anexo_id):
 
     except Exception as e:
         print("⚠️ Error al obtener subdependencias:", e)
-        return jsonify({"error": "Error interno al obtener subdependencias"}), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
         conn.close()
+
 
 #---------busca por impresora
 @app.route('/api/buscar-clase', methods=['GET'])
@@ -1461,11 +1454,6 @@ def obtener_nombre_subdependencia(sub_id):
 
 
 
-
-@app.route('/api/subdependencias_por_anexo/<int:anexo_id>')
-def subdependencias_por_anexo(anexo_id):
-    subdeps = Subdependencia.query.filter_by(id_anexo=anexo_id).all()
-    return jsonify([{"id": s.id, "nombre": s.nombre} for s in subdeps])
 
 # --- Serializer simple para enviar lo que la vista espera ---
 def mob_to_dict(m):
