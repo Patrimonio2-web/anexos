@@ -1332,8 +1332,8 @@ from datetime import datetime
 @app.route('/imprimir_listado')
 def imprimir_listado():
     from datetime import datetime
-    cur = db.connection.cursor()
-
+    conn, cur = get_conn_dict()  # o db.engine.raw_connection()
+    
     anexo_id = request.args.get('anexo')
     subdep_id = request.args.get('subdependencia')
     rubro_id = request.args.get('rubro')
@@ -1356,7 +1356,7 @@ def imprimir_listado():
         SELECT 
             r.descripcion AS rubro,
             c.descripcion AS clase,
-            m.id_mobiliario,
+            m.id AS id_mobiliario,   -- ✅ corregido
             m.descripcion,
             m.estado_conservacion,
             m.no_dado,
@@ -1373,35 +1373,25 @@ def imprimir_listado():
 
     params = []
 
-    # --- Filtros dinámicos ---
-    if anexo_id and anexo_id != "todos":
-        query += " AND m.anexo_id = %s"
-        params.append(anexo_id)
-
-    if subdep_id and subdep_id != "todas":
-        query += " AND m.subdependencia_id = %s"
-        params.append(subdep_id)
-
     if rubro_id:
         query += " AND m.rubro_id = %s"
         params.append(rubro_id)
-
     if clase_id:
         query += " AND m.clase_bien_id = %s"
         params.append(clase_id)
-
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    # --- Filtros de estado (checkboxes) ---
     for f in filtros:
         query += f" AND m.{f} = TRUE"
 
-    query += " ORDER BY r.descripcion, c.descripcion, m.id_mobiliario ASC"
+    query += " ORDER BY r.descripcion, c.descripcion, m.id ASC"
 
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
+
+    conn.close()  # ✅ cerrar conexión
 
     # --- Agrupación por Rubro > Clase ---
     grupos = {}
@@ -1410,14 +1400,9 @@ def imprimir_listado():
         clase = fila[1] or "SIN CLASE"
         grupos.setdefault(rubro, {}).setdefault(clase, []).append(fila)
 
-    # --- Calcular total de bienes ---
     total_bienes = sum(len(items) for clases in grupos.values() for items in clases.values())
 
-    # --- Elegir plantilla según tipo ---
-    if tipo_listado == "entrega":
-        plantilla = "listado_impresion_entrega.html"
-    else:
-        plantilla = "listado_impresion.html"
+    plantilla = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
 
     return render_template(
         plantilla,
@@ -1429,6 +1414,7 @@ def imprimir_listado():
         estado_conservacion=estado_conservacion,
         total_bienes=total_bienes
     )
+
 
 
 
