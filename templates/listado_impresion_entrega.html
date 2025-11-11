@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Listado de Mobiliario</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 40px;
+            background-color: #f9fafb;
+            color: #1f2937;
+        }
+
+        .container {
+            background: white;
+            padding: 30px 40px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.05);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header img {
+            width: 80px;
+            margin-bottom: 10px;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            margin: 0;
+            letter-spacing: 0.5px;
+        }
+
+        .subtitulo {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 5px;
+        }
+
+        .info {
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th {
+            background-color: #e5e7eb;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            padding: 10px;
+            text-align: left;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        tr:nth-child(odd) {
+            background-color: #ffffff;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+
+        tr:hover {
+            background-color: #f3f4f6;
+        }
+
+        .totales {
+            margin-top: 25px;
+            font-weight: 600;
+            text-align: right;
+            font-size: 15px;
+        }
+
+        .firmas {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 80px;
+            font-size: 14px;
+        }
+
+        .firma {
+            text-align: center;
+            width: 40%;
+        }
+
+        .firma span {
+            display: block;
+            margin-top: 5px;
+            border-top: 1px solid #000;
+            padding-top: 4px;
+        }
+
+        @media print {
+            body {
+                background: #fff;
+                margin: 10mm;
+            }
+            .container {
+                box-shadow: none;
+                border-radius: 0;
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Encabezado -->
+        <div class="header">
+            <img src="https://res.cloudinary.com/dqsacd9ez/image/upload/v1762866358/logo_legislatura_wgtwjy.jpg" alt="Logo">
+            <h1>LEGISLATURA DE LA PROVINCIA DE LA RIOJA</h1>
+            <p class="subtitulo">Listado General de Bienes Muebles</p>
+        </div>
+
+        <!-- Información -->
+        <div class="info">
+            <strong>Anexo:</strong> {{ anexo_nombre }} <br>
+            <strong>Subdependencia:</strong> {{ subdependencia_nombre }} <br>
+            <strong>Fecha de emisión:</strong> {{ ahora.strftime('%d/%m/%Y %H:%M') }}
+        </div>
+
+        <!-- Tabla -->
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">ID</th>
+                    <th style="width: 90%;">Descripción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for mob in mobiliarios %}
+                <tr>
+                    <td>{{ mob[0] }}</td>
+                    <td>{{ mob[1] }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" style="text-align:center; color:#6b7280;">No se encontraron bienes registrados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Total -->
+        <p class="totales">
+            Total de bienes listados: {{ mobiliarios|length }}
+        </p>
+
+        <!-- Firmas -->
+        <div class="firmas">
+            <div class="firma">
+                <span></span>
+                Responsable del Área
+            </div>
+            <div class="firma">
+                <span></span>
+                Patrimonio
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
