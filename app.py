@@ -556,7 +556,38 @@ def get_auditoria():
 def vista_auditoria():
     return render_template("auditoria.html")
 
+@app.route("/api/subdependencias_por_anexo/<anexo_id>")
+def subdependencias_por_anexo(anexo_id):
+    conn = db.engine.raw_connection()
+    cur = conn.cursor()
 
+    try:
+        # 🟢 Caso "todos" → traer todas las subdependencias
+        if anexo_id == "todos":
+            cur.execute("""
+                SELECT id, nombre 
+                FROM subdependencias 
+                ORDER BY nombre ASC
+            """)
+        else:
+            # 🟢 Caso anexo específico
+            cur.execute("""
+                SELECT id, nombre 
+                FROM subdependencias 
+                WHERE id_anexo = %s
+                ORDER BY nombre ASC
+            """, (anexo_id,))
+
+        data = cur.fetchall()
+        subdependencias = [{"id": row[0], "nombre": row[1]} for row in data]
+        return jsonify(subdependencias)
+
+    except Exception as e:
+        print("⚠️ Error al obtener subdependencias:", e)
+        return jsonify({"error": "Error interno al obtener subdependencias"}), 500
+
+    finally:
+        conn.close()
 
 #---------busca por impresora
 @app.route('/api/buscar-clase', methods=['GET'])
