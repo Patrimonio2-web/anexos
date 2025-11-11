@@ -1316,6 +1316,7 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
+    # 🔹 Consulta base
     query = """
         SELECT 
             COALESCE(r.nombre, 'SIN RUBRO') AS rubro,
@@ -1337,7 +1338,7 @@ def imprimir_listado():
     """
     params = []
 
-    # 🏢 Filtros de anexo y subdependencia
+    # 🏢 FILTRO DE ANEXO Y SUBDEPENDENCIA
     if anexo_id and anexo_id != "todos":
         query += " AND a.id = %s"
         params.append(anexo_id)
@@ -1345,7 +1346,7 @@ def imprimir_listado():
         query += " AND sd.id = %s"
         params.append(sub_id)
 
-    # 🧾 Rubro y clase
+    # 📂 FILTRO DE RUBRO Y CLASE
     if rubro_id:
         query += " AND r.id_rubro = %s"
         params.append(rubro_id)
@@ -1353,31 +1354,30 @@ def imprimir_listado():
         query += " AND c.id = %s"
         params.append(clase_id)
 
-    # 🔸 Filtros booleanos
+    # 🔸 FILTROS DE ESTADO (checkboxes)
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
-    # 🔸 Excluir faltantes
+    # 🔸 EXCLUIR FALTANTES
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    # 🔸 Estado de conservación
+    # 🔸 ESTADO DE CONSERVACIÓN
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    # Orden final
+    # 🔸 ORDEN FINAL
     query += " ORDER BY rubro ASC, m.id::integer ASC"
 
-    # 🔹 Ejecutamos
+    # 🔹 Ejecutamos consulta
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
-    conn.close()
 
-    # Agrupamos por rubro
+    # 🔹 Agrupamos por rubro
     grupos = {}
     for row in resultados:
         rubro = row[0]
@@ -1385,6 +1385,13 @@ def imprimir_listado():
             grupos[rubro] = []
         grupos[rubro].append(row)
 
+    # 🔹 Obtener nombres legibles para encabezado
+    anexo_nombre = "Todos" if anexo_id == "todos" else obtener_nombre_anexo(anexo_id)
+    subdependencia_nombre = "Todas" if sub_id == "todas" else obtener_nombre_subdependencia(sub_id)
+
+    conn.close()
+
+    # 🔸 Seleccionar plantilla según tipo
     template = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
 
     return render_template(
@@ -1392,12 +1399,32 @@ def imprimir_listado():
         grupos=grupos,
         campos=campos,
         ahora=datetime.now(),
-        anexo_nombre="Todos" if anexo_id == "todos" else obtener_nombre_anexo(anexo_id),
-        subdependencia_nombre="Todas" if sub_id == "todas" else obtener_nombre_sub(sub_id),
+        anexo_nombre=anexo_nombre,
+        subdependencia_nombre=subdependencia_nombre,
         filtros=filtros,
         estado_conservacion=estado_conservacion
     )
 
+# 🧩 Funciones auxiliares opcionales
+def obtener_nombre_anexo(anexo_id):
+    if not anexo_id or anexo_id == "todos":
+        return "Todos"
+    conn = db.engine.raw_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else "Desconocido"
+
+def obtener_nombre_subdependencia(sub_id):
+    if not sub_id or sub_id == "todas":
+        return "Todas"
+    conn = db.engine.raw_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else "Desconocida"
 
 
 
