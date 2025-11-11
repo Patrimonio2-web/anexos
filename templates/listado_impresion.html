@@ -65,6 +65,12 @@
             text-transform: uppercase;
         }
 
+        .clase-header {
+            background-color: #efefef;
+            font-weight: bold;
+            padding-left: 20px;
+        }
+
         .totales {
             margin-top: 20px;
             font-weight: bold;
@@ -144,29 +150,35 @@
             </tr>
         </thead>
         <tbody>
-            {% for rubro, items in grupos.items() %}
+            {% for rubro, clases in grupos.items() %}
                 <!-- Encabezado de Rubro -->
                 <tr class="rubro-header">
                     <td colspan="4">Rubro: {{ rubro }}</td>
                 </tr>
 
-                <!-- Bienes dentro del rubro -->
-                {% for mob in items %}
-                <tr>
-                    <td>{{ mob[1] }}</td>
-                    <td>{{ mob[2] }}</td>
-                    <td>{{ mob[3] or '' }}</td>
-                    <td>
-                        {% set observaciones = [] %}
-                        {% if mob[4] %} {% set _ = observaciones.append('No dado') %} {% endif %}
-                        {% if mob[5] %} {% set _ = observaciones.append('Para reparación') %} {% endif %}
-                        {% if mob[6] %} {% set _ = observaciones.append('Para baja') %} {% endif %}
-                        {% if mob[7] %} {% set _ = observaciones.append('Faltante') %} {% endif %}
-                        {% if mob[8] %} {% set _ = observaciones.append('Sobrante') %} {% endif %}
-                        {% if mob[9] %} {% set _ = observaciones.append('Problema etiqueta') %} {% endif %}
-                        {{ observaciones|join(', ') }}
-                    </td>
-                </tr>
+                {% for clase, items in clases.items() %}
+                    <!-- Encabezado de Clase -->
+                    <tr class="clase-header">
+                        <td colspan="4">Clase: {{ clase }}</td>
+                    </tr>
+
+                    {% for mob in items %}
+                        <tr>
+                            <td>{{ mob[2] }}</td> <!-- ID -->
+                            <td>{{ mob[3] }}</td> <!-- Descripción -->
+                            <td>{{ mob[4] or '' }}</td> <!-- Estado -->
+                            <td>
+                                {% set observaciones = [] %}
+                                {% if mob[5] %} {% set _ = observaciones.append('No dado') %} {% endif %}
+                                {% if mob[6] %} {% set _ = observaciones.append('Para reparación') %} {% endif %}
+                                {% if mob[7] %} {% set _ = observaciones.append('Para baja') %} {% endif %}
+                                {% if mob[8] %} {% set _ = observaciones.append('Faltante') %} {% endif %}
+                                {% if mob[9] %} {% set _ = observaciones.append('Sobrante') %} {% endif %}
+                                {% if mob[10] %} {% set _ = observaciones.append('Problema etiqueta') %} {% endif %}
+                                {{ observaciones|join(', ') }}
+                            </td>
+                        </tr>
+                    {% endfor %}
                 {% endfor %}
             {% else %}
                 <tr>
@@ -178,8 +190,8 @@
 
     <!-- TOTALES -->
     <p class="totales">
-        Total de bienes listados: 
-        {{ grupos.values() | map('length') | sum }}
+        Total de bienes listados:
+        {{ grupos.values() | map('values') | map('sum', attribute='|length') | sum }}
     </p>
 
     <!-- FIRMAS -->
