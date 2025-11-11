@@ -150,48 +150,49 @@
             </tr>
         </thead>
         <tbody>
-            {% for rubro, clases in grupos.items() %}
-                <!-- Encabezado de Rubro -->
-                <tr class="rubro-header">
-                    <td colspan="4">Rubro: {{ rubro }}</td>
-                </tr>
-
-                {% for clase, items in clases.items() %}
-                    <!-- Encabezado de Clase -->
-                    <tr class="clase-header">
-                        <td colspan="4">Clase: {{ clase }}</td>
+            {% if grupos %}
+                {% for rubro, clases in grupos.items() %}
+                    <!-- Encabezado de Rubro -->
+                    <tr class="rubro-header">
+                        <td colspan="4">Rubro: {{ rubro }}</td>
                     </tr>
 
-                    {% for mob in items %}
-                        <tr>
-                            <td>{{ mob[2] }}</td> <!-- ID -->
-                            <td>{{ mob[3] }}</td> <!-- Descripción -->
-                            <td>{{ mob[4] or '' }}</td> <!-- Estado -->
-                            <td>
-                                {% set observaciones = [] %}
-                                {% if mob[5] %} {% set _ = observaciones.append('No dado') %} {% endif %}
-                                {% if mob[6] %} {% set _ = observaciones.append('Para reparación') %} {% endif %}
-                                {% if mob[7] %} {% set _ = observaciones.append('Para baja') %} {% endif %}
-                                {% if mob[8] %} {% set _ = observaciones.append('Faltante') %} {% endif %}
-                                {% if mob[9] %} {% set _ = observaciones.append('Sobrante') %} {% endif %}
-                                {% if mob[10] %} {% set _ = observaciones.append('Problema etiqueta') %} {% endif %}
-                                {{ observaciones|join(', ') }}
-                            </td>
+                    {% for clase, items in clases.items() %}
+                        <!-- Encabezado de Clase -->
+                        <tr class="clase-header">
+                            <td colspan="4">Clase: {{ clase }}</td>
                         </tr>
+
+                        {% for mob in items %}
+                            <tr>
+                                <td>{{ mob[2] }}</td> <!-- ID -->
+                                <td>{{ mob[3] }}</td> <!-- Descripción -->
+                                <td>{{ mob[4] or '' }}</td> <!-- Estado -->
+                                <td>
+                                    {% set observaciones = [] %}
+                                    {% if mob[5] %} {% set _ = observaciones.append('No dado') %} {% endif %}
+                                    {% if mob[6] %} {% set _ = observaciones.append('Para reparación') %} {% endif %}
+                                    {% if mob[7] %} {% set _ = observaciones.append('Para baja') %} {% endif %}
+                                    {% if mob[8] %} {% set _ = observaciones.append('Faltante') %} {% endif %}
+                                    {% if mob[9] %} {% set _ = observaciones.append('Sobrante') %} {% endif %}
+                                    {% if mob[10] %} {% set _ = observaciones.append('Problema etiqueta') %} {% endif %}
+                                    {{ observaciones|join(', ') }}
+                                </td>
+                            </tr>
+                        {% endfor %}
                     {% endfor %}
                 {% endfor %}
             {% else %}
                 <tr>
                     <td colspan="4" style="text-align:center; color: #555;">No se encontraron bienes con los filtros aplicados.</td>
                 </tr>
-            {% endfor %}
+            {% endif %}
         </tbody>
     </table>
 
     <!-- TOTALES -->
     <p class="totales">
-        Total de bienes listados:
-        {{ grupos.values() | map('values') | map('sum', attribute='|length') | sum }}
+        Total de bienes listados: {{ total_bienes }}
     </p>
 
     <!-- FIRMAS -->
@@ -208,5 +209,3 @@
 
 </body>
 </html>
-
-
