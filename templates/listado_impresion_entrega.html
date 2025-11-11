@@ -68,16 +68,19 @@
             border-bottom: 1px solid #e5e7eb;
         }
 
-        tr:nth-child(odd) {
+        tr:nth-child(odd) td {
             background-color: #ffffff;
         }
 
-        tr:nth-child(even) {
+        tr:nth-child(even) td {
             background-color: #f9fafb;
         }
 
-        tr:hover {
-            background-color: #f3f4f6;
+        .rubro-header {
+            background-color: #d1d5db;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #111827;
         }
 
         .totales {
@@ -145,22 +148,30 @@
                 </tr>
             </thead>
             <tbody>
-                {% for mob in mobiliarios %}
-                <tr>
-                    <td>{{ mob[0] }}</td>
-                    <td>{{ mob[1] }}</td>
-                </tr>
+                {% for rubro, items in grupos.items() %}
+                    <!-- Encabezado de rubro -->
+                    <tr class="rubro-header">
+                        <td colspan="2">Rubro: {{ rubro }}</td>
+                    </tr>
+
+                    <!-- Bienes del rubro -->
+                    {% for mob in items %}
+                    <tr>
+                        <td>{{ mob[1] }}</td>
+                        <td>{{ mob[2] }}</td>
+                    </tr>
+                    {% endfor %}
                 {% else %}
-                <tr>
-                    <td colspan="2" style="text-align:center; color:#6b7280;">No se encontraron bienes registrados.</td>
-                </tr>
+                    <tr>
+                        <td colspan="2" style="text-align:center; color:#6b7280;">No se encontraron bienes registrados.</td>
+                    </tr>
                 {% endfor %}
             </tbody>
         </table>
 
         <!-- Total -->
         <p class="totales">
-            Total de bienes listados: {{ mobiliarios|length }}
+            Total de bienes listados: {{ grupos.values() | map('length') | sum }}
         </p>
 
         <!-- Firmas -->
