@@ -1334,6 +1334,7 @@ def imprimir_listado():
     from datetime import datetime
     conn, cur = get_conn_dict()  # ✅ usa tu helper con psycopg2 (ya incluye SSL)
     
+    # --- Parámetros GET ---
     anexo_id = request.args.get('anexo')
     subdep_id = request.args.get('subdependencia')
     rubro_id = request.args.get('rubro')
@@ -1360,9 +1361,9 @@ def imprimir_listado():
     # --- Base query ---
     query = """
         SELECT 
-            r.descripcion AS rubro,
+            r.nombre AS rubro,             -- ✅ corregido (la columna es nombre)
             c.descripcion AS clase,
-            m.id AS id_mobiliario,   -- ✅ columna correcta
+            m.id AS id_mobiliario,         -- ✅ columna correcta
             m.descripcion,
             m.estado_conservacion,
             m.no_dado,
@@ -1396,14 +1397,14 @@ def imprimir_listado():
     for f in filtros:
         query += f" AND m.{f} = TRUE"
 
-    query += " ORDER BY r.descripcion, c.descripcion, m.id ASC"
+    query += " ORDER BY r.nombre, c.descripcion, m.id ASC"  # ✅ actualizado
 
+    # --- Ejecutar y procesar ---
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
+    conn.close()  # ✅ cerrar conexión siempre
 
-    conn.close()  # ✅ cerrar conexión
-
-    # --- Agrupación por Rubro > Clase ---
+    # --- Agrupar Rubro > Clase ---
     grupos = {}
     for fila in resultados:
         rubro = fila[0] or "SIN RUBRO"
@@ -1412,6 +1413,7 @@ def imprimir_listado():
 
     total_bienes = sum(len(items) for clases in grupos.values() for items in clases.values())
 
+    # --- Elegir plantilla ---
     plantilla = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
 
     return render_template(
@@ -1424,6 +1426,7 @@ def imprimir_listado():
         estado_conservacion=estado_conservacion,
         total_bienes=total_bienes
     )
+
 
 
 
