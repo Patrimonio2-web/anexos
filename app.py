@@ -1303,6 +1303,7 @@ def imprimir_listado():
     filtros = request.args.getlist('filtros')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
     estado_conservacion = request.args.get("estado_conservacion")
+    tipo_listado = request.args.get("tipo_listado", "clasico")  # 👈 nuevo parámetro
 
     campos = {
         "no_dado": "No Dado",
@@ -1313,7 +1314,6 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
-    # 🔹 Consulta sin joins innecesarios
     query = """
         SELECT 
             m.id,
@@ -1332,16 +1332,13 @@ def imprimir_listado():
     """
     params = [anexo_id, sub_id]
 
-    # 🔸 Filtros booleanos
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
-    # 🔸 Incluir o excluir faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    # 🔸 Estado de conservación
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
@@ -1358,11 +1355,16 @@ def imprimir_listado():
 
     cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
     subdependencia_nombre = cur.fetchone()[0]
-
     conn.close()
 
+    # 🔸 Elegimos plantilla según el tipo seleccionado
+    if tipo_listado == "entrega":
+        template = "listado_impresion_entrega.html"
+    else:
+        template = "listado_impresion.html"
+
     return render_template(
-        "listado_impresion.html",
+        template,
         mobiliarios=mobiliarios,
         campos=campos,
         ahora=datetime.now(),
@@ -1372,7 +1374,6 @@ def imprimir_listado():
         filtros=filtros,
         estado_conservacion=estado_conservacion
     )
-
 
 
 
