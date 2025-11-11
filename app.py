@@ -1300,10 +1300,12 @@ from datetime import datetime
 def imprimir_listado():
     anexo_id = request.args.get('anexo')
     sub_id = request.args.get('subdependencia')
+    rubro_id = request.args.get('rubro')
+    clase_id = request.args.get('clase')
     filtros = request.args.getlist('filtros')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
     estado_conservacion = request.args.get("estado_conservacion")
-    tipo_listado = request.args.get("tipo_listado", "clasico")  # 👈 clásico o moderno
+    tipo_listado = request.args.get("tipo_listado", "clasico")
 
     campos = {
         "no_dado": "No Dado",
@@ -1314,7 +1316,6 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
-    # 🔹 Consulta: unimos con rubros para agrupar
     query = """
         SELECT 
             COALESCE(r.nombre, 'SIN RUBRO') AS rubro,
@@ -1329,18 +1330,35 @@ def imprimir_listado():
             m.problema_etiqueta
         FROM mobiliario m
         LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
-        JOIN subdependencias sd ON m.ubicacion_id = sd.id
-        JOIN anexos a ON sd.id_anexo = a.id
-        WHERE a.id = %s AND sd.id = %s
+        LEFT JOIN clases_bienes c ON m.clase_id = c.id
+        LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
+        LEFT JOIN anexos a ON sd.id_anexo = a.id
+        WHERE 1=1
     """
-    params = [anexo_id, sub_id]
+    params = []
+
+    # 🏢 Filtros de anexo y subdependencia
+    if anexo_id and anexo_id != "todos":
+        query += " AND a.id = %s"
+        params.append(anexo_id)
+    if sub_id and sub_id != "todas":
+        query += " AND sd.id = %s"
+        params.append(sub_id)
+
+    # 🧾 Rubro y clase
+    if rubro_id:
+        query += " AND r.id_rubro = %s"
+        params.append(rubro_id)
+    if clase_id:
+        query += " AND c.id = %s"
+        params.append(clase_id)
 
     # 🔸 Filtros booleanos
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
-    # 🔸 Incluir o excluir faltantes
+    # 🔸 Excluir faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
@@ -1349,23 +1367,17 @@ def imprimir_listado():
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    # 🔸 Orden final: rubro ascendente, luego ID numérico ascendente
+    # Orden final
     query += " ORDER BY rubro ASC, m.id::integer ASC"
 
+    # 🔹 Ejecutamos
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
-
-    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
-    anexo_nombre = cur.fetchone()[0]
-
-    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
-    subdependencia_nombre = cur.fetchone()[0]
-
     conn.close()
 
-    # 🔸 Agrupamos los resultados por rubro
+    # Agrupamos por rubro
     grupos = {}
     for row in resultados:
         rubro = row[0]
@@ -1373,16 +1385,15 @@ def imprimir_listado():
             grupos[rubro] = []
         grupos[rubro].append(row)
 
-    # 🔸 Seleccionamos plantilla según tipo
     template = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
 
     return render_template(
         template,
-        grupos=grupos,  # 👈 ahora pasamos grupos en lugar de mobiliarios planos
+        grupos=grupos,
         campos=campos,
         ahora=datetime.now(),
-        anexo_nombre=anexo_nombre,
-        subdependencia_nombre=subdependencia_nombre,
+        anexo_nombre="Todos" if anexo_id == "todos" else obtener_nombre_anexo(anexo_id),
+        subdependencia_nombre="Todas" if sub_id == "todas" else obtener_nombre_sub(sub_id),
         filtros=filtros,
         estado_conservacion=estado_conservacion
     )
