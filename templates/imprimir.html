@@ -65,6 +65,20 @@
                 <span>Incluir faltantes</span>
             </label>
         </div>
+        <!-- 🔹 Tipo de listado -->
+        <div class="mt-6">
+            <h2 class="text-xl font-semibold mb-2">Tipo de listado</h2>
+            <div class="flex space-x-6">
+                <label class="flex items-center space-x-2">
+                    <input type="radio" name="tipo_listado" value="clasico" checked class="accent-teal-500">
+                    <span>Clásico</span>
+                </label>
+                <label class="flex items-center space-x-2">
+                    <input type="radio" name="tipo_listado" value="entrega" class="accent-teal-500">
+                    <span>Listado de entrega</span>
+                </label>
+            </div>
+        </div>
 
         <!-- Botón -->
         <div class="text-center mt-8">
@@ -95,6 +109,7 @@
     });
 </script>
 {% endblock %}
+
 
 
 
