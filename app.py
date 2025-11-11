@@ -1332,7 +1332,7 @@ from datetime import datetime
 @app.route('/imprimir_listado')
 def imprimir_listado():
     from datetime import datetime
-    conn, cur = get_conn_dict()  # o db.engine.raw_connection()
+    conn, cur = get_conn_dict()  # ✅ usa tu helper con psycopg2 (ya incluye SSL)
     
     anexo_id = request.args.get('anexo')
     subdep_id = request.args.get('subdependencia')
@@ -1342,21 +1342,27 @@ def imprimir_listado():
     tipo_listado = request.args.get('tipo_listado', 'clasico')
     filtros = request.args.getlist('filtros')
 
-    # --- Nombre de anexo y subdependencia ---
-    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
-    anexo_nombre = cur.fetchone()
-    anexo_nombre = anexo_nombre[0] if anexo_nombre else "Todos"
+    # --- Nombre de anexo y subdependencia (maneja "todos"/"todas") ---
+    if anexo_id and anexo_id.isdigit():
+        cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
+        anexo_nombre = cur.fetchone()
+        anexo_nombre = anexo_nombre[0] if anexo_nombre else "Todos"
+    else:
+        anexo_nombre = "Todos"
 
-    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (subdep_id,))
-    subdependencia_nombre = cur.fetchone()
-    subdependencia_nombre = subdependencia_nombre[0] if subdependencia_nombre else "Todas"
+    if subdep_id and subdep_id.isdigit():
+        cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (subdep_id,))
+        subdependencia_nombre = cur.fetchone()
+        subdependencia_nombre = subdependencia_nombre[0] if subdependencia_nombre else "Todas"
+    else:
+        subdependencia_nombre = "Todas"
 
     # --- Base query ---
     query = """
         SELECT 
             r.descripcion AS rubro,
             c.descripcion AS clase,
-            m.id AS id_mobiliario,   -- ✅ corregido
+            m.id AS id_mobiliario,   -- ✅ columna correcta
             m.descripcion,
             m.estado_conservacion,
             m.no_dado,
@@ -1373,16 +1379,20 @@ def imprimir_listado():
 
     params = []
 
-    if rubro_id:
+    # --- Filtros dinámicos ---
+    if rubro_id and rubro_id.isdigit():
         query += " AND m.rubro_id = %s"
         params.append(rubro_id)
-    if clase_id:
+
+    if clase_id and clase_id.isdigit():
         query += " AND m.clase_bien_id = %s"
         params.append(clase_id)
+
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
+    # --- Filtros de estado (checkboxes) ---
     for f in filtros:
         query += f" AND m.{f} = TRUE"
 
@@ -1414,6 +1424,7 @@ def imprimir_listado():
         estado_conservacion=estado_conservacion,
         total_bienes=total_bienes
     )
+
 
 
 
