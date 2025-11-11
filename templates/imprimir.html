@@ -59,7 +59,7 @@
                         <option value="">📁 Todas las clases</option>
                         {% if clases %}
                             {% for clase in clases %}
-                                <option value="{{ clase.id }}">{{ clase.nombre }}</option>
+                                <option value="{{ clase.id_clase }}">{{ clase.descripcion }}</option>
                             {% endfor %}
                         {% endif %}
                     </select>
@@ -139,8 +139,6 @@
         const anexoId = this.value;
         const subSelect = document.getElementById('subdependencia');
 
-        if (!subSelect) return;
-
         subSelect.innerHTML = '';
         const defaultOpt = document.createElement('option');
         defaultOpt.value = 'todas';
@@ -150,10 +148,7 @@
         if (anexoId === 'todos') return;
 
         fetch(`/api/subdependencias_por_anexo/${anexoId}`)
-            .then(res => {
-                if (!res.ok) throw new Error("Error al obtener subdependencias");
-                return res.json();
-            })
+            .then(res => res.json())
             .then(data => {
                 data.forEach(sub => {
                     const opt = document.createElement('option');
@@ -161,14 +156,33 @@
                     opt.textContent = sub.nombre;
                     subSelect.appendChild(opt);
                 });
-            })
-            .catch(err => {
-                console.error(err);
-                const opt = document.createElement('option');
-                opt.value = "";
-                opt.textContent = "⚠️ Error al cargar subdependencias";
-                subSelect.appendChild(opt);
             });
+    });
+
+    // 🧩 Carga dinámica de clases según rubro
+    document.getElementById('rubro').addEventListener('change', function () {
+        const rubroId = this.value;
+        const claseSelect = document.getElementById('clase');
+
+        claseSelect.innerHTML = '';
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = '📁 Todas las clases';
+        claseSelect.appendChild(defaultOpt);
+
+        if (!rubroId) return;
+
+        fetch(`/api/clases_por_rubro/${rubroId}`)
+            .then(res => res.json())
+            .then(data => {
+                data.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id_clase;
+                    opt.textContent = c.descripcion;
+                    claseSelect.appendChild(opt);
+                });
+            })
+            .catch(err => console.error('Error al cargar clases:', err));
     });
 </script>
 {% endblock %}
