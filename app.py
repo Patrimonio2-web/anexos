@@ -1303,7 +1303,7 @@ def imprimir_listado():
     filtros = request.args.getlist('filtros')
     incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
     estado_conservacion = request.args.get("estado_conservacion")
-    tipo_listado = request.args.get("tipo_listado", "clasico")  # 👈 nuevo parámetro
+    tipo_listado = request.args.get("tipo_listado", "clasico")  # 👈 clásico o moderno
 
     campos = {
         "no_dado": "No Dado",
@@ -1314,8 +1314,10 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
+    # 🔹 Consulta: unimos con rubros para agrupar
     query = """
         SELECT 
+            COALESCE(r.nombre, 'SIN RUBRO') AS rubro,
             m.id,
             m.descripcion,
             m.estado_conservacion,
@@ -1326,55 +1328,64 @@ def imprimir_listado():
             m.sobrante,
             m.problema_etiqueta
         FROM mobiliario m
+        LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
         JOIN subdependencias sd ON m.ubicacion_id = sd.id
         JOIN anexos a ON sd.id_anexo = a.id
         WHERE a.id = %s AND sd.id = %s
     """
     params = [anexo_id, sub_id]
 
+    # 🔸 Filtros booleanos
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
+    # 🔸 Incluir o excluir faltantes
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
+    # 🔸 Estado de conservación
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    query += " ORDER BY m.id ASC"
+    # 🔸 Orden final: rubro ascendente, luego ID numérico ascendente
+    query += " ORDER BY rubro ASC, m.id::integer ASC"
 
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, tuple(params))
-    mobiliarios = cur.fetchall()
+    resultados = cur.fetchall()
 
     cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
     anexo_nombre = cur.fetchone()[0]
 
     cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (sub_id,))
     subdependencia_nombre = cur.fetchone()[0]
+
     conn.close()
 
-    # 🔸 Elegimos plantilla según el tipo seleccionado
-    if tipo_listado == "entrega":
-        template = "listado_impresion_entrega.html"
-    else:
-        template = "listado_impresion.html"
+    # 🔸 Agrupamos los resultados por rubro
+    grupos = {}
+    for row in resultados:
+        rubro = row[0]
+        if rubro not in grupos:
+            grupos[rubro] = []
+        grupos[rubro].append(row)
+
+    # 🔸 Seleccionamos plantilla según tipo
+    template = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
 
     return render_template(
         template,
-        mobiliarios=mobiliarios,
+        grupos=grupos,  # 👈 ahora pasamos grupos en lugar de mobiliarios planos
         campos=campos,
         ahora=datetime.now(),
         anexo_nombre=anexo_nombre,
         subdependencia_nombre=subdependencia_nombre,
-        subdependencia_id=sub_id,
         filtros=filtros,
         estado_conservacion=estado_conservacion
     )
-
 
 
 
