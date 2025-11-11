@@ -1,89 +1,132 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="p-8 bg-gray-900 text-white min-h-screen">
-    <h1 class="text-3xl font-bold mb-6 text-center">Listado de Mobiliario</h1>
+    <h1 class="text-3xl font-bold mb-8 text-center tracking-wide">
+        📋 Listado de Mobiliario
+    </h1>
 
-    <form method="get" action="{{ url_for('imprimir_listado') }}" class="space-y-6 bg-gray-800 p-6 rounded-lg">
-        <!-- Selección de Anexo y Subdependencia -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <label for="anexo" class="block mb-2 font-semibold">Anexo:</label>
-                <select name="anexo" id="anexo" class="w-full p-2 bg-gray-700 rounded">
-                    {% for anexo in anexos %}
-                    <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+    <form method="get" action="{{ url_for('imprimir_listado') }}" class="space-y-8 bg-gray-800 p-8 rounded-xl shadow-lg max-w-5xl mx-auto">
 
-            <div>
-                <label for="subdependencia" class="block mb-2 font-semibold">Subdependencia:</label>
-                <select name="subdependencia" id="subdependencia" class="w-full p-2 bg-gray-700 rounded">
-                    {% if subdependencias %}
-                        {% for sub in subdependencias %}
-                        <option value="{{ sub.id }}">{{ sub.nombre }}</option>
+        <!-- 🔹 SECCIÓN: UBICACIÓN -->
+        <div>
+            <h2 class="text-2xl font-semibold mb-4 text-teal-400">Ubicación</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- ANEXO -->
+                <div>
+                    <label for="anexo" class="block mb-2 font-semibold">Anexo</label>
+                    <select name="anexo" id="anexo" class="w-full p-2 bg-gray-700 rounded focus:ring-2 focus:ring-teal-500">
+                        <option value="todos">📍 Todos los anexos</option>
+                        {% for anexo in anexos %}
+                        <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
                         {% endfor %}
-                    {% endif %}
-                </select>
+                    </select>
+                </div>
+
+                <!-- SUBDEPENDENCIA -->
+                <div>
+                    <label for="subdependencia" class="block mb-2 font-semibold">Subdependencia</label>
+                    <select name="subdependencia" id="subdependencia" class="w-full p-2 bg-gray-700 rounded focus:ring-2 focus:ring-teal-500">
+                        <option value="todas">🏢 Todas las subdependencias</option>
+                        {% if subdependencias %}
+                            {% for sub in subdependencias %}
+                            <option value="{{ sub.id }}">{{ sub.nombre }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
             </div>
         </div>
 
-        <!-- 🔹 NUEVOS FILTROS -->
-        <div class="mt-6">
-            <h2 class="text-xl font-semibold mb-2">Filtrar por estado</h2>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <!-- 🔹 SECCIÓN: RUBRO Y CLASE -->
+        <div>
+            <h2 class="text-2xl font-semibold mb-4 text-teal-400">Categorías</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- RUBRO -->
+                <div>
+                    <label for="rubro" class="block mb-2 font-semibold">Rubro</label>
+                    <select name="rubro" id="rubro" class="w-full p-2 bg-gray-700 rounded focus:ring-2 focus:ring-teal-500">
+                        <option value="">📂 Todos los rubros</option>
+                        {% for rubro in rubros %}
+                            <option value="{{ rubro.id_rubro }}">{{ rubro.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- CLASE -->
+                <div>
+                    <label for="clase" class="block mb-2 font-semibold">Clase</label>
+                    <select name="clase" id="clase" class="w-full p-2 bg-gray-700 rounded focus:ring-2 focus:ring-teal-500">
+                        <option value="">📁 Todas las clases</option>
+                        {% if clases %}
+                            {% for clase in clases %}
+                            <option value="{{ clase.id }}">{{ clase.nombre }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🔹 SECCIÓN: FILTROS -->
+        <div>
+            <h2 class="text-2xl font-semibold mb-4 text-teal-400">Filtros</h2>
+
+            <!-- ESTADOS -->
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {% for key, label in {
                     "no_dado": "No Dado",
                     "para_reparacion": "Reparación",
-                    "para_baja": "Para baja",
+                    "para_baja": "Para Baja",
                     "faltante": "Faltante",
                     "sobrante": "Sobrante",
-                    "problema_etiqueta": "Problema etiqueta"
+                    "problema_etiqueta": "Problema Etiqueta"
                 }.items() %}
-                <label class="flex items-center space-x-2">
+                <label class="flex items-center space-x-2 bg-gray-700 p-2 rounded hover:bg-gray-600 transition">
                     <input type="checkbox" name="filtros" value="{{ key }}" class="accent-teal-500">
                     <span>{{ label }}</span>
                 </label>
                 {% endfor %}
             </div>
-        </div>
 
-        <!-- 🔹 Estado de conservación -->
-        <div class="mt-4">
-            <h2 class="text-xl font-semibold mb-2">Estado de conservación</h2>
-            <select name="estado_conservacion" class="p-2 bg-gray-700 rounded">
-                <option value="">Todos</option>
-                <option value="Bueno">Bueno</option>
-                <option value="Regular">Regular</option>
-                <option value="Malo">Malo</option>
-            </select>
-        </div>
+            <!-- ESTADO DE CONSERVACIÓN -->
+            <div class="mt-6">
+                <label class="block mb-2 font-semibold">Estado de conservación</label>
+                <select name="estado_conservacion" class="p-2 bg-gray-700 rounded focus:ring-2 focus:ring-teal-500">
+                    <option value="">Todos</option>
+                    <option value="Bueno">Bueno</option>
+                    <option value="Regular">Regular</option>
+                    <option value="Malo">Malo</option>
+                </select>
+            </div>
 
-        <!-- 🔹 Incluir faltantes -->
-        <div class="mt-4">
-            <label class="flex items-center space-x-2">
-                <input type="checkbox" name="incluir_faltantes" value="true" class="accent-teal-500">
-                <span>Incluir faltantes</span>
-            </label>
-        </div>
-        <!-- 🔹 Tipo de listado -->
-        <div class="mt-6">
-            <h2 class="text-xl font-semibold mb-2">Tipo de listado</h2>
-            <div class="flex space-x-6">
+            <!-- INCLUIR FALTANTES -->
+            <div class="mt-4">
                 <label class="flex items-center space-x-2">
+                    <input type="checkbox" name="incluir_faltantes" value="true" class="accent-teal-500">
+                    <span>Incluir faltantes</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 🔹 SECCIÓN: TIPO DE LISTADO -->
+        <div>
+            <h2 class="text-2xl font-semibold mb-4 text-teal-400">Tipo de listado</h2>
+            <div class="flex space-x-6">
+                <label class="flex items-center space-x-2 bg-gray-700 p-2 rounded hover:bg-gray-600 transition">
                     <input type="radio" name="tipo_listado" value="clasico" checked class="accent-teal-500">
                     <span>Clásico</span>
                 </label>
-                <label class="flex items-center space-x-2">
+                <label class="flex items-center space-x-2 bg-gray-700 p-2 rounded hover:bg-gray-600 transition">
                     <input type="radio" name="tipo_listado" value="entrega" class="accent-teal-500">
                     <span>Listado de entrega</span>
                 </label>
             </div>
         </div>
 
-        <!-- Botón -->
-        <div class="text-center mt-8">
+        <!-- 🔹 BOTÓN -->
+        <div class="text-center pt-6">
             <button type="submit"
-                class="bg-teal-600 hover:bg-teal-700 px-6 py-2 rounded text-white font-bold transition">
+                class="bg-teal-600 hover:bg-teal-700 px-8 py-3 rounded-lg text-white font-bold tracking-wide shadow-lg transition transform hover:scale-105">
                 Generar listado
             </button>
         </div>
@@ -91,14 +134,22 @@
 </div>
 
 <script>
-    // Si tenías tu lógica original de carga dinámica de subdependencias, la mantenemos igual:
+    // 🧠 Carga dinámica de subdependencias según anexo seleccionado
     document.getElementById('anexo').addEventListener('change', function () {
         const anexoId = this.value;
+        const subSelect = document.getElementById('subdependencia');
+
+        subSelect.innerHTML = '';
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = 'todas';
+        defaultOpt.textContent = '🏢 Todas las subdependencias';
+        subSelect.appendChild(defaultOpt);
+
+        if (anexoId === 'todos') return;
+
         fetch(`/api/subdependencias_por_anexo/${anexoId}`)
             .then(res => res.json())
             .then(data => {
-                const subSelect = document.getElementById('subdependencia');
-                subSelect.innerHTML = '';
                 data.forEach(sub => {
                     const opt = document.createElement('option');
                     opt.value = sub.id;
@@ -109,7 +160,3 @@
     });
 </script>
 {% endblock %}
-
-
-
-
