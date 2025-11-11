@@ -1343,30 +1343,32 @@ from flask import request, render_template
 from datetime import datetime
 @app.route('/imprimir_listado')
 def imprimir_listado():
+    from datetime import datetime
+    cur = db.connection.cursor()
+
     anexo_id = request.args.get('anexo')
-    sub_id = request.args.get('subdependencia')
+    subdep_id = request.args.get('subdependencia')
     rubro_id = request.args.get('rubro')
     clase_id = request.args.get('clase')
+    estado_conservacion = request.args.get('estado_conservacion')
+    tipo_listado = request.args.get('tipo_listado', 'clasico')
     filtros = request.args.getlist('filtros')
-    incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
-    estado_conservacion = request.args.get("estado_conservacion")
-    tipo_listado = request.args.get("tipo_listado", "clasico")
 
-    campos = {
-        "no_dado": "No Dado",
-        "para_reparacion": "Reparación",
-        "para_baja": "Para baja",
-        "faltante": "Faltante",
-        "sobrante": "Sobrante",
-        "problema_etiqueta": "Problema etiqueta"
-    }
+    # --- Nombre de anexo y subdependencia ---
+    cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
+    anexo_nombre = cur.fetchone()
+    anexo_nombre = anexo_nombre[0] if anexo_nombre else "Todos"
 
-    # 🔹 Consulta SQL corregida
+    cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (subdep_id,))
+    subdependencia_nombre = cur.fetchone()
+    subdependencia_nombre = subdependencia_nombre[0] if subdependencia_nombre else "Todas"
+
+    # --- Base query ---
     query = """
         SELECT 
-            COALESCE(r.nombre, 'SIN RUBRO') AS rubro,
-            COALESCE(c.descripcion, 'SIN CLASE') AS clase,
-            m.id,
+            r.descripcion AS rubro,
+            c.descripcion AS clase,
+            m.id_mobiliario,
             m.descripcion,
             m.estado_conservacion,
             m.no_dado,
@@ -1378,78 +1380,68 @@ def imprimir_listado():
         FROM mobiliario m
         LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
         LEFT JOIN clases_bienes c ON m.clase_bien_id = c.id_clase
-        LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
-        LEFT JOIN anexos a ON sd.id_anexo = a.id
         WHERE 1=1
     """
+
     params = []
 
-    # 🏢 Filtros de anexo / subdependencia
+    # --- Filtros dinámicos ---
     if anexo_id and anexo_id != "todos":
-        query += " AND a.id = %s"
+        query += " AND m.anexo_id = %s"
         params.append(anexo_id)
-    if sub_id and sub_id != "todas":
-        query += " AND sd.id = %s"
-        params.append(sub_id)
 
-    # 📂 Filtros de rubro / clase
+    if subdep_id and subdep_id != "todas":
+        query += " AND m.subdependencia_id = %s"
+        params.append(subdep_id)
+
     if rubro_id:
-        query += " AND r.id_rubro = %s"
+        query += " AND m.rubro_id = %s"
         params.append(rubro_id)
+
     if clase_id:
-        query += " AND c.id_clase = %s"
+        query += " AND m.clase_bien_id = %s"
         params.append(clase_id)
 
-    # 🔸 Filtros de estado (checkbox)
-    for campo in filtros:
-        if campo and campo != "faltante":
-            query += f" AND m.{campo} = TRUE"
-
-    # 🔸 Excluir faltantes si no está tildado
-    if not incluir_faltantes:
-        query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
-
-    # 🔸 Estado de conservación
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    # 🔹 Orden final
-    query += " ORDER BY r.nombre ASC, c.descripcion ASC, m.id::integer ASC"
+    # --- Filtros de estado (checkboxes) ---
+    for f in filtros:
+        query += f" AND m.{f} = TRUE"
 
-    # 🔹 Ejecutar consulta
-    conn = db.engine.raw_connection()
-    cur = conn.cursor()
+    query += " ORDER BY r.descripcion, c.descripcion, m.id_mobiliario ASC"
+
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
-    conn.close()
 
-    # 🔹 Agrupar por rubro y clase
+    # --- Agrupación por Rubro > Clase ---
     grupos = {}
-    for row in resultados:
-        rubro = row[0]
-        clase = row[1]
-        if rubro not in grupos:
-            grupos[rubro] = {}
-        if clase not in grupos[rubro]:
-            grupos[rubro][clase] = []
-        grupos[rubro][clase].append(row)
+    for fila in resultados:
+        rubro = fila[0] or "SIN RUBRO"
+        clase = fila[1] or "SIN CLASE"
+        grupos.setdefault(rubro, {}).setdefault(clase, []).append(fila)
 
-    anexo_nombre = "Todos" if anexo_id == "todos" else obtener_nombre_anexo(anexo_id)
-    subdependencia_nombre = "Todas" if sub_id == "todas" else obtener_nombre_subdependencia(sub_id)
+    # --- Calcular total de bienes ---
+    total_bienes = sum(len(items) for clases in grupos.values() for items in clases.values())
 
-    template = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
+    # --- Elegir plantilla según tipo ---
+    if tipo_listado == "entrega":
+        plantilla = "listado_impresion_entrega.html"
+    else:
+        plantilla = "listado_impresion.html"
 
     return render_template(
-        template,
+        plantilla,
         grupos=grupos,
-        campos=campos,
-        ahora=datetime.now(),
         anexo_nombre=anexo_nombre,
         subdependencia_nombre=subdependencia_nombre,
+        ahora=datetime.now(),
         filtros=filtros,
-        estado_conservacion=estado_conservacion
+        estado_conservacion=estado_conservacion,
+        total_bienes=total_bienes
     )
+
 
 
 # 🧩 Funciones auxiliares opcionales
