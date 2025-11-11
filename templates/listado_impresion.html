@@ -112,7 +112,7 @@
     <div class="info">
         <strong>Anexo:</strong> {{ anexo_nombre }} <br>
         <strong>Subdependencia:</strong> {{ subdependencia_nombre }} <br>
-        <strong>Fecha de emisión:</strong> {{ ahora.strftime('%d/%m/%Y %H:%M') }} <br>
+        <strong>Fecha de emisión:</strong> {{ ahora.strftime('%d/%m/%Y') }} <br>
 
         {% if filtros or estado_conservacion %}
         <strong>Filtros aplicados:</strong>
@@ -181,5 +181,6 @@
 
 </body>
 </html>
+
 
 
