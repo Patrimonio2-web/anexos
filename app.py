@@ -581,19 +581,7 @@ def subdependencias_por_anexo(anexo_id):
     finally:
         conn.close()
 
-@app.route("/api/clases_por_rubro/<id_rubro>")
-def clases_por_rubro(id_rubro):
-    try:
-        if id_rubro.strip() == "" or id_rubro.lower() == "todos":
-            clases = ClaseBien.query.order_by(ClaseBien.descripcion.asc()).all()
-        else:
-            clases = ClaseBien.query.filter_by(id_rubro=id_rubro).order_by(ClaseBien.descripcion.asc()).all()
 
-        data = [{"id_clase": c.id_clase, "descripcion": c.descripcion} for c in clases]
-        return jsonify(data)
-    except Exception as e:
-        print("⚠️ Error al obtener clases:", e)
-        return jsonify({"error": str(e)}), 500
 
 #---------busca por impresora
 @app.route('/api/buscar-clase', methods=['GET'])
