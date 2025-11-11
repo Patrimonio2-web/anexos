@@ -1361,10 +1361,11 @@ def imprimir_listado():
         "problema_etiqueta": "Problema etiqueta"
     }
 
-    # 🔹 Consulta base
+    # 🔹 Consulta SQL corregida
     query = """
         SELECT 
             COALESCE(r.nombre, 'SIN RUBRO') AS rubro,
+            COALESCE(c.descripcion, 'SIN CLASE') AS clase,
             m.id,
             m.descripcion,
             m.estado_conservacion,
@@ -1376,14 +1377,14 @@ def imprimir_listado():
             m.problema_etiqueta
         FROM mobiliario m
         LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
-        LEFT JOIN clases_bienes c ON m.clase_id = c.id
+        LEFT JOIN clases_bienes c ON m.clase_bien_id = c.id_clase
         LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
         LEFT JOIN anexos a ON sd.id_anexo = a.id
         WHERE 1=1
     """
     params = []
 
-    # 🏢 FILTRO DE ANEXO Y SUBDEPENDENCIA
+    # 🏢 Filtros de anexo / subdependencia
     if anexo_id and anexo_id != "todos":
         query += " AND a.id = %s"
         params.append(anexo_id)
@@ -1391,52 +1392,52 @@ def imprimir_listado():
         query += " AND sd.id = %s"
         params.append(sub_id)
 
-    # 📂 FILTRO DE RUBRO Y CLASE
+    # 📂 Filtros de rubro / clase
     if rubro_id:
         query += " AND r.id_rubro = %s"
         params.append(rubro_id)
     if clase_id:
-        query += " AND c.id = %s"
+        query += " AND c.id_clase = %s"
         params.append(clase_id)
 
-    # 🔸 FILTROS DE ESTADO (checkboxes)
+    # 🔸 Filtros de estado (checkbox)
     for campo in filtros:
         if campo and campo != "faltante":
             query += f" AND m.{campo} = TRUE"
 
-    # 🔸 EXCLUIR FALTANTES
+    # 🔸 Excluir faltantes si no está tildado
     if not incluir_faltantes:
         query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
 
-    # 🔸 ESTADO DE CONSERVACIÓN
+    # 🔸 Estado de conservación
     if estado_conservacion:
         query += " AND m.estado_conservacion = %s"
         params.append(estado_conservacion)
 
-    # 🔸 ORDEN FINAL
-    query += " ORDER BY rubro ASC, m.id::integer ASC"
+    # 🔹 Orden final
+    query += " ORDER BY r.nombre ASC, c.descripcion ASC, m.id::integer ASC"
 
-    # 🔹 Ejecutamos consulta
+    # 🔹 Ejecutar consulta
     conn = db.engine.raw_connection()
     cur = conn.cursor()
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
+    conn.close()
 
-    # 🔹 Agrupamos por rubro
+    # 🔹 Agrupar por rubro y clase
     grupos = {}
     for row in resultados:
         rubro = row[0]
+        clase = row[1]
         if rubro not in grupos:
-            grupos[rubro] = []
-        grupos[rubro].append(row)
+            grupos[rubro] = {}
+        if clase not in grupos[rubro]:
+            grupos[rubro][clase] = []
+        grupos[rubro][clase].append(row)
 
-    # 🔹 Obtener nombres legibles para encabezado
     anexo_nombre = "Todos" if anexo_id == "todos" else obtener_nombre_anexo(anexo_id)
     subdependencia_nombre = "Todas" if sub_id == "todas" else obtener_nombre_subdependencia(sub_id)
 
-    conn.close()
-
-    # 🔸 Seleccionar plantilla según tipo
     template = "listado_impresion_entrega.html" if tipo_listado == "entrega" else "listado_impresion.html"
 
     return render_template(
@@ -1449,6 +1450,7 @@ def imprimir_listado():
         filtros=filtros,
         estado_conservacion=estado_conservacion
     )
+
 
 # 🧩 Funciones auxiliares opcionales
 def obtener_nombre_anexo(anexo_id):
