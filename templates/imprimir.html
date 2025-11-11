@@ -156,7 +156,8 @@
                     opt.textContent = sub.nombre;
                     subSelect.appendChild(opt);
                 });
-            });
+            })
+            .catch(err => console.error('⚠️ Error al cargar subdependencias:', err));
     });
 
     // 🧩 Carga dinámica de clases según rubro
@@ -172,7 +173,7 @@
 
         if (!rubroId) return;
 
-        fetch(`/api/clases_por_rubro/${rubroId}`)
+        fetch(`/api/clases-por-rubro?rubro_id=${rubroId}`)
             .then(res => res.json())
             .then(data => {
                 data.forEach(c => {
@@ -182,9 +183,8 @@
                     claseSelect.appendChild(opt);
                 });
             })
-            .catch(err => console.error('Error al cargar clases:', err));
+            .catch(err => console.error('⚠️ Error al cargar clases:', err));
     });
 </script>
 {% endblock %}
-
 
