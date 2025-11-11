@@ -17,7 +17,7 @@
                     <select name="anexo" id="anexo" class="w-full p-2 bg-gray-700 rounded focus:ring-2 focus:ring-teal-500">
                         <option value="todos">📍 Todos los anexos</option>
                         {% for anexo in anexos %}
-                        <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
+                            <option value="{{ anexo.id }}">{{ anexo.nombre }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -29,7 +29,7 @@
                         <option value="todas">🏢 Todas las subdependencias</option>
                         {% if subdependencias %}
                             {% for sub in subdependencias %}
-                            <option value="{{ sub.id }}">{{ sub.nombre }}</option>
+                                <option value="{{ sub.id }}">{{ sub.nombre }}</option>
                             {% endfor %}
                         {% endif %}
                     </select>
@@ -59,7 +59,7 @@
                         <option value="">📁 Todas las clases</option>
                         {% if clases %}
                             {% for clase in clases %}
-                            <option value="{{ clase.id }}">{{ clase.nombre }}</option>
+                                <option value="{{ clase.id }}">{{ clase.nombre }}</option>
                             {% endfor %}
                         {% endif %}
                     </select>
@@ -139,6 +139,8 @@
         const anexoId = this.value;
         const subSelect = document.getElementById('subdependencia');
 
+        if (!subSelect) return;
+
         subSelect.innerHTML = '';
         const defaultOpt = document.createElement('option');
         defaultOpt.value = 'todas';
@@ -148,7 +150,10 @@
         if (anexoId === 'todos') return;
 
         fetch(`/api/subdependencias_por_anexo/${anexoId}`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error("Error al obtener subdependencias");
+                return res.json();
+            })
             .then(data => {
                 data.forEach(sub => {
                     const opt = document.createElement('option');
@@ -156,7 +161,16 @@
                     opt.textContent = sub.nombre;
                     subSelect.appendChild(opt);
                 });
+            })
+            .catch(err => {
+                console.error(err);
+                const opt = document.createElement('option');
+                opt.value = "";
+                opt.textContent = "⚠️ Error al cargar subdependencias";
+                subSelect.appendChild(opt);
             });
     });
 </script>
 {% endblock %}
+
+
