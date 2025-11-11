@@ -155,37 +155,38 @@
                 </tr>
             </thead>
             <tbody>
-                {% for rubro, clases in grupos.items() %}
-                    <!-- Encabezado de Rubro -->
-                    <tr class="rubro-header">
-                        <td colspan="2">Rubro: {{ rubro }}</td>
-                    </tr>
-
-                    {% for clase, items in clases.items() %}
-                        <!-- Encabezado de Clase -->
-                        <tr class="clase-header">
-                            <td colspan="2">Clase: {{ clase }}</td>
+                {% if grupos %}
+                    {% for rubro, clases in grupos.items() %}
+                        <!-- Encabezado de Rubro -->
+                        <tr class="rubro-header">
+                            <td colspan="2">Rubro: {{ rubro }}</td>
                         </tr>
 
-                        {% for mob in items %}
-                            <tr>
-                                <td>{{ mob[2] }}</td> <!-- ID -->
-                                <td>{{ mob[3] }}</td> <!-- Descripción -->
+                        {% for clase, items in clases.items() %}
+                            <!-- Encabezado de Clase -->
+                            <tr class="clase-header">
+                                <td colspan="2">Clase: {{ clase }}</td>
                             </tr>
+
+                            {% for mob in items %}
+                                <tr>
+                                    <td>{{ mob[2] }}</td> <!-- ID -->
+                                    <td>{{ mob[3] }}</td> <!-- Descripción -->
+                                </tr>
+                            {% endfor %}
                         {% endfor %}
                     {% endfor %}
                 {% else %}
                     <tr>
                         <td colspan="2" style="text-align:center; color:#6b7280;">No se encontraron bienes registrados.</td>
                     </tr>
-                {% endfor %}
+                {% endif %}
             </tbody>
         </table>
 
         <!-- Total -->
         <p class="totales">
-            Total de bienes listados:
-            {{ grupos.values() | map('values') | map('sum', attribute='|length') | sum }}
+            Total de bienes listados: {{ total_bienes }}
         </p>
 
         <!-- Firmas -->
@@ -203,4 +204,3 @@
     </div>
 </body>
 </html>
-
