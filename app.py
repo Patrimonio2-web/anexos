@@ -1332,8 +1332,8 @@ from datetime import datetime
 @app.route('/imprimir_listado')
 def imprimir_listado():
     from datetime import datetime
-    conn, cur = get_conn_dict()  # ✅ usa tu helper con psycopg2 (ya incluye SSL)
-    
+    conn, cur = get_conn_dict()
+
     # --- Parámetros GET ---
     anexo_id = request.args.get('anexo')
     subdep_id = request.args.get('subdependencia')
@@ -1346,24 +1346,24 @@ def imprimir_listado():
     # --- Nombre de anexo y subdependencia (maneja "todos"/"todas") ---
     if anexo_id and anexo_id.isdigit():
         cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
-        anexo_nombre = cur.fetchone()
-        anexo_nombre = anexo_nombre[0] if anexo_nombre else "Todos"
+        row = cur.fetchone()
+        anexo_nombre = row[0] if row else "Todos"
     else:
         anexo_nombre = "Todos"
 
     if subdep_id and subdep_id.isdigit():
         cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (subdep_id,))
-        subdependencia_nombre = cur.fetchone()
-        subdependencia_nombre = subdependencia_nombre[0] if subdependencia_nombre else "Todas"
+        row = cur.fetchone()
+        subdependencia_nombre = row[0] if row else "Todas"
     else:
         subdependencia_nombre = "Todas"
 
     # --- Base query ---
     query = """
         SELECT 
-            r.nombre AS rubro,             -- ✅ corregido (la columna es nombre)
+            r.nombre AS rubro,
             c.descripcion AS clase,
-            m.id AS id_mobiliario,         -- ✅ columna correcta
+            m.id AS id_mobiliario,
             m.descripcion,
             m.estado_conservacion,
             m.no_dado,
@@ -1375,12 +1375,22 @@ def imprimir_listado():
         FROM mobiliario m
         LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
         LEFT JOIN clases_bienes c ON m.clase_bien_id = c.id_clase
+        LEFT JOIN subdependencias s ON m.ubicacion_id = s.id
+        LEFT JOIN anexos a ON s.id_anexo = a.id
         WHERE 1=1
     """
-
     params = []
 
-    # --- Filtros dinámicos ---
+    # --- Filtros por Anexo y Subdependencia ---
+    if anexo_id and anexo_id.isdigit():
+        query += " AND a.id = %s"
+        params.append(anexo_id)
+
+    if subdep_id and subdep_id.isdigit():
+        query += " AND s.id = %s"
+        params.append(subdep_id)
+
+    # --- Filtros por Rubro, Clase y Estado ---
     if rubro_id and rubro_id.isdigit():
         query += " AND m.rubro_id = %s"
         params.append(rubro_id)
@@ -1397,12 +1407,12 @@ def imprimir_listado():
     for f in filtros:
         query += f" AND m.{f} = TRUE"
 
-    query += " ORDER BY r.nombre, c.descripcion, m.id ASC"  # ✅ actualizado
+    query += " ORDER BY r.nombre, c.descripcion, m.id ASC"
 
     # --- Ejecutar y procesar ---
     cur.execute(query, tuple(params))
     resultados = cur.fetchall()
-    conn.close()  # ✅ cerrar conexión siempre
+    conn.close()
 
     # --- Agrupar Rubro > Clase ---
     grupos = {}
@@ -1426,6 +1436,7 @@ def imprimir_listado():
         estado_conservacion=estado_conservacion,
         total_bienes=total_bienes
     )
+
 
 
 
