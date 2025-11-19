@@ -158,15 +158,25 @@
                 {% if grupos %}
                     {% for rubro, clases in grupos.items() %}
                         <!-- Encabezado de Rubro -->
-                        <tr class="rubro-header">
-                            <td colspan="2">Rubro: {{ rubro }}</td>
+                        <tr class="rubro-header" style="background-color:#d1d5db; font-weight:700; border-top:2px solid #000;">
+                            <td colspan="2">
+                                Rubro:
+                                <strong>{{ rubro.split('|')[0] }}</strong>
+                                — {{ rubro.split('|')[1] }}
+                            </td>
                         </tr>
+
 
                         {% for clase, items in clases.items() %}
                             <!-- Encabezado de Clase -->
-                            <tr class="clase-header">
-                                <td colspan="2">Clase: {{ clase }}</td>
+                            <tr class="clase-header" style="background-color:#e5e7eb; padding-left:20px;">
+                                <td colspan="2" style="padding-left:20px;">
+                                    Clase:
+                                    <strong>{{ clase.split('|')[0] }}</strong>
+                                    — {{ clase.split('|')[1] }}
+                                </td>
                             </tr>
+
 
                             {% for mob in items %}
                                 <tr>
