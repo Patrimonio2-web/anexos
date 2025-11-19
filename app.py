@@ -1374,7 +1374,9 @@ def imprimir_listado():
             m.para_baja,
             m.faltante,
             m.sobrante,
-            m.problema_etiqueta
+            m.problema_etiqueta,
+            r.id_rubro AS rubro_id,
+            c.id_clase AS clase_id
         FROM mobiliario m
         LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
         LEFT JOIN clases_bienes c ON m.clase_bien_id = c.id_clase
@@ -1382,6 +1384,7 @@ def imprimir_listado():
         LEFT JOIN anexos a ON s.id_anexo = a.id
         WHERE 1=1
     """
+
     params = []
 
     # --- Filtros por Anexo y Subdependencia ---
@@ -1427,14 +1430,14 @@ def imprimir_listado():
         rubro_nombre = fila[0] or "SIN RUBRO"
         clase_nombre = fila[1] or "SIN CLASE"
     
-        rubro_id = fila[11] if len(fila) > 11 else ""   # si no existe el id, queda vacío
-        clase_id = fila[12] if len(fila) > 12 else ""
+        rubro_id = fila[11]  # r.id_rubro
+        clase_id = fila[12]  # c.id_clase
     
-        # Formato: "ID|NOMBRE"
         rubro_key = f"{rubro_id}|{rubro_nombre}"
         clase_key = f"{clase_id}|{clase_nombre}"
     
         grupos.setdefault(rubro_key, {}).setdefault(clase_key, []).append(fila)
+
 
 
     total_bienes = sum(len(items) for clases in grupos.values() for items in clases.values())
