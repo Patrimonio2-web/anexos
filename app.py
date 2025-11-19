@@ -1426,6 +1426,7 @@ def imprimir_listado():
 
     # --- Agrupar Rubro > Clase ---
     grupos = {}
+    
     for fila in resultados:
         rubro_nombre = fila[0] or "SIN RUBRO"
         clase_nombre = fila[1] or "SIN CLASE"
@@ -1433,10 +1434,12 @@ def imprimir_listado():
         rubro_id = fila[11]  # r.id_rubro
         clase_id = fila[12]  # c.id_clase
     
+        # Llaves únicas usando ID + nombre
         rubro_key = f"{rubro_id}|{rubro_nombre}"
         clase_key = f"{clase_id}|{clase_nombre}"
     
         grupos.setdefault(rubro_key, {}).setdefault(clase_key, []).append(fila)
+
 
 
 
