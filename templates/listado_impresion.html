@@ -63,12 +63,13 @@
             background-color: #dcdcdc;
             font-weight: bold;
             text-transform: uppercase;
+            border: 2px solid #000;
         }
 
         .clase-header {
             background-color: #efefef;
             font-weight: bold;
-            padding-left: 20px;
+            padding-left: 25px;
         }
 
         .totales {
@@ -93,12 +94,6 @@
             margin-top: 3px;
             border-top: 1px solid #000;
             width: 100%;
-        }
-
-        .fecha {
-            text-align: right;
-            margin-bottom: 10px;
-            font-size: 13px;
         }
 
         @media print {
@@ -151,32 +146,33 @@
         </thead>
         <tbody>
             {% if grupos %}
-                {% for rubro, clases in grupos.items() %}
+                {% for rubro_key, clases in grupos.items() %}
+                    {% set rubro_id = rubro_key.split('|')[0] %}
+                    {% set rubro_nombre = rubro_key.split('|')[1] %}
+
                     <!-- Encabezado de Rubro -->
-                    <tr class="rubro-header" style="background:#c6c6c6; font-weight:bold; border:2px solid #000;">
+                    <tr class="rubro-header">
                         <td colspan="4">
-                            Rubro: 
-                            <strong>{{ rubro.split('|')[0] }}</strong>
-                            — {{ rubro.split('|')[1] }}
+                            Rubro: <strong>{{ rubro_id }}</strong> — {{ rubro_nombre }}
                         </td>
                     </tr>
 
-                    {% for clase, items in clases.items() %}
+                    {% for clase_key, items in clases.items() %}
+                        {% set clase_id = clase_key.split('|')[0] %}
+                        {% set clase_nombre = clase_key.split('|')[1] %}
+
                         <!-- Encabezado de Clase -->
-                        <tr class="clase-header" style="background:#eaeaea; padding-left:25px;">
-                            <td colspan="4" style="padding-left:25px;">
-                                Clase: 
-                                <strong>{{ clase.split('|')[0] }}</strong>
-                                — {{ clase.split('|')[1] }}
+                        <tr class="clase-header">
+                            <td colspan="4">
+                                Clase: <strong>{{ clase_id }}</strong> — {{ clase_nombre }}
                             </td>
                         </tr>
 
-
                         {% for mob in items %}
                             <tr>
-                                <td>{{ mob[2] }}</td> <!-- ID -->
-                                <td>{{ mob[3] }}</td> <!-- Descripción -->
-                                <td>{{ mob[4] or '' }}</td> <!-- Estado -->
+                                <td>{{ mob[2] }}</td>
+                                <td>{{ mob[3] }}</td>
+                                <td>{{ mob[4] or '' }}</td>
                                 <td>
                                     {% set observaciones = [] %}
                                     {% if mob[5] %} {% set _ = observaciones.append('No dado') %} {% endif %}
