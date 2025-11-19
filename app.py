@@ -1424,9 +1424,18 @@ def imprimir_listado():
     # --- Agrupar Rubro > Clase ---
     grupos = {}
     for fila in resultados:
-        rubro = fila[0] or "SIN RUBRO"
-        clase = fila[1] or "SIN CLASE"
-        grupos.setdefault(rubro, {}).setdefault(clase, []).append(fila)
+        rubro_nombre = fila[0] or "SIN RUBRO"
+        clase_nombre = fila[1] or "SIN CLASE"
+    
+        rubro_id = fila[11] if len(fila) > 11 else ""   # si no existe el id, queda vacío
+        clase_id = fila[12] if len(fila) > 12 else ""
+    
+        # Formato: "ID|NOMBRE"
+        rubro_key = f"{rubro_id}|{rubro_nombre}"
+        clase_key = f"{clase_id}|{clase_nombre}"
+    
+        grupos.setdefault(rubro_key, {}).setdefault(clase_key, []).append(fila)
+
 
     total_bienes = sum(len(items) for clases in grupos.values() for items in clases.values())
 
