@@ -1343,6 +1343,9 @@ def imprimir_listado():
     tipo_listado = request.args.get('tipo_listado', 'clasico')
     filtros = request.args.getlist('filtros')
 
+    # 🔥 NUEVO: detectar si quieren incluir faltantes
+    incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
+
     # --- Nombre de anexo y subdependencia (maneja "todos"/"todas") ---
     if anexo_id and anexo_id.isdigit():
         cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
@@ -1407,6 +1410,10 @@ def imprimir_listado():
     for f in filtros:
         query += f" AND m.{f} = TRUE"
 
+    # 🔥🔥 NUEVO BLOQUE — Excluir faltantes si NO marcaron incluir faltantes
+    if not incluir_faltantes:
+        query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
+
     query += " ORDER BY r.nombre, c.descripcion, m.id ASC"
 
     # --- Ejecutar y procesar ---
@@ -1436,6 +1443,7 @@ def imprimir_listado():
         estado_conservacion=estado_conservacion,
         total_bienes=total_bienes
     )
+
 
 
 
