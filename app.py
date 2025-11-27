@@ -2240,6 +2240,166 @@ def agentes():
     return render_template('agentes.html')
 
 
+#API 1 — Total de empleados-------------------------
+@app.route('/api/reportes/total_agentes', methods=['GET'])
+def total_agentes():
+    try:
+        total = Agente.query.count()
+        return jsonify({"total": total}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+#API 2 — Empleados por tipo
+@app.route('/api/reportes/agentes_por_tipo', methods=['GET'])
+def agentes_por_tipo():
+    try:
+        rows = db.session.query(
+            Agente.tipo,
+            db.func.count(Agente.id)
+        ).group_by(Agente.tipo).all()
+
+        data = {tipo or "Sin tipo": cantidad for tipo, cantidad in rows}
+
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+#API 3 — Empleados por anexo------------
+@app.route('/api/reportes/agentes_por_anexo', methods=['GET'])
+def agentes_por_anexo():
+    try:
+        rows = db.session.query(
+            Anexo.nombre,
+            db.func.count(Agente.id)
+        ).outerjoin(Agente, Agente.id_anexo == Anexo.id)\
+         .group_by(Anexo.nombre)\
+         .order_by(Anexo.nombre.asc())\
+         .all()
+
+        data = {nombre: cantidad for nombre, cantidad in rows}
+
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+#Login personal ------------------------------
+@app.post("/api/login_personal")
+def api_login_personal():
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "missing_credentials"}), 400
+
+    try:
+        conn, cur = get_conn_dict()
+        try:
+            # Intento con role/activo
+            cur.execute("""
+                SELECT id, username, password,
+                       COALESCE(role, 'personal') AS role,
+                       COALESCE(activo, TRUE)      AS activo
+                FROM usuariospersonal
+                WHERE username = %s
+                LIMIT 1
+            """, (username,))
+            row = cur.fetchone()
+            user = dict(row) if row else None
+
+        except psycopg2.errors.UndefinedColumn:
+            conn.rollback()
+            cur.execute("""
+                SELECT id, username, password
+                FROM usuariospersonal
+                WHERE username = %s
+                LIMIT 1
+            """, (username,))
+            row = cur.fetchone()
+            user = dict(row) if row else None
+
+            if user:
+                user["role"] = "personal"
+                user["activo"] = True
+
+        finally:
+            cur.close()
+            conn.close()
+
+    except Exception as e:
+        print("DB ERROR /api/login_personal:", e)
+        return jsonify({"error": str(e)}), 500
+
+    if not user:
+        return jsonify({"error": "invalid_credentials"}), 401
+
+    if not user.get("activo", True):
+        return jsonify({"error": "user_inactive"}), 403
+
+    stored = user.get("password", "")
+
+    def is_hashed(p: str) -> bool:
+        return p.startswith("pbkdf2:")
+
+    # Password hash check
+    if is_hashed(stored):
+        if not check_password_hash(stored, password):
+            return jsonify({"error": "invalid_credentials"}), 401
+    else:
+        # migración
+        if stored != password:
+            return jsonify({"error": "invalid_credentials"}), 401
+        try:
+            new_hash = generate_password_hash(password)
+            conn, cur = get_conn_dict()
+            cur.execute("UPDATE usuariospersonal SET password = %s WHERE id = %s",
+                        (new_hash, user["id"]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            user["password"] = new_hash
+            print(f"Password migrada para usuario personal {username}")
+        except:
+            pass
+
+    # Sesión
+    session.permanent = True
+    session["username_personal"] = user["username"]
+    session["role_personal"] = user.get("role", "personal")
+
+    return jsonify({
+        "username": session["username_personal"],
+        "role": session["role_personal"]
+    }), 200
+
+
+@app.get("/api/me_personal")
+def api_me_personal():
+    if "username_personal" not in session:
+        return jsonify({"error": "not_logged_in"}), 401
+
+    return jsonify({
+        "username": session.get("username_personal"),
+        "role": session.get("role_personal")
+    }), 200
+
+#cierre de sesion -----------
+@app.post("/api/logout_personal")
+def api_logout_personal():
+    session.pop("username_personal", None)
+    session.pop("role_personal", None)
+    return jsonify({"ok": True}), 200
+
+#Decorador para proteger rutas del personal
+def login_required_personal(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if "username_personal" not in session:
+            return jsonify({"error": "auth_required"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
 
 # ▶️ Ejecutar con python app.py
 if __name__ == '__main__':
