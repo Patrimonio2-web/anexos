@@ -2228,17 +2228,26 @@ def eliminar_agente(id):
 
 
 # 🟡 6️⃣ LISTAR AGENTES POR ANEXO ----------------------------------------------
-@app.route('/api/agentes/anexo/<int:anexo_id>', methods=['GET'])
-def agentes_por_anexo(anexo_id):
+@app.route('/api/reportes/agentes_por_anexo', methods=['GET'])
+def reportes_agentes_por_anexo():
     """
-    Lista todos los agentes que pertenecen a un anexo específico.
+    Devuelve un resumen de cantidad de agentes por anexo para gráficos.
     """
     try:
-        agentes = Agente.query.filter_by(id_anexo=anexo_id)\
-                              .order_by(Agente.apellido).all()
-        return jsonify([a.to_dict() for a in agentes]), 200
+        rows = db.session.query(
+            Anexo.nombre,
+            db.func.count(Agente.id)
+        ).outerjoin(Agente, Agente.id_anexo == Anexo.id)\
+         .group_by(Anexo.nombre)\
+         .order_by(Anexo.nombre.asc())\
+         .all()
+
+        data = {nombre: cantidad for nombre, cantidad in rows}
+
+        return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 # 🟤 7️⃣ LISTAR AGENTES POR SUBDEPENDENCIA -------------------------------------
