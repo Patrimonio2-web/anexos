@@ -33,6 +33,7 @@ app.secret_key = os.getenv("SECRET_KEY", "clave-secreta-segura-123")
 # 🌐 CORS (Vercel + local) — una sola vez y con credenciales
 CORS(app, supports_credentials=True, origins=[
     "https://heritage-management.vercel.app",
+    "https://control-personal-legislatura-lr.vercel.app",
     "http://localhost:3000"
 ])
 
