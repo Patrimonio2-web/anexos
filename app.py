@@ -290,7 +290,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 @app.post("/api/login")
 def api_login():
-    print("LOGIN_PERSONAL_RECIBIDO:", data)
     data = request.get_json() or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
