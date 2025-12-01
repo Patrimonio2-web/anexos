@@ -290,6 +290,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 @app.post("/api/login")
 def api_login():
+    print("LOGIN_PERSONAL_RECIBIDO:", data)
     data = request.get_json() or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
@@ -2315,6 +2316,7 @@ def agentes_por_anexo():
 #Login personal ------------------------------
 @app.post("/api/login_personal")
 def api_login_personal():
+    print("LOGIN_PERSONAL_RECIBIDO:", data)
     data = request.get_json() or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
