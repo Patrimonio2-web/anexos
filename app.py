@@ -2322,84 +2322,85 @@ def api_login_personal():
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
 
+    # ==========================
+    # 1) BUSCAR USUARIO
+    # ==========================
     try:
         conn, cur = get_conn_dict()
-        try:
-            # Intento con role/activo
-            cur.execute("""
-                SELECT id, username, password,
-                       COALESCE(role, 'personal') AS role,
-                       COALESCE(activo, TRUE)      AS activo
-                FROM usuariospersonal
-                WHERE username = %s
-                LIMIT 1
-            """, (username,))
-            row = cur.fetchone()
-            user = dict(row) if row else None
 
-        except psycopg2.errors.UndefinedColumn:
-            conn.rollback()
-            cur.execute("""
-                SELECT id, username, password
-                FROM usuariospersonal
-                WHERE username = %s
-                LIMIT 1
-            """, (username,))
-            row = cur.fetchone()
-            user = dict(row) if row else None
+        cur.execute("""
+            SELECT 
+                id,
+                username,
+                password,
+                COALESCE(role, 'personal') AS role,
+                COALESCE(activo, TRUE)     AS activo
+            FROM usuariospersonal
+            WHERE username = %s
+            LIMIT 1
+        """, (username,))
 
-            if user:
-                user["role"] = "personal"
-                user["activo"] = True
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
 
-        finally:
-            cur.close()
-            conn.close()
+        user = dict(row) if row else None
 
     except Exception as e:
-        print("DB ERROR /api/login_personal:", e)
-        return jsonify({"error": str(e)}), 500
+        print("🔴 DB ERROR /api/login_personal:", e)
+        return jsonify({"error": "db_error"}), 500
 
+    # ==========================
+    # 2) VALIDACIONES
+    # ==========================
     if not user:
         return jsonify({"error": "invalid_credentials"}), 401
 
     if not user.get("activo", True):
         return jsonify({"error": "user_inactive"}), 403
 
-    stored = user.get("password", "")
+    stored = user.get("password") or ""
 
     def is_hashed(p: str) -> bool:
-        return p.startswith("pbkdf2:")
+        return isinstance(p, str) and p.startswith("pbkdf2:")
 
-    # Password hash check
-    if is_hashed(stored):
+    # ==========================
+    # 3) VALIDACIÓN DE CONTRASEÑA
+    # ==========================
+    if is_hashed(stored):  
+        # Contraseña ya hasheada
         if not check_password_hash(stored, password):
             return jsonify({"error": "invalid_credentials"}), 401
+
     else:
-        # migración
+        # Contraseña en texto plano → migrar si coincide
         if stored != password:
             return jsonify({"error": "invalid_credentials"}), 401
+
         try:
             new_hash = generate_password_hash(password)
             conn, cur = get_conn_dict()
-            cur.execute("UPDATE usuariospersonal SET password = %s WHERE id = %s",
-                        (new_hash, user["id"]))
+            cur.execute(
+                "UPDATE usuariospersonal SET password = %s WHERE id = %s",
+                (new_hash, user["id"])
+            )
             conn.commit()
             cur.close()
             conn.close()
-            user["password"] = new_hash
-            print(f"Password migrada para usuario personal {username}")
-        except:
-            pass
+            print(f"🔐 Password migrada a hash para {username}")
+        except Exception as e:
+            print("⚠️ Error migrando password:", e)
 
-    # Sesión
+    # ==========================
+    # 4) INICIAR SESIÓN
+    # ==========================
     session.permanent = True
     session["username_personal"] = user["username"]
     session["role_personal"] = user.get("role", "personal")
 
     return jsonify({
-        "username": session["username_personal"],
-        "role": session["role_personal"]
+        "username": user["username"],
+        "role": user.get("role", "personal")
     }), 200
 
 
