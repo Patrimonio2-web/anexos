@@ -2315,10 +2315,8 @@ def agentes_por_anexo():
 #Login personal ------------------------------
 @app.post("/api/login_personal")
 def api_login_personal():
-    # SIEMPRE PRIMERO: leer el JSON
-    data = request.get_json(silent=True) or {}
-
-    print("DEBUG_LOGIN_PERSONAL_BODY:", data)  # 🔥 SEGURO ACA SIEMPRE EXISTE DATA
+    data = request.get_json() or {}
+    print("LOGIN_PERSONAL_RECIBIDO:", data)
 
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
@@ -2326,20 +2324,20 @@ def api_login_personal():
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
 
+    # Buscar usuario en la tabla usuariospersonal
     try:
         conn, cur = get_conn_dict()
         try:
             cur.execute("""
                 SELECT id, username, password,
                        COALESCE(role, 'personal') AS role,
-                       COALESCE(activo, TRUE)      AS activo
+                       COALESCE(activo, TRUE)     AS activo
                 FROM usuariospersonal
                 WHERE username = %s
                 LIMIT 1
             """, (username,))
             row = cur.fetchone()
             user = dict(row) if row else None
-
         except psycopg2.errors.UndefinedColumn:
             conn.rollback()
             cur.execute("""
@@ -2350,38 +2348,37 @@ def api_login_personal():
             """, (username,))
             row = cur.fetchone()
             user = dict(row) if row else None
-            
             if user:
                 user["role"] = "personal"
                 user["activo"] = True
-
         finally:
-            cur.close()
-            conn.close()
-
+            cur.close(); conn.close()
     except Exception as e:
-        print("DB ERROR /api/login_personal:", e)
-        return jsonify({"error": str(e)}), 500
+        print("🔴 DB ERROR /api/login_personal:", e)
+        return jsonify({"error": f"db_error: {str(e)}"}), 500
 
+    # No existe usuario
     if not user:
         return jsonify({"error": "invalid_credentials"}), 401
 
+    # Usuario inactivo
     if not user.get("activo", True):
         return jsonify({"error": "user_inactive"}), 403
 
-    stored = user.get("password", "")
+    stored = user.get("password") or ""
 
-    # Detect hash
-    def is_hashed(p): return p.startswith("pbkdf2:")
+    # Función del login principal
+    def is_hashed(p: str) -> bool:
+        return p.startswith("pbkdf2:")
 
+    # Validar hash
     if is_hashed(stored):
         if not check_password_hash(stored, password):
             return jsonify({"error": "invalid_credentials"}), 401
     else:
+        # password en texto plano → migrar si coincide
         if stored != password:
             return jsonify({"error": "invalid_credentials"}), 401
-
-        # migración a hash
         try:
             new_hash = generate_password_hash(password)
             conn, cur = get_conn_dict()
@@ -2390,22 +2387,22 @@ def api_login_personal():
                 (new_hash, user["id"])
             )
             conn.commit()
-            cur.close()
-            conn.close()
+            cur.close(); conn.close()
+            print(f"✅ Password migrada a hash para personal {user['username']}")
             user["password"] = new_hash
-            print(f"Password migrada para usuario personal {username}")
-        except:
-            pass
+        except Exception as e:
+            print("🔴 Error migrando password:", e)
 
-    # Sesión OK
+    # Crear sesión (igual al login principal)
     session.permanent = True
-    session["username_personal"] = user["username"]
-    session["role_personal"] = user.get("role", "personal")
+    session["username"] = user["username"]
+    session["role"] = user.get("role", "personal")
 
     return jsonify({
-        "username": session["username_personal"],
-        "role": session["role_personal"]
+        "username": session["username"],
+        "role": session["role"]
     }), 200
+
 
 
 @app.get("/api/me_personal")
