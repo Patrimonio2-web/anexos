@@ -415,6 +415,36 @@ def clases_por_rubro():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+        
+  #API  NUEVA CLASE POR RUBRO 
+    @app.route('/api/buscar-clase', methods=['GET'])
+    def buscar_clase():
+        try:
+            query = (request.args.get('query') or "").strip()
+            if not query:
+                return jsonify([])
+    
+            q_num = None
+            if query.isdigit():
+                q_num = int(query)
+    
+            base = ClaseBien.query
+    
+            if q_num is not None:
+                clases = base.filter(ClaseBien.id_clase == q_num).order_by(ClaseBien.descripcion).all()
+            else:
+                clases = base.filter(ClaseBien.descripcion.ilike(f"%{query}%")).order_by(ClaseBien.descripcion).all()
+    
+            data = [{
+                'id_clase': c.id_clase,
+                'descripcion': c.descripcion,
+                'id_rubro': c.id_rubro
+            } for c in clases]
+    
+            return jsonify(data)
+    
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
 
 #AUDITORIAS----------------------------------------------------------------------------------------------------------
