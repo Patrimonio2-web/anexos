@@ -395,7 +395,7 @@ def obtener_rubros():
 
 
 # API para obtener clases por rubro
-#http://127.0.0.1:5000/api/clases-por-rubro?rubro_id=437
+# http://127.0.0.1:5000/api/clases-por-rubro?rubro_id=437
 @app.route('/api/clases-por-rubro', methods=['GET'])
 def clases_por_rubro():
     try:
@@ -406,7 +406,7 @@ def clases_por_rubro():
         clases = ClaseBien.query.filter_by(id_rubro=rubro_id).order_by(ClaseBien.descripcion).all()
 
         data = [{
-            'id_clase': c.id_clase,            # 👈 ya no usamos clase_bien_id
+            'id_clase': c.id_clase,
             'descripcion': c.descripcion,
             'id_rubro': c.id_rubro
         } for c in clases]
@@ -415,36 +415,41 @@ def clases_por_rubro():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-        
-  #API  NUEVA CLASE POR RUBRO 
-    @app.route('/api/buscar-clase', methods=['GET'])
-    def buscar_clase():
-        try:
-            query = (request.args.get('query') or "").strip()
-            if not query:
-                return jsonify([])
-    
-            q_num = None
-            if query.isdigit():
-                q_num = int(query)
-    
-            base = ClaseBien.query
-    
-            if q_num is not None:
-                clases = base.filter(ClaseBien.id_clase == q_num).order_by(ClaseBien.descripcion).all()
-            else:
-                clases = base.filter(ClaseBien.descripcion.ilike(f"%{query}%")).order_by(ClaseBien.descripcion).all()
-    
-            data = [{
-                'id_clase': c.id_clase,
-                'descripcion': c.descripcion,
-                'id_rubro': c.id_rubro
-            } for c in clases]
-    
-            return jsonify(data)
-    
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+
+
+# ✅ API NUEVA: buscar clase (global)
+@app.route('/api/buscar-clase', methods=['GET'])
+def buscar_clase():
+    try:
+        query = (request.args.get('query') or "").strip()
+        if not query:
+            return jsonify([])
+
+        if query.isdigit():
+            clases = (
+                ClaseBien.query
+                .filter(ClaseBien.id_clase == int(query))
+                .order_by(ClaseBien.descripcion)
+                .all()
+            )
+        else:
+            clases = (
+                ClaseBien.query
+                .filter(ClaseBien.descripcion.ilike(f"%{query}%"))
+                .order_by(ClaseBien.descripcion)
+                .all()
+            )
+
+        data = [{
+            'id_clase': c.id_clase,
+            'descripcion': c.descripcion,
+            'id_rubro': c.id_rubro
+        } for c in clases]
+
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 #AUDITORIAS----------------------------------------------------------------------------------------------------------
