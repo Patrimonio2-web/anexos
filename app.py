@@ -417,9 +417,9 @@ def clases_por_rubro():
         return jsonify({'error': str(e)}), 500
 
 
-# ✅ API NUEVA: buscar clase (global)
-@app.route('/api/buscar-clase', methods=['GET'])
-def buscar_clase():
+# ✅ NUEVA API PARA NOMENCLADOR (GLOBAL) 
+@app.route('/api/buscar-clase-global', methods=['GET'])
+def buscar_clase_global():
     try:
         query = (request.args.get('query') or "").strip()
         if not query:
@@ -450,7 +450,6 @@ def buscar_clase():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 #AUDITORIAS----------------------------------------------------------------------------------------------------------
 
