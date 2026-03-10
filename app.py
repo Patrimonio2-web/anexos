@@ -930,7 +930,7 @@ def _compute_diff(before: dict, after: dict):
 
 
 
-#nueva api de buscador avanzado
+# nueva api de buscador avanzado
 @app.route("/api/mobiliario/buscar", methods=["GET"])
 def buscar_mobiliario_avanzado():
     try:
@@ -941,22 +941,17 @@ def buscar_mobiliario_avanzado():
         clase_id = request.args.get("clase_id", type=int)
         estado_conservacion = (request.args.get("estado_conservacion") or "").strip()
 
-        # Flags booleanos: se pueden mandar múltiples
-        # ejemplo: /api/mobiliario/buscar?flag=faltante&flag=para_baja
         flags = request.args.getlist("flag")
 
-        # paginación
         page = max(request.args.get("page", default=1, type=int), 1)
         per_page = min(max(request.args.get("per_page", default=30, type=int), 1), 200)
         offset = (page - 1) * per_page
 
-        # ordenamiento
         order_by = (request.args.get("order_by") or "id").strip().lower()
         order_dir = (request.args.get("order_dir") or "desc").strip().lower()
         if order_dir not in ("asc", "desc"):
             order_dir = "desc"
 
-        # whitelist para evitar SQL injection por order_by
         ORDER_MAP = {
             "id": "m.id::integer",
             "fecha_creacion": "m.fecha_creacion",
@@ -969,7 +964,7 @@ def buscar_mobiliario_avanzado():
         }
         order_sql = ORDER_MAP.get(order_by, "m.id::integer")
 
-        where = ["m.id ~ '^[0-9]+$'"]  # mantenemos tu criterio
+        where = ["m.id ~ '^[0-9]+$'"]
         params = {}
 
         # ---- filtros exactos ----
@@ -1008,10 +1003,14 @@ def buscar_mobiliario_avanzado():
                 where.append(f"m.{f} = TRUE")
 
         # ---- búsqueda texto ----
-        # - si q es numérico, también matchea ID exacto
-        # - siempre busca "contiene" en campos relevantes
+        search_rank_sql = "0"
+
         if q:
-            params["q_like"] = f"%{q.lower()}%"
+            q_lower = q.lower()
+            params["q_like"] = f"%{q_lower}%"
+            params["q_prefix"] = f"{q_lower}%"
+            params["q_exact"] = q_lower
+
             conds = [
                 "LOWER(COALESCE(m.descripcion,'')) LIKE :q_like",
                 "LOWER(COALESCE(r.nombre,'')) LIKE :q_like",
@@ -1019,25 +1018,61 @@ def buscar_mobiliario_avanzado():
                 "LOWER(COALESCE(sd.nombre,'')) LIKE :q_like",
                 "LOWER(COALESCE(a.nombre,'')) LIKE :q_like",
             ]
+
             if q.isdigit():
                 params["q_id"] = q
                 conds.append("m.id = :q_id")
+
             where.append("(" + " OR ".join(conds) + ")")
+
+            # ---- ranking inteligente ----
+            # menor valor = mayor prioridad
+            # 1) ID exacto
+            # 2) clase exacta
+            # 3) descripción exacta
+            # 4) clase empieza con el término
+            # 5) descripción empieza con el término
+            # 6) clase contiene el término
+            # 7) descripción contiene el término
+            # 8) rubro contiene
+            # 9) subdependencia contiene
+            # 10) anexo contiene
+            rank_cases = []
+
+            if q.isdigit():
+                rank_cases.append("WHEN m.id = :q_id THEN 1")
+
+            rank_cases.extend([
+                "WHEN LOWER(COALESCE(cb.descripcion,'')) = :q_exact THEN 2",
+                "WHEN LOWER(COALESCE(m.descripcion,'')) = :q_exact THEN 3",
+                "WHEN LOWER(COALESCE(cb.descripcion,'')) LIKE :q_prefix THEN 4",
+                "WHEN LOWER(COALESCE(m.descripcion,'')) LIKE :q_prefix THEN 5",
+                "WHEN LOWER(COALESCE(cb.descripcion,'')) LIKE :q_like THEN 6",
+                "WHEN LOWER(COALESCE(m.descripcion,'')) LIKE :q_like THEN 7",
+                "WHEN LOWER(COALESCE(r.nombre,'')) LIKE :q_like THEN 8",
+                "WHEN LOWER(COALESCE(sd.nombre,'')) LIKE :q_like THEN 9",
+                "WHEN LOWER(COALESCE(a.nombre,'')) LIKE :q_like THEN 10",
+            ])
+
+            search_rank_sql = f"""
+                CASE
+                    {' '.join(rank_cases)}
+                    ELSE 999
+                END
+            """
 
         where_sql = " AND ".join(where) if where else "1=1"
 
         base_from = """
             FROM mobiliario m
             LEFT JOIN clases_bienes   cb ON m.clase_bien_id  = cb.id_clase
-            LEFT JOIN rubros           r ON m.rubro_id       = r.id_rubro
+            LEFT JOIN rubros          r  ON m.rubro_id       = r.id_rubro
             LEFT JOIN subdependencias sd ON m.ubicacion_id   = sd.id
-            LEFT JOIN anexos           a ON sd.id_anexo      = a.id
+            LEFT JOIN anexos          a  ON sd.id_anexo      = a.id
         """
 
-        # total
         sql_count = f"SELECT COUNT(*) {base_from} WHERE {where_sql};"
 
-        # items
         sql_items = f"""
             SELECT
                 m.id                      AS id_mobiliario,
@@ -1063,10 +1098,14 @@ def buscar_mobiliario_avanzado():
                 sd.nombre                 AS subdependencia,
                 a.id                      AS id_anexo,
                 a.nombre                  AS anexo,
-                a.direccion               AS direccion_anexo
+                a.direccion               AS direccion_anexo,
+                {search_rank_sql}         AS search_rank
             {base_from}
             WHERE {where_sql}
-            ORDER BY {order_sql} {order_dir}, m.id::integer {order_dir}
+            ORDER BY
+                search_rank ASC,
+                {order_sql} {order_dir},
+                m.id::integer {order_dir}
             LIMIT :limit OFFSET :offset;
         """
 
@@ -1079,12 +1118,15 @@ def buscar_mobiliario_avanzado():
             rows = conn.execute(text(sql_items), params_items).mappings().all()
             items = [dict(r) for r in rows]
 
-        # formato fechas + historial (similar a ultimos)
         for it in items:
             if it.get("fecha_creacion"):
                 it["fecha_creacion"] = (it["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
             if it.get("fecha_actualizacion"):
                 it["fecha_actualizacion"] = (it["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+
+            # no hace falta mandarlo al front
+            if "search_rank" in it:
+                del it["search_rank"]
 
         return jsonify({
             "items": items,
@@ -1101,7 +1143,6 @@ def buscar_mobiliario_avanzado():
     except Exception as e:
         print("🔴 Error en /api/mobiliario/buscar:", e)
         return jsonify({"error": str(e)}), 500
-        
 
 # ====== API para eliminar un registro de patrimonio -----------------------------
 @app.route('/api/patrimonio/<string:id>', methods=['DELETE'])
