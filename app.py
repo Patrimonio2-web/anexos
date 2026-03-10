@@ -637,7 +637,7 @@ def subdependencias_por_anexo(anexo_id):
 
 
 
-#---------busca por impresora
+#--------- busca por clase (legacy / impresora)
 @app.route('/api/buscar-clase', methods=['GET'])
 def buscar_clase():
     query = request.args.get('query', '', type=str)
@@ -645,20 +645,23 @@ def buscar_clase():
     if not query:
         return jsonify({'error': 'Falta el parámetro query'}), 400
 
-    clases = ClaseBien.query.filter(ClaseBien.descripcion.ilike(f'%{query}%')).order_by(ClaseBien.descripcion).all()
+    clases = ClaseBien.query.filter(
+        ClaseBien.descripcion.ilike(f'%{query}%')
+    ).order_by(ClaseBien.descripcion).all()
 
     data = [{
-        'clase_bien_id': c.clase_bien_id,
+        'id_clase': c.id_clase,
         'descripcion': c.descripcion,
         'id_rubro': c.id_rubro
     } for c in clases]
 
     return jsonify(data)
 
-#-------busca por id clase 109
-@app.route('/api/clase/<int:clase_bien_id>', methods=['GET'])
-def obtener_clase_por_id(clase_bien_id):
-    clase = ClaseBien.query.get(clase_bien_id)
+
+#------- busca por id de clase
+@app.route('/api/clase/<int:id_clase>', methods=['GET'])
+def obtener_clase_por_id(id_clase):
+    clase = ClaseBien.query.get(id_clase)
 
     if not clase:
         return jsonify({'error': 'Clase no encontrada'}), 404
@@ -666,12 +669,11 @@ def obtener_clase_por_id(clase_bien_id):
     rubro = Rubro.query.get(clase.id_rubro)
 
     return jsonify({
-        'clase_bien_id': clase.clase_bien_id,
+        'id_clase': clase.id_clase,
         'descripcion': clase.descripcion,
         'id_rubro': clase.id_rubro,
         'rubro': rubro.nombre if rubro else 'Sin rubro'
     })
-
 
 #Editar anexos y subdependencias -------------------------------------------------------------------
 from flask import request, jsonify
