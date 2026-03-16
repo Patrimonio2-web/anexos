@@ -1919,21 +1919,27 @@ def generar_listado_json():
             "problema_etiqueta": "Problema etiqueta"
         }
 
-        # -------- nombre de anexo ----------
-        if anexo_id and anexo_id.isdigit():
-            cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
-            row = cur.fetchone()
-            anexo_nombre = row[0] if row else "Todos"
-        else:
-            anexo_nombre = "Todos"
+        # -------- nombre + id de anexo ----------
+        anexo_nombre = "Todos"
+        anexo_id_resolved = None
 
-        # -------- nombre de subdependencia ----------
-        if subdep_id and subdep_id.isdigit():
-            cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (subdep_id,))
+        if anexo_id and anexo_id.isdigit():
+            cur.execute("SELECT id, nombre FROM anexos WHERE id = %s", (anexo_id,))
             row = cur.fetchone()
-            subdependencia_nombre = row[0] if row else "Todas"
-        else:
-            subdependencia_nombre = "Todas"
+            if row:
+                anexo_id_resolved = row[0]
+                anexo_nombre = row[1]
+
+        # -------- nombre + id de subdependencia ----------
+        subdependencia_nombre = "Todas"
+        subdependencia_id_resolved = None
+
+        if subdep_id and subdep_id.isdigit():
+            cur.execute("SELECT id, nombre FROM subdependencias WHERE id = %s", (subdep_id,))
+            row = cur.fetchone()
+            if row:
+                subdependencia_id_resolved = row[0]
+                subdependencia_nombre = row[1]
 
         # -------- query base ----------
         query = """
@@ -2081,7 +2087,9 @@ def generar_listado_json():
         conn.close()
 
         return jsonify({
+            "anexo_id": anexo_id_resolved,
             "anexo_nombre": anexo_nombre,
+            "subdependencia_id": subdependencia_id_resolved,
             "subdependencia_nombre": subdependencia_nombre,
             "fecha_emision": datetime.now().strftime("%d/%m/%Y"),
             "tipo_listado": tipo_listado,
@@ -2098,8 +2106,6 @@ def generar_listado_json():
     except Exception as e:
         print("🔴 Error en /api/listados/generar-json:", e)
         return jsonify({"error": str(e)}), 500
-
-
 
 
 # EJECUCIÓN
