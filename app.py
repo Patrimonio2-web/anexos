@@ -1893,13 +1893,218 @@ def imprimir_listado_preview():
 
 
 
+# =========================
+# NUEVA API JSON PARA NEXT
+# =========================
+@app.route('/api/listados/generar-json', methods=['GET'])
+def generar_listado_json():
+    try:
+        conn, cur = get_conn_dict()
+
+        anexo_id = request.args.get('anexo')
+        subdep_id = request.args.get('subdependencia')
+        rubro_id = request.args.get('rubro')
+        clase_id = request.args.get('clase')
+        estado_conservacion = request.args.get('estado_conservacion')
+        tipo_listado = request.args.get('tipo_listado', 'clasico')
+        filtros = request.args.getlist('filtros')
+        incluir_faltantes = request.args.get("incluir_faltantes", "false").lower() == "true"
+
+        campos = {
+            "no_dado": "No Dado",
+            "para_reparacion": "Reparación",
+            "para_baja": "Para baja",
+            "faltante": "Faltante",
+            "sobrante": "Sobrante",
+            "problema_etiqueta": "Problema etiqueta"
+        }
+
+        # -------- nombre de anexo ----------
+        if anexo_id and anexo_id.isdigit():
+            cur.execute("SELECT nombre FROM anexos WHERE id = %s", (anexo_id,))
+            row = cur.fetchone()
+            anexo_nombre = row[0] if row else "Todos"
+        else:
+            anexo_nombre = "Todos"
+
+        # -------- nombre de subdependencia ----------
+        if subdep_id and subdep_id.isdigit():
+            cur.execute("SELECT nombre FROM subdependencias WHERE id = %s", (subdep_id,))
+            row = cur.fetchone()
+            subdependencia_nombre = row[0] if row else "Todas"
+        else:
+            subdependencia_nombre = "Todas"
+
+        # -------- query base ----------
+        query = """
+            SELECT 
+                r.nombre AS rubro_nombre,
+                c.descripcion AS clase_nombre,
+                m.id AS id_mobiliario,
+                m.descripcion,
+                m.estado_conservacion,
+                m.no_dado,
+                m.para_reparacion,
+                m.para_baja,
+                m.faltante,
+                m.sobrante,
+                m.problema_etiqueta,
+                r.id_rubro AS rubro_id,
+                c.id_clase AS clase_id
+            FROM mobiliario m
+            LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
+            LEFT JOIN clases_bienes c ON m.clase_bien_id = c.id_clase
+            LEFT JOIN subdependencias s ON m.ubicacion_id = s.id
+            LEFT JOIN anexos a ON s.id_anexo = a.id
+            WHERE 1=1
+        """
+
+        params = []
+
+        # -------- filtros ubicación ----------
+        if anexo_id and anexo_id.isdigit():
+            query += " AND a.id = %s"
+            params.append(anexo_id)
+
+        if subdep_id and subdep_id.isdigit():
+            query += " AND s.id = %s"
+            params.append(subdep_id)
+
+        # -------- filtros categoría ----------
+        if rubro_id and rubro_id.isdigit():
+            query += " AND m.rubro_id = %s"
+            params.append(rubro_id)
+
+        if clase_id and clase_id.isdigit():
+            query += " AND m.clase_bien_id = %s"
+            params.append(clase_id)
+
+        # -------- estado conservación ----------
+        if estado_conservacion:
+            query += " AND m.estado_conservacion = %s"
+            params.append(estado_conservacion)
+
+        # -------- flags ----------
+        allowed_flags = {
+            "no_dado",
+            "para_reparacion",
+            "para_baja",
+            "faltante",
+            "sobrante",
+            "problema_etiqueta"
+        }
+
+        for f in filtros:
+            if f in allowed_flags:
+                query += f" AND m.{f} = TRUE"
+
+        # -------- incluir/excluir faltantes ----------
+        if not incluir_faltantes:
+            query += " AND (m.faltante IS NULL OR m.faltante = FALSE)"
+
+        query += " ORDER BY r.nombre, c.descripcion, m.id ASC"
+
+        cur.execute(query, tuple(params))
+        resultados = cur.fetchall()
+
+        grupos_map = {}
+
+        for fila in resultados:
+            rubro_nombre = fila[0] or "SIN RUBRO"
+            clase_nombre = fila[1] or "SIN CLASE"
+            id_mobiliario = fila[2]
+            descripcion = fila[3]
+            estado = fila[4]
+            no_dado = fila[5]
+            para_reparacion = fila[6]
+            para_baja = fila[7]
+            faltante = fila[8]
+            sobrante = fila[9]
+            problema_etiqueta = fila[10]
+            rubro_id_row = fila[11]
+            clase_id_row = fila[12]
+
+            observaciones = []
+            if no_dado:
+                observaciones.append("No dado")
+            if para_reparacion:
+                observaciones.append("Para reparación")
+            if para_baja:
+                observaciones.append("Para baja")
+            if faltante:
+                observaciones.append("Faltante")
+            if sobrante:
+                observaciones.append("Sobrante")
+            if problema_etiqueta:
+                observaciones.append("Problema etiqueta")
+
+            rubro_key = f"{rubro_id_row}|{rubro_nombre}"
+            clase_key = f"{clase_id_row}|{clase_nombre}"
+
+            if rubro_key not in grupos_map:
+                grupos_map[rubro_key] = {
+                    "rubro_id": rubro_id_row,
+                    "rubro_nombre": rubro_nombre,
+                    "clases": {}
+                }
+
+            if clase_key not in grupos_map[rubro_key]["clases"]:
+                grupos_map[rubro_key]["clases"][clase_key] = {
+                    "clase_id": clase_id_row,
+                    "clase_nombre": clase_nombre,
+                    "items": []
+                }
+
+            grupos_map[rubro_key]["clases"][clase_key]["items"].append({
+                "id": str(id_mobiliario),
+                "descripcion": descripcion,
+                "estado_conservacion": estado,
+                "observaciones": observaciones
+            })
+
+        grupos = []
+        for _, rubro_data in grupos_map.items():
+            clases = list(rubro_data["clases"].values())
+            grupos.append({
+                "rubro_id": rubro_data["rubro_id"],
+                "rubro_nombre": rubro_data["rubro_nombre"],
+                "clases": clases
+            })
+
+        total_bienes = sum(
+            len(clase["items"])
+            for rubro in grupos
+            for clase in rubro["clases"]
+        )
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "anexo_nombre": anexo_nombre,
+            "subdependencia_nombre": subdependencia_nombre,
+            "fecha_emision": datetime.now().strftime("%d/%m/%Y"),
+            "tipo_listado": tipo_listado,
+            "total_bienes": total_bienes,
+            "filtros_aplicados": {
+                "filtros": filtros,
+                "filtros_labels": [campos[f] for f in filtros if f in campos],
+                "estado_conservacion": estado_conservacion or "",
+                "incluir_faltantes": incluir_faltantes
+            },
+            "grupos": grupos
+        }), 200
+
+    except Exception as e:
+        print("🔴 Error en /api/listados/generar-json:", e)
+        return jsonify({"error": str(e)}), 500
+
 
 
 
 # EJECUCIÓN
 #if __name__ == '__main__':
  #   app.run(debug=True)
-
 
 
 
