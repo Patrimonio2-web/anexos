@@ -1428,6 +1428,80 @@ def obtener_mobiliario_por_id(id):
 
 
 
+@app.route('/api/mobiliario/para-baja', methods=['GET'])
+def obtener_mobiliarios_para_baja():
+    try:
+        query = """
+        SELECT
+            m.id                      AS id,
+            m.ubicacion_id            AS ubicacion_id,
+            m.descripcion,
+            m.estado_conservacion,
+            m.estado_control,
+            m.resolucion,
+            m.fecha_resolucion,
+            m.no_dado,
+            m.para_reparacion,
+            m.para_baja,
+            m.faltante,
+            m.sobrante,
+            m.problema_etiqueta,
+            m.comentarios,
+            m.foto_url,
+            m.fecha_creacion,
+            m.fecha_actualizacion,
+            m.historial_movimientos,
+            r.nombre                  AS rubro,
+            cb.descripcion            AS clase_bien,
+            sd.id                     AS id_subdependencia,
+            sd.nombre                 AS subdependencia,
+            a.id                      AS id_anexo,
+            a.nombre                  AS anexo,
+            a.direccion               AS direccion_anexo
+        FROM mobiliario m
+        LEFT JOIN clases_bienes   cb ON m.clase_bien_id = cb.id_clase
+        LEFT JOIN rubros          r  ON m.rubro_id = r.id_rubro
+        LEFT JOIN subdependencias sd ON m.ubicacion_id = sd.id
+        LEFT JOIN anexos          a  ON sd.id_anexo = a.id
+        WHERE m.id ~ '^[0-9]+$'
+          AND m.para_baja = TRUE
+        ORDER BY m.id::integer DESC;
+        """
+
+        conn = db.engine.raw_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        columns = [col[0] for col in cur.description]
+        results = [dict(zip(columns, row)) for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        for r in results:
+            historial = r.get("historial_movimientos")
+            if historial:
+                r["historial"] = [line.strip() for line in historial.split("\n") if line.strip()]
+            else:
+                r["historial"] = []
+            del r["historial_movimientos"]
+
+            if r.get("fecha_creacion"):
+                r["fecha_creacion"] = (r["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+            if r.get("fecha_actualizacion"):
+                r["fecha_actualizacion"] = (r["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+
+            if r.get("fecha_resolucion"):
+                try:
+                    r["fecha_resolucion"] = r["fecha_resolucion"].isoformat()
+                except Exception:
+                    pass
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        print("🔴 Error en /api/mobiliario/para-baja:", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/mobiliario/etiqueta/ver/<string:id>')
 def ver_etiqueta_para_imprimir(id):
     # URL de descarga de la etiqueta (usa la función actual que ya genera el PNG)
