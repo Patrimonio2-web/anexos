@@ -1554,9 +1554,9 @@ def generar_etiqueta(id):
     )
 
     # ✅ FUENTES REALES (FUNCIONA EN RENDER)
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 60)
-    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 120)
-    font_year = ImageFont.truetype("DejaVuSans.ttf", 50)
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
+    font_year = ImageFont.truetype("DejaVuSans.ttf", 30)
 
     # -------- TÍTULO --------
     titulo = "FUNCION LEGISLATIVA"
