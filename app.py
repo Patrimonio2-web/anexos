@@ -1533,34 +1533,35 @@ def generar_etiqueta(id):
     url_qr = BASE_URL + ruta_local
 
     # 🔳 QR grande y nítido
-    qr_img = qrcode.make(url_qr).resize((200, 200))
-
-    # 🎨 Etiqueta moderna (vertical)
-    etiqueta = Image.new('RGB', (320, 460), 'black')
+    # QR grande con borde blanco
+    qr_img = qrcode.make(url_qr).resize((220, 220))
+    
+    # Fondo blanco (MUCHO mejor)
+    etiqueta = Image.new('RGB', (320, 480), 'white')
     draw = ImageDraw.Draw(etiqueta)
-
-    # 🔤 Fuentes seguras
+    
+    # Fuentes
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 26)
-        font_id = ImageFont.truetype("arialbd.ttf", 48)
-        font_year = ImageFont.truetype("arialbd.ttf", 34)
+        font_title = ImageFont.truetype("arialbd.ttf", 28)
+        font_id = ImageFont.truetype("arialbd.ttf", 60)
+        font_year = ImageFont.truetype("arial.ttf", 28)
     except:
         font_title = ImageFont.load_default()
         font_id = ImageFont.load_default()
         font_year = ImageFont.load_default()
-
-    # 🏛 Título (arriba)
-    draw.text((160, 40), "Función Legislativa", font=font_title, fill='white', anchor="mm")
-
+    
+    # 🏛 Título arriba
+    draw.text((160, 50), "FUNCIÓN LEGISLATIVA", font=font_title, fill='black', anchor="mm")
+    
     # 🔳 QR centrado
-    qr_x = (320 - 200) // 2
+    qr_x = (320 - 220) // 2
     etiqueta.paste(qr_img, (qr_x, 100))
-
-    # 🆔 ID grande (protagonista abajo)
-    draw.text((160, 340), f"ID {id.zfill(6)}", font=font_id, fill='white', anchor="mm")
-
-    # 📅 Año (más chico abajo)
-    draw.text((160, 410), f"{anio_actual}", font=font_year, fill='white', anchor="mm")
+    
+    # 🆔 ID GRANDE (protagonista)
+    draw.text((160, 350), f"{id.zfill(6)}", font=font_id, fill='black', anchor="mm")
+    
+    # 📅 Año abajo
+    draw.text((160, 430), f"{anio_actual}", font=font_year, fill='black', anchor="mm")
 
     # 📤 Exportar
     buffer = io.BytesIO()
