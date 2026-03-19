@@ -1532,45 +1532,87 @@ def generar_etiqueta(id):
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
-    # QR
-    qr_img = qrcode.make(url_qr).resize((220, 220))
+    # QR (con fondo blanco para contraste)
+    qr_size = 240
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url_qr)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    qr_img = qr_img.resize((qr_size, qr_size))
 
-    # Canvas
-    width, height = 340, 460
-    etiqueta = Image.new('RGB', (width, height), '#e6e6e6')
+    # Canvas NEGRO
+    width, height = 380, 520
+    etiqueta = Image.new('RGB', (width, height), '#0d0d0d')
     draw = ImageDraw.Draw(etiqueta)
 
-    # Dibujar borde redondeado
-    border_radius = 40
+    # Borde elegante
     draw.rounded_rectangle(
-        [(5, 5), (width-5, height-5)],
-        radius=border_radius,
-        outline="black",
-        width=4
+        [(6, 6), (width-6, height-6)],
+        radius=45,
+        outline="#2a2a2a",
+        width=2
     )
 
     # Fuentes
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 72)
+        font_title = ImageFont.truetype("arialbd.ttf", 38)
         font_id = ImageFont.truetype("arialbd.ttf", 72)
-        font_year = ImageFont.truetype("arial.ttf", 48)
+        font_year = ImageFont.truetype("arial.ttf", 28)
     except:
         font_title = ImageFont.load_default()
         font_id = ImageFont.load_default()
         font_year = ImageFont.load_default()
 
-    # Título
-    draw.text((width//2, 50), "FUNCION LEGISLATIVA", fill="black", font=font_title, anchor="mm")
+    # TÍTULO (blanco elegante)
+    draw.text(
+        (width//2, 55),
+        "FUNCION LEGISLATIVA",
+        fill="white",
+        font=font_title,
+        anchor="mm"
+    )
+
+    # Línea divisoria fina
+    draw.line(
+        [(60, 90), (width-60, 90)],
+        fill="#2a2a2a",
+        width=2
+    )
+
+    # Fondo blanco para QR (tipo tarjeta)
+    qr_bg_margin = 20
+    qr_bg_x1 = (width - qr_size)//2 - qr_bg_margin
+    qr_bg_y1 = 110 - qr_bg_margin
+    qr_bg_x2 = (width + qr_size)//2 + qr_bg_margin
+    qr_bg_y2 = 110 + qr_size + qr_bg_margin
+
+    draw.rounded_rectangle(
+        [(qr_bg_x1, qr_bg_y1), (qr_bg_x2, qr_bg_y2)],
+        radius=25,
+        fill="white"
+    )
 
     # QR centrado
-    qr_x = (width - 220) // 2
-    etiqueta.paste(qr_img, (qr_x, 100))
+    qr_x = (width - qr_size) // 2
+    etiqueta.paste(qr_img, (qr_x, 110))
 
-    # ID
-    draw.text((width//2, 350), f"{id.zfill(6)}", fill="black", font=font_id, anchor="mm")
+    # ID GIGANTE (protagonista)
+    draw.text(
+        (width//2, 400),
+        f"{id.zfill(6)}",
+        fill="white",
+        font=font_id,
+        anchor="mm"
+    )
 
-    # Año
-    draw.text((width//2, 410), f"{anio_actual}", fill="black", font=font_year, anchor="mm")
+    # AÑO más sutil
+    draw.text(
+        (width//2, 470),
+        f"{anio_actual}",
+        fill="#aaaaaa",
+        font=font_year,
+        anchor="mm"
+    )
 
     # Exportar
     buffer = io.BytesIO()
