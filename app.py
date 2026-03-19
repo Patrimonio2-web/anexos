@@ -1555,9 +1555,9 @@ def generar_etiqueta(id):
 
     # Fuentes
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 38)
-        font_id = ImageFont.truetype("arialbd.ttf", 72)
-        font_year = ImageFont.truetype("arial.ttf", 28)
+        font_title = ImageFont.truetype("arialbd.ttf", 172)
+        font_id = ImageFont.truetype("arialbd.ttf", 256)
+        font_year = ImageFont.truetype("arial.ttf", 172)
     except:
         font_title = ImageFont.load_default()
         font_id = ImageFont.load_default()
