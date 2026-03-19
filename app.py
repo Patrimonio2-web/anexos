@@ -1554,7 +1554,7 @@ def generar_etiqueta(id):
     )
 
     # ✅ FUENTES REALES (FUNCIONA EN RENDER)
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 30)
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 28)
     font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
     font_year = ImageFont.truetype("DejaVuSans.ttf", 30)
 
