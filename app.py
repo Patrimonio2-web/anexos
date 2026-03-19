@@ -1540,7 +1540,7 @@ def generar_etiqueta(id):
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     qr_img = qr_img.resize((qr_size, qr_size))
 
-    # Canvas
+    # Canvas base (tu diseño original)
     width, height = 380, 520
     etiqueta = Image.new('RGB', (width, height), '#0d0d0d')
     draw = ImageDraw.Draw(etiqueta)
@@ -1553,7 +1553,7 @@ def generar_etiqueta(id):
         width=2
     )
 
-    # ✅ FUENTES REALES (FUNCIONA EN RENDER)
+    # Fuentes (válidas en Render)
     font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 28)
     font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
     font_year = ImageFont.truetype("DejaVuSans.ttf", 30)
@@ -1562,20 +1562,10 @@ def generar_etiqueta(id):
     titulo = "FUNCION LEGISLATIVA"
     bbox = draw.textbbox((0, 0), titulo, font=font_title)
     w = bbox[2] - bbox[0]
-
-    draw.text(
-        ((width - w)//2, 40),
-        titulo,
-        fill="white",
-        font=font_title
-    )
+    draw.text(((width - w)//2, 40), titulo, fill="white", font=font_title)
 
     # Línea
-    draw.line(
-        [(60, 100), (width-60, 100)],
-        fill="#2a2a2a",
-        width=2
-    )
+    draw.line([(60, 100), (width-60, 100)], fill="#2a2a2a", width=2)
 
     # -------- QR --------
     qr_bg_margin = 20
@@ -1597,32 +1587,41 @@ def generar_etiqueta(id):
     texto_id = id.zfill(6)
     bbox = draw.textbbox((0, 0), texto_id, font=font_id)
     w = bbox[2] - bbox[0]
-
-    draw.text(
-        ((width - w)//2, 400),
-        texto_id,
-        fill="white",
-        font=font_id
-    )
+    draw.text(((width - w)//2, 400), texto_id, fill="white", font=font_id)
 
     # -------- AÑO --------
     texto_anio = str(anio_actual)
     bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
     w = bbox[2] - bbox[0]
+    draw.text(((width - w)//2, 470), texto_anio, fill="#aaaaaa", font=font_year)
 
-    draw.text(
-        ((width - w)//2, 470),
-        texto_anio,
-        fill="#aaaaaa",
-        font=font_year
-    )
+    # =========================================================
+    # 🔥 ESCALADO A 24mm REAL (300 DPI) SIN PERDER DISEÑO
+    # =========================================================
+    dpi = 300
+    mm_to_inch = 25.4
+    target_mm = 24
+    target_px = int((target_mm / mm_to_inch) * dpi)  # ≈ 283 px
+
+    # Mantener proporción y centrar en fondo negro (NO deforma)
+    etiqueta.thumbnail((target_px, target_px), Image.LANCZOS)
+
+    final = Image.new("RGB", (target_px, target_px), "#0d0d0d")
+    x = (target_px - etiqueta.width) // 2
+    y = (target_px - etiqueta.height) // 2
+    final.paste(etiqueta, (x, y))
+    etiqueta = final
 
     # Exportar
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
 
-    return send_file(buffer, mimetype='image/png', download_name=f"etiqueta_{id}.png")
+    return send_file(
+        buffer,
+        mimetype='image/png',
+        download_name=f"etiqueta_{id}.png"
+    )
 
 #vista que me llevan los qr---------------------------------------------------------------------
 @app.route('/api/mobiliario/<mobiliario_id>/advertencia', methods=['GET'])
