@@ -1532,7 +1532,7 @@ def generar_etiqueta(id):
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
-    # QR (con fondo blanco para contraste)
+    # QR
     qr_size = 240
     qr = qrcode.QRCode(border=1)
     qr.add_data(url_qr)
@@ -1540,12 +1540,12 @@ def generar_etiqueta(id):
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     qr_img = qr_img.resize((qr_size, qr_size))
 
-    # Canvas NEGRO
+    # Canvas
     width, height = 380, 520
     etiqueta = Image.new('RGB', (width, height), '#0d0d0d')
     draw = ImageDraw.Draw(etiqueta)
 
-    # Borde elegante
+    # Borde
     draw.rounded_rectangle(
         [(6, 6), (width-6, height-6)],
         radius=45,
@@ -1553,38 +1553,36 @@ def generar_etiqueta(id):
         width=2
     )
 
-    # Fuentes
-    try:
-        font_title = ImageFont.truetype("arialbd.ttf", 172)
-        font_id = ImageFont.truetype("arialbd.ttf", 256)
-        font_year = ImageFont.truetype("arial.ttf", 172)
-    except:
-        font_title = ImageFont.load_default()
-        font_id = ImageFont.load_default()
-        font_year = ImageFont.load_default()
+    # ✅ FUENTES REALES (FUNCIONA EN RENDER)
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 60)
+    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 120)
+    font_year = ImageFont.truetype("DejaVuSans.ttf", 50)
 
-    # TÍTULO (blanco elegante)
+    # -------- TÍTULO --------
+    titulo = "FUNCION LEGISLATIVA"
+    bbox = draw.textbbox((0, 0), titulo, font=font_title)
+    w = bbox[2] - bbox[0]
+
     draw.text(
-        (width//2, 55),
-        "FUNCION LEGISLATIVA",
+        ((width - w)//2, 40),
+        titulo,
         fill="white",
-        font=font_title,
-        anchor="mm"
+        font=font_title
     )
 
-    # Línea divisoria fina
+    # Línea
     draw.line(
-        [(60, 90), (width-60, 90)],
+        [(60, 100), (width-60, 100)],
         fill="#2a2a2a",
         width=2
     )
 
-    # Fondo blanco para QR (tipo tarjeta)
+    # -------- QR --------
     qr_bg_margin = 20
     qr_bg_x1 = (width - qr_size)//2 - qr_bg_margin
-    qr_bg_y1 = 110 - qr_bg_margin
+    qr_bg_y1 = 120 - qr_bg_margin
     qr_bg_x2 = (width + qr_size)//2 + qr_bg_margin
-    qr_bg_y2 = 110 + qr_size + qr_bg_margin
+    qr_bg_y2 = 120 + qr_size + qr_bg_margin
 
     draw.rounded_rectangle(
         [(qr_bg_x1, qr_bg_y1), (qr_bg_x2, qr_bg_y2)],
@@ -1592,26 +1590,31 @@ def generar_etiqueta(id):
         fill="white"
     )
 
-    # QR centrado
     qr_x = (width - qr_size) // 2
-    etiqueta.paste(qr_img, (qr_x, 110))
+    etiqueta.paste(qr_img, (qr_x, 120))
 
-    # ID GIGANTE (protagonista)
+    # -------- ID --------
+    texto_id = id.zfill(6)
+    bbox = draw.textbbox((0, 0), texto_id, font=font_id)
+    w = bbox[2] - bbox[0]
+
     draw.text(
-        (width//2, 400),
-        f"{id.zfill(6)}",
+        ((width - w)//2, 400),
+        texto_id,
         fill="white",
-        font=font_id,
-        anchor="mm"
+        font=font_id
     )
 
-    # AÑO más sutil
+    # -------- AÑO --------
+    texto_anio = str(anio_actual)
+    bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
+    w = bbox[2] - bbox[0]
+
     draw.text(
-        (width//2, 470),
-        f"{anio_actual}",
+        ((width - w)//2, 470),
+        texto_anio,
         fill="#aaaaaa",
-        font=font_year,
-        anchor="mm"
+        font=font_year
     )
 
     # Exportar
