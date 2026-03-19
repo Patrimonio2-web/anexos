@@ -1502,75 +1502,60 @@ def obtener_mobiliarios_para_baja():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/mobiliario/etiqueta/ver/<string:id>')
+from datetime import datetime
+import qrcode
+from flask import send_file, url_for, request, render_template
+from PIL import Image, ImageDraw, ImageFont
+import io
+
+
+@app.route('/mobiliario/etiqueta/ver/<string:id>')
 def ver_etiqueta_para_imprimir(id):
-    # URL de descarga de la etiqueta (usa la función actual que ya genera el PNG)
-    etiqueta_url = url_for('generar_etiqueta_png', id=id)
+    etiqueta_url = url_for('generar_etiqueta', id=id)
     return render_template('ver_etiqueta.html', id=id, etiqueta_url=etiqueta_url)
 
 
+@app.route('/mobiliario/etiqueta/<string:id>')
+def generar_etiqueta(id):
+    anio_actual = datetime.now().year
 
-from flask import send_file
-import code
-from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime
-import io
-import qrcode
+    # URL destino del QR
+    ruta_local = url_for('ver_mobiliario_por_id', id=id)
+    url_qr = request.host_url.rstrip('/') + ruta_local
 
-@app.route('/api/mobiliario/etiqueta/png/<string:id>')
-def generar_etiqueta_png(id):
-    import os, io
-    from datetime import datetime
-    from flask import send_file
-    from PIL import Image, ImageDraw, ImageFont
-    import qrcode
+    # Crear el QR
+    qr_img = qrcode.make(url_qr).resize((100, 100))
 
-    size_px = 283  # 24 mm a 300 dpi
-    etiqueta = Image.new('RGB', (size_px, size_px), 'black')
+    # Crear etiqueta horizontal
+    etiqueta = Image.new('RGB', (400, 130), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
+    # Fuentes
     try:
-        # Fuentes
-        font_titulo = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
-        font_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-        font_fecha = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+        font_bold = ImageFont.truetype("arialbd.ttf", 20)
+        font_normal = ImageFont.truetype("arial.ttf", 16)
+        font_id = ImageFont.truetype("arialbd.ttf", 24)
     except:
-        font_titulo = font_id = font_fecha = ImageFont.load_default()
+        font_bold = font_normal = font_id = None
 
-    # Título arriba
-    titulo = "Dir. de Patrimonio"
-    w, h = draw.textbbox((0, 0), titulo, font=font_titulo)[2:]
-    draw.text(((size_px - w) // 2, 5), titulo, font=font_titulo, fill='white')
+    # Textos
+    draw.text((120, 10), "Función Legislativa", font=font_bold, fill='white')
+    draw.text((120, 35), "Dirección de Patrimonio", font=font_normal, fill='white')
+    draw.text((120, 60), f"Año: {anio_actual}", font=font_normal, fill='white')
+    draw.text((120, 85), f"ID:{id.zfill(6)}", font=font_id, fill='white')
 
-    # Generar QR grande
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=8,
-        border=1
-    )
-    qr.add_data(f"https://anexos.onrender.com/ver?id={id}")
-    qr.make(fit=True)
-    img_qr = qr.make_image(fill_color="black", back_color="white").resize((200, 200))
+    # Insertar QR
+    etiqueta.paste(qr_img, (10, 10))
 
-    # Pegar QR centrado en el medio
-    qr_x = (size_px - 200) // 2
-    qr_y = (size_px - 200) // 2
-    etiqueta.paste(img_qr, (qr_x, qr_y))
+    # Girar imagen
+    etiqueta = etiqueta.rotate(90, expand=True)
 
-    # Número ID debajo del QR
-    texto_id = f"{id.zfill(6)}"
-    w, h = draw.textbbox((0, 0), texto_id, font=font_id)[2:]
-    draw.text(((size_px - w) // 2, qr_y + 200 + 2), texto_id, font=font_id, fill='white')
-
-  
-
-    # Exportar PNG
+    # Exportar
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
-    return send_file(buffer, mimetype='image/png')
 
+    return send_file(buffer, mimetype='image/png', download_name=f"etiqueta_{id}.png")
 
 #vista que me llevan los qr---------------------------------------------------------------------
 @app.route('/api/mobiliario/<mobiliario_id>/advertencia', methods=['GET'])
