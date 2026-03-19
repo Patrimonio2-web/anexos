@@ -1519,42 +1519,45 @@ def ver_etiqueta_para_imprimir(id):
 
 @app.route('/mobiliario/etiqueta/<string:id>')
 def generar_etiqueta(id):
+    from datetime import datetime
+    import qrcode
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    from flask import send_file, url_for
+
     anio_actual = datetime.now().year
 
     # URL destino del QR
     ruta_local = url_for('ver_mobiliario_por_id', id=id)
-    #url_qr = request.host_url.rstrip('/') + ruta_local
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
-    # Crear el QR
-    qr_img = qrcode.make(url_qr).resize((100, 100))
+    # QR grande
+    qr_img = qrcode.make(url_qr).resize((200, 200))
 
-    # Crear etiqueta horizontal
-    etiqueta = Image.new('RGB', (400, 130), 'black')
+    # Etiqueta vertical moderna
+    etiqueta = Image.new('RGB', (300, 420), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
-    # Fuentes
+    # Fuentes seguras
     try:
-        font_bold = ImageFont.truetype("arialbd.ttf", 20)
-        font_normal = ImageFont.truetype("arial.ttf", 16)
-        font_id = ImageFont.truetype("arialbd.ttf", 24)
+        font_title = ImageFont.truetype("arialbd.ttf", 24)
+        font_year = ImageFont.truetype("arial.ttf", 20)
     except:
-        font_bold = font_normal = font_id = None
+        font_title = ImageFont.load_default()
+        font_year = ImageFont.load_default()
 
-    # Textos
-    draw.text((120, 10), "Función Legislativa", font=font_bold, fill='white')
-    draw.text((120, 35), "Dirección de Patrimonio", font=font_normal, fill='white')
-    draw.text((120, 60), f"Año: {anio_actual}", font=font_normal, fill='white')
-    draw.text((120, 85), f"ID:{id.zfill(6)}", font=font_id, fill='white')
+    # 🏛 Título centrado arriba
+    draw.text((150, 40), "Función Legislativa", font=font_title, fill='white', anchor="mm")
 
-    # Insertar QR
-    etiqueta.paste(qr_img, (10, 10))
+    # 🔳 QR centrado
+    qr_x = (300 - 200) // 2
+    etiqueta.paste(qr_img, (qr_x, 110))
 
-    # Girar imagen
-    etiqueta = etiqueta.rotate(90, expand=True)
+    # 📅 Año abajo centrado
+    draw.text((150, 350), f"{anio_actual}", font=font_year, fill='white', anchor="mm")
 
-    # Exportar
+    # Exportar imagen
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
