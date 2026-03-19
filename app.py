@@ -1508,7 +1508,9 @@ from flask import send_file, url_for, request, render_template
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-
+@app.route('/Etiqueta/<string:id>')
+def ver_mobiliario_por_id(id):
+    return f"Mobiliario {id}"
 @app.route('/mobiliario/etiqueta/ver/<string:id>')
 def ver_etiqueta_para_imprimir(id):
     etiqueta_url = url_for('generar_etiqueta', id=id)
