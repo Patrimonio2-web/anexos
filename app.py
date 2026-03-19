@@ -1521,7 +1521,9 @@ def generar_etiqueta(id):
 
     # URL destino del QR
     ruta_local = url_for('ver_mobiliario_por_id', id=id)
-    url_qr = request.host_url.rstrip('/') + ruta_local
+    #url_qr = request.host_url.rstrip('/') + ruta_local
+    BASE_URL = "https://anexos.onrender.com"
+    url_qr = BASE_URL + ruta_local
 
     # Crear el QR
     qr_img = qrcode.make(url_qr).resize((100, 100))
