@@ -1527,43 +1527,52 @@ def generar_etiqueta(id):
 
     anio_actual = datetime.now().year
 
-    # URL destino del QR
+    # URL QR
     ruta_local = url_for('ver_mobiliario_por_id', id=id)
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
-    # 🔳 QR grande y nítido
-    # QR grande con borde blanco
+    # QR
     qr_img = qrcode.make(url_qr).resize((220, 220))
-    
-    # Fondo blanco (MUCHO mejor)
-    etiqueta = Image.new('RGB', (320, 480), 'white')
+
+    # Canvas
+    width, height = 340, 460
+    etiqueta = Image.new('RGB', (width, height), '#e6e6e6')
     draw = ImageDraw.Draw(etiqueta)
-    
+
+    # Dibujar borde redondeado
+    border_radius = 40
+    draw.rounded_rectangle(
+        [(5, 5), (width-5, height-5)],
+        radius=border_radius,
+        outline="black",
+        width=4
+    )
+
     # Fuentes
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 28)
-        font_id = ImageFont.truetype("arialbd.ttf", 60)
-        font_year = ImageFont.truetype("arial.ttf", 28)
+        font_title = ImageFont.truetype("arialbd.ttf", 26)
+        font_id = ImageFont.truetype("arialbd.ttf", 40)
+        font_year = ImageFont.truetype("arial.ttf", 24)
     except:
         font_title = ImageFont.load_default()
         font_id = ImageFont.load_default()
         font_year = ImageFont.load_default()
-    
-    # 🏛 Título arriba
-    draw.text((160, 50), "FUNCIÓN LEGISLATIVA", font=font_title, fill='black', anchor="mm")
-    
-    # 🔳 QR centrado
-    qr_x = (320 - 220) // 2
-    etiqueta.paste(qr_img, (qr_x, 100))
-    
-    # 🆔 ID GRANDE (protagonista)
-    draw.text((160, 350), f"{id.zfill(6)}", font=font_id, fill='black', anchor="mm")
-    
-    # 📅 Año abajo
-    draw.text((160, 430), f"{anio_actual}", font=font_year, fill='black', anchor="mm")
 
-    # 📤 Exportar
+    # Título
+    draw.text((width//2, 50), "FUNCION LEGISLATIVA", fill="black", font=font_title, anchor="mm")
+
+    # QR centrado
+    qr_x = (width - 220) // 2
+    etiqueta.paste(qr_img, (qr_x, 100))
+
+    # ID
+    draw.text((width//2, 350), f"{id.zfill(6)}", fill="black", font=font_id, anchor="mm")
+
+    # Año
+    draw.text((width//2, 410), f"{anio_actual}", fill="black", font=font_year, anchor="mm")
+
+    # Exportar
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
