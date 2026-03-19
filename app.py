@@ -1532,32 +1532,37 @@ def generar_etiqueta(id):
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
-    # QR grande
+    # 🔳 QR grande y nítido
     qr_img = qrcode.make(url_qr).resize((200, 200))
 
-    # Etiqueta vertical moderna
-    etiqueta = Image.new('RGB', (300, 420), 'black')
+    # 🎨 Etiqueta moderna (vertical)
+    etiqueta = Image.new('RGB', (320, 460), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
-    # Fuentes seguras
+    # 🔤 Fuentes seguras
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 24)
-        font_year = ImageFont.truetype("arial.ttf", 20)
+        font_title = ImageFont.truetype("arialbd.ttf", 26)
+        font_id = ImageFont.truetype("arialbd.ttf", 48)
+        font_year = ImageFont.truetype("arialbd.ttf", 34)
     except:
         font_title = ImageFont.load_default()
+        font_id = ImageFont.load_default()
         font_year = ImageFont.load_default()
 
-    # 🏛 Título centrado arriba
-    draw.text((150, 40), "Función Legislativa", font=font_title, fill='white', anchor="mm")
+    # 🏛 Título (arriba)
+    draw.text((160, 40), "Función Legislativa", font=font_title, fill='white', anchor="mm")
 
     # 🔳 QR centrado
-    qr_x = (300 - 200) // 2
-    etiqueta.paste(qr_img, (qr_x, 110))
+    qr_x = (320 - 200) // 2
+    etiqueta.paste(qr_img, (qr_x, 100))
 
-    # 📅 Año abajo centrado
-    draw.text((150, 350), f"{anio_actual}", font=font_year, fill='white', anchor="mm")
+    # 🆔 ID grande (protagonista abajo)
+    draw.text((160, 340), f"ID {id.zfill(6)}", font=font_id, fill='white', anchor="mm")
 
-    # Exportar imagen
+    # 📅 Año (más chico abajo)
+    draw.text((160, 410), f"{anio_actual}", font=font_year, fill='white', anchor="mm")
+
+    # 📤 Exportar
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
