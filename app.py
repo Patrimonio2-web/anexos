@@ -1532,7 +1532,7 @@ def generar_etiqueta(id):
     # =========================================================
     # URL QR
     # =========================================================
-    ruta_local = url_for('ver', id=id)
+    ruta_local = url_for('ver_mobiliario_por_id', id=id)
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
