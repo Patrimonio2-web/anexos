@@ -1639,7 +1639,7 @@ def generar_etiqueta(id):
     y += h_sub + spacing_big
 
     draw_centered(texto_id, y, font_id)
-    y += h_id + spacing_small
+    y += h_id + int(height * 0.08)
 
     draw_centered(anio, y, font_year)
     y += h_year + spacing_big
