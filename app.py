@@ -1544,23 +1544,24 @@ def generar_etiqueta(id):
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     qr_img = qr_img.resize((qr_size, qr_size))
 
-    # Canvas base (tu diseño original)
+    # Canvas NEGRO PURO
     width, height = 380, 520
-    etiqueta = Image.new('RGB', (width, height), '#0d0d0d')
+    etiqueta = Image.new('RGB', (width, height), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
+    # ❌ SACAMOS GRISES → todo blanco o negro
     # Borde
     draw.rounded_rectangle(
         [(6, 6), (width-6, height-6)],
         radius=45,
-        outline="#2a2a2a",
+        outline="white",
         width=2
     )
 
-    # Fuentes (válidas en Render)
+    # Fuentes
     font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 28)
-    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
-    font_year = ImageFont.truetype("DejaVuSans.ttf", 30)
+    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 60)
+    font_year = ImageFont.truetype("DejaVuSans.ttf", 28)
 
     # -------- TÍTULO --------
     titulo = "FUNCION LEGISLATIVA"
@@ -1568,19 +1569,19 @@ def generar_etiqueta(id):
     w = bbox[2] - bbox[0]
     draw.text(((width - w)//2, 40), titulo, fill="white", font=font_title)
 
-    # Línea
-    draw.line([(60, 100), (width-60, 100)], fill="#2a2a2a", width=2)
+    # Línea blanca (no gris)
+    draw.line([(60, 100), (width-60, 100)], fill="white", width=2)
 
     # -------- QR --------
-    qr_bg_margin = 20
+    qr_bg_margin = 15
     qr_bg_x1 = (width - qr_size)//2 - qr_bg_margin
     qr_bg_y1 = 120 - qr_bg_margin
     qr_bg_x2 = (width + qr_size)//2 + qr_bg_margin
     qr_bg_y2 = 120 + qr_size + qr_bg_margin
 
-    draw.rounded_rectangle(
+    # Fondo blanco QR
+    draw.rectangle(
         [(qr_bg_x1, qr_bg_y1), (qr_bg_x2, qr_bg_y2)],
-        radius=25,
         fill="white"
     )
 
@@ -1597,20 +1598,19 @@ def generar_etiqueta(id):
     texto_anio = str(anio_actual)
     bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
     w = bbox[2] - bbox[0]
-    draw.text(((width - w)//2, 470), texto_anio, fill="#aaaaaa", font=font_year)
+    draw.text(((width - w)//2, 465), texto_anio, fill="white", font=font_year)
 
     # =========================================================
-    # 🔥 ESCALADO A 24mm REAL (300 DPI) SIN PERDER DISEÑO
+    # 🔥 ESCALA A 24mm SIN ROMPER DISEÑO
     # =========================================================
     dpi = 300
     mm_to_inch = 25.4
     target_mm = 24
-    target_px = int((target_mm / mm_to_inch) * dpi)  # ≈ 283 px
+    target_px = int((target_mm / mm_to_inch) * dpi)
 
-    # Mantener proporción y centrar en fondo negro (NO deforma)
     etiqueta.thumbnail((target_px, target_px), Image.LANCZOS)
 
-    final = Image.new("RGB", (target_px, target_px), "#0d0d0d")
+    final = Image.new("RGB", (target_px, target_px), "black")
     x = (target_px - etiqueta.width) // 2
     y = (target_px - etiqueta.height) // 2
     final.paste(etiqueta, (x, y))
