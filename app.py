@@ -1559,9 +1559,9 @@ def generar_etiqueta(id):
     )
 
     # Fuentes
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 30)
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 35)
     font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 65)
-    font_year = ImageFont.truetype("DejaVuSans.ttf", 30)
+    font_year = ImageFont.truetype("DejaVuSans.ttf", 35)
 
     # -------- TÍTULO --------
     titulo = "Dir. PATRIMONIO"
