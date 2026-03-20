@@ -1534,7 +1534,7 @@ def generar_etiqueta(id):
     url_qr = BASE_URL + ruta_local
 
     # =========================================================
-    # 🔥 TAMAÑO REAL 24mm x 30mm (SIN ESCALAR DESPUÉS)
+    # TAMAÑO REAL 24mm x 30mm (VERTICAL DISEÑO)
     # =========================================================
     dpi = 300
     mm_to_inch = 25.4
@@ -1542,14 +1542,14 @@ def generar_etiqueta(id):
     width_mm = 24
     height_mm = 30
 
-    width = int((width_mm / mm_to_inch) * dpi)   # ~283 px
-    height = int((height_mm / mm_to_inch) * dpi) # ~354 px
+    width = int((width_mm / mm_to_inch) * dpi)
+    height = int((height_mm / mm_to_inch) * dpi)
 
     etiqueta = Image.new('RGB', (width, height), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
     # =========================================================
-    # QR (proporcional al tamaño)
+    # QR
     # =========================================================
     qr_size = int(width * 0.75)
 
@@ -1563,7 +1563,6 @@ def generar_etiqueta(id):
     qr_x = (width - qr_size) // 2
     qr_y = int(height * 0.18)
 
-    # Fondo blanco QR
     draw.rectangle(
         [(qr_x - 6, qr_y - 6), (qr_x + qr_size + 6, qr_y + qr_size + 6)],
         fill="white"
@@ -1572,56 +1571,37 @@ def generar_etiqueta(id):
     etiqueta.paste(qr_img, (qr_x, qr_y))
 
     # =========================================================
-    # FUENTES (proporcionales)
+    # FUENTES
     # =========================================================
     font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(width * 0.12))
     font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", int(width * 0.22))
     font_year = ImageFont.truetype("DejaVuSans.ttf", int(width * 0.10))
 
-    # =========================================================
-    # TÍTULO ARRIBA
-    # =========================================================
+    # TÍTULO
     titulo = "DIR. PATRIMONIO"
-
     bbox = draw.textbbox((0, 0), titulo, font=font_title)
     w = bbox[2] - bbox[0]
 
-    draw.text(
-        ((width - w)//2, 10),
-        titulo,
-        fill="white",
-        font=font_title
-    )
+    draw.text(((width - w)//2, 10), titulo, fill="white", font=font_title)
 
-    # =========================================================
-    # ID ABAJO GRANDE
-    # =========================================================
+    # ID
     texto_id = id.zfill(6)
-
     bbox = draw.textbbox((0, 0), texto_id, font=font_id)
     w = bbox[2] - bbox[0]
 
-    draw.text(
-        ((width - w)//2, int(height * 0.78)),
-        texto_id,
-        fill="white",
-        font=font_id
-    )
+    draw.text(((width - w)//2, int(height * 0.78)), texto_id, fill="white", font=font_id)
 
-    # =========================================================
     # AÑO
-    # =========================================================
     texto_anio = "2026"
-
     bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
     w = bbox[2] - bbox[0]
 
-    draw.text(
-        ((width - w)//2, int(height * 0.90)),
-        texto_anio,
-        fill="white",
-        font=font_year
-    )
+    draw.text(((width - w)//2, int(height * 0.90)), texto_anio, fill="white", font=font_year)
+
+    # =========================================================
+    # 🔥 ROTAR A HORIZONTAL (CLAVE)
+    # =========================================================
+    etiqueta = etiqueta.rotate(90, expand=True)
 
     # =========================================================
     # EXPORTAR
