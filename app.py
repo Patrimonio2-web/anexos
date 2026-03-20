@@ -1532,17 +1532,17 @@ def generar_etiqueta(id):
     # =========================================================
     # URL QR
     # =========================================================
-    ruta_local = url_for('ver_mobiliario_por_id', id=id)
+    ruta_local = url_for('ver', id=id)
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
     # =========================================================
-    # TAMAÑO (30mm x 24mm HORIZONTAL)
+    # TAMAÑO (65mm x 24mm)
     # =========================================================
     dpi = 300
     mm_to_inch = 25.4
-    
-    width = int((65 / mm_to_inch) * dpi)
+
+    width = int((71 / mm_to_inch) * dpi)
     height = int((24 / mm_to_inch) * dpi)
 
     etiqueta = Image.new('RGB', (width, height), 'black')
@@ -1553,7 +1553,7 @@ def generar_etiqueta(id):
     # =========================================================
     # QR
     # =========================================================
-    qr_size = int(height * 0.8)
+    qr_size = int(height * 0.85)
 
     qr = qrcode.QRCode(border=1)
     qr.add_data(url_qr)
@@ -1573,43 +1573,78 @@ def generar_etiqueta(id):
     etiqueta.paste(qr_img, (qr_x, qr_y))
 
     # =========================================================
-    # TEXTO
+    # TEXTO (CENTRADO PROFESIONAL)
     # =========================================================
     text_x = qr_x + qr_size + padding
+    text_width = width - text_x - padding
 
-    # Fuentes
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.13))
-    font_sub = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
-    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.22))
-    font_year = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.12))
+    # Fuentes (escala optimizada)
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.14))
+    font_sub   = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
+    font_id    = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.36))
+    font_year  = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.13))
     font_legal = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.09))
 
-    y = padding
-
-    # TITULO
-    draw.text((text_x, y), "FUNCION LEGISLATIVA", fill="white", font=font_title)
-    y += int(height * 0.16)
-
-    draw.text((text_x, y), "Dirección de Patrimonio", fill="white", font=font_sub)
-    y += int(height * 0.13)
-    
-    # ID (PROTAGONISTA)
+    # Textos
+    titulo = "FUNCION LEGISLATIVA"
+    sub = "Dirección de Patrimonio"
     texto_id = f"ID: {id.zfill(6)}"
-    draw.text((text_x, y), texto_id, fill="white", font=font_id)
-    y += int(height * 0.22)
-
-    # AÑO
     anio = f"AÑO {datetime.now().year}"
-    draw.text((text_x, y), anio, fill="white", font=font_year)
-    y += int(height * 0.15)
+    legal = "Prohibido remover o adulterar esta etiqueta"
 
-    # TEXTO LEGAL
-    draw.text(
-        (text_x, y),
-        "Prohibido remover o adulterar esta etiqueta",
-        fill="white",
-        font=font_legal
+    # Espaciado
+    spacing_small = int(height * 0.03)
+    spacing_big = int(height * 0.06)
+
+    # Función altura real
+    def h(text, font):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[3] - bbox[1]
+
+    h_title = h(titulo, font_title)
+    h_sub   = h(sub, font_sub)
+    h_id    = h(texto_id, font_id)
+    h_year  = h(anio, font_year)
+    h_legal = h(legal, font_legal)
+
+    # Altura total bloque
+    total_height = (
+        h_title +
+        spacing_small +
+        h_sub +
+        spacing_big +
+        h_id +
+        spacing_small +
+        h_year +
+        spacing_big +
+        h_legal
     )
+
+    # CENTRADO VERTICAL
+    y = (height - total_height) // 2
+
+    # Función centrado horizontal
+    def draw_centered(text, y, font):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        x = text_x + (text_width - w) // 2
+        draw.text((x, y), text, fill="white", font=font)
+
+    # DIBUJO
+
+    draw_centered(titulo, y, font_title)
+    y += h_title + spacing_small
+
+    draw_centered(sub, y, font_sub)
+    y += h_sub + spacing_big
+
+    draw_centered(texto_id, y, font_id)
+    y += h_id + spacing_small
+
+    draw_centered(anio, y, font_year)
+    y += h_year + spacing_big
+
+    draw_centered(legal, y, font_legal)
 
     # =========================================================
     # EXPORTAR
