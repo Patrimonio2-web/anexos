@@ -1527,31 +1527,33 @@ def generar_etiqueta(id):
     from PIL import Image, ImageDraw, ImageFont
     import io
     from flask import send_file, url_for
+    from datetime import datetime
 
+    # =========================================================
     # URL QR
+    # =========================================================
     ruta_local = url_for('ver_mobiliario_por_id', id=id)
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
     # =========================================================
-    # TAMAÑO REAL 24mm x 30mm (VERTICAL DISEÑO)
+    # TAMAÑO (30mm x 24mm HORIZONTAL)
     # =========================================================
     dpi = 300
     mm_to_inch = 25.4
 
-    width_mm = 24
-    height_mm = 30
-
-    width = int((width_mm / mm_to_inch) * dpi)
-    height = int((height_mm / mm_to_inch) * dpi)
+    width = int((30 / mm_to_inch) * dpi)
+    height = int((24 / mm_to_inch) * dpi)
 
     etiqueta = Image.new('RGB', (width, height), 'black')
     draw = ImageDraw.Draw(etiqueta)
 
+    padding = int(width * 0.04)
+
     # =========================================================
     # QR
     # =========================================================
-    qr_size = int(width * 0.75)
+    qr_size = int(height * 0.8)
 
     qr = qrcode.QRCode(border=1)
     qr.add_data(url_qr)
@@ -1560,48 +1562,57 @@ def generar_etiqueta(id):
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     qr_img = qr_img.resize((qr_size, qr_size))
 
-    qr_x = (width - qr_size) // 2
-    qr_y = int(height * 0.18)
+    qr_x = padding
+    qr_y = (height - qr_size) // 2
 
     draw.rectangle(
-        [(qr_x - 6, qr_y - 6), (qr_x + qr_size + 6, qr_y + qr_size + 6)],
+        [(qr_x - 4, qr_y - 4), (qr_x + qr_size + 4, qr_y + qr_size + 4)],
         fill="white"
     )
 
     etiqueta.paste(qr_img, (qr_x, qr_y))
 
     # =========================================================
-    # FUENTES
+    # TEXTO
     # =========================================================
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(width * 0.12))
-    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", int(width * 0.22))
-    font_year = ImageFont.truetype("DejaVuSans.ttf", int(width * 0.10))
+    text_x = qr_x + qr_size + padding
 
-    # TÍTULO
-    titulo = "DIR. PATRIMONIO"
-    bbox = draw.textbbox((0, 0), titulo, font=font_title)
-    w = bbox[2] - bbox[0]
+    # Fuentes
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.13))
+    font_sub = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
+    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.22))
+    font_year = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.12))
+    font_legal = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.09))
 
-    draw.text(((width - w)//2, 10), titulo, fill="white", font=font_title)
+    y = padding
 
-    # ID
-    texto_id = id.zfill(6)
-    bbox = draw.textbbox((0, 0), texto_id, font=font_id)
-    w = bbox[2] - bbox[0]
+    # TITULO
+    draw.text((text_x, y), "FUNCION LEGISLATIVA", fill="white", font=font_title)
+    y += int(height * 0.16)
 
-    draw.text(((width - w)//2, int(height * 0.78)), texto_id, fill="white", font=font_id)
+    draw.text((text_x, y), "Dirección de Patrimonio", fill="white", font=font_sub)
+    y += int(height * 0.13)
+
+    draw.text((text_x, y), "Control de Inventario", fill="white", font=font_sub)
+    y += int(height * 0.18)
+
+    # ID (PROTAGONISTA)
+    texto_id = f"ID: {id.zfill(6)}"
+    draw.text((text_x, y), texto_id, fill="white", font=font_id)
+    y += int(height * 0.22)
 
     # AÑO
-    texto_anio = "2026"
-    bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
-    w = bbox[2] - bbox[0]
+    anio = f"AÑO {datetime.now().year}"
+    draw.text((text_x, y), anio, fill="white", font=font_year)
+    y += int(height * 0.15)
 
-    draw.text(((width - w)//2, int(height * 0.90)), texto_anio, fill="white", font=font_year)
-
-    # =========================================================
-    # 🔥 ROTAR A HORIZONTAL (CLAVE)
-    # =========================================================
-    etiqueta = etiqueta.rotate(90, expand=True)
+    # TEXTO LEGAL
+    draw.text(
+        (text_x, y),
+        "Prohibido remover o adulterar esta etiqueta",
+        fill="white",
+        font=font_legal
+    )
 
     # =========================================================
     # EXPORTAR
