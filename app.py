@@ -1542,7 +1542,7 @@ def generar_etiqueta(id):
     dpi = 300
     mm_to_inch = 25.4
 
-    width = int((30 / mm_to_inch) * dpi)
+    width = int((48 / mm_to_inch) * dpi)
     height = int((24 / mm_to_inch) * dpi)
 
     etiqueta = Image.new('RGB', (width, height), 'black')
