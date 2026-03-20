@@ -1542,7 +1542,7 @@ def generar_etiqueta(id):
     dpi = 300
     mm_to_inch = 25.4
     
-    width = int((60 / mm_to_inch) * dpi)
+    width = int((65 / mm_to_inch) * dpi)
     height = int((24 / mm_to_inch) * dpi)
 
     etiqueta = Image.new('RGB', (width, height), 'black')
@@ -1592,10 +1592,7 @@ def generar_etiqueta(id):
 
     draw.text((text_x, y), "Dirección de Patrimonio", fill="white", font=font_sub)
     y += int(height * 0.13)
-
-    draw.text((text_x, y), "Control de Inventario", fill="white", font=font_sub)
-    y += int(height * 0.18)
-
+    
     # ID (PROTAGONISTA)
     texto_id = f"ID: {id.zfill(6)}"
     draw.text((text_x, y), texto_id, fill="white", font=font_id)
