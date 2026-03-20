@@ -1537,7 +1537,7 @@ def generar_etiqueta(id):
     url_qr = BASE_URL + ruta_local
 
     # QR
-    qr_size = 240
+    qr_size = 260
     qr = qrcode.QRCode(border=1)
     qr.add_data(url_qr)
     qr.make(fit=True)
@@ -1559,12 +1559,12 @@ def generar_etiqueta(id):
     )
 
     # Fuentes
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 28)
-    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 60)
-    font_year = ImageFont.truetype("DejaVuSans.ttf", 28)
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 30)
+    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 65)
+    font_year = ImageFont.truetype("DejaVuSans.ttf", 30)
 
     # -------- TÍTULO --------
-    titulo = "FUNCION LEGISLATIVA"
+    titulo = "Dir. PATRIMONIO"
     bbox = draw.textbbox((0, 0), titulo, font=font_title)
     w = bbox[2] - bbox[0]
     draw.text(((width - w)//2, 40), titulo, fill="white", font=font_title)
