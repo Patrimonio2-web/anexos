@@ -1582,7 +1582,7 @@ def generar_etiqueta(id):
     font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.14))
     font_sub   = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
     font_id    = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.32))
-    font_year  = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.13))
+    font_year  = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
     font_legal = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.09))
 
     # Textos
