@@ -1523,109 +1523,114 @@ def ver_etiqueta_para_imprimir(id):
 
 @app.route('/mobiliario/etiqueta/<string:id>')
 def generar_etiqueta(id):
-    from datetime import datetime
     import qrcode
     from PIL import Image, ImageDraw, ImageFont
     import io
     from flask import send_file, url_for
-
-    anio_actual = datetime.now().year
 
     # URL QR
     ruta_local = url_for('ver_mobiliario_por_id', id=id)
     BASE_URL = "https://anexos.onrender.com"
     url_qr = BASE_URL + ruta_local
 
-    # QR
-    qr_size = 260
-    qr = qrcode.QRCode(border=1)
-    qr.add_data(url_qr)
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    qr_img = qr_img.resize((qr_size, qr_size))
-
-    # Canvas NEGRO PURO
-    width, height = 380, 520
-    etiqueta = Image.new('RGB', (width, height), 'black')
-    draw = ImageDraw.Draw(etiqueta)
-
-    # ❌ SACAMOS GRISES → todo blanco o negro
-    # Borde
-    draw.rounded_rectangle(
-        [(6, 6), (width-6, height-6)],
-        radius=45,
-        outline="white",
-        width=2
-    )
-
-    # Fuentes
-    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 35)
-    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", 65)
-    font_year = ImageFont.truetype("DejaVuSans.ttf", 35)
-
-    # -------- TÍTULO --------
-    titulo = "Dir. PATRIMONIO"
-    bbox = draw.textbbox((0, 0), titulo, font=font_title)
-    w = bbox[2] - bbox[0]
-    draw.text(((width - w)//2, 40), titulo, fill="white", font=font_title)
-
-    # Línea blanca (no gris)
-    draw.line([(60, 100), (width-60, 100)], fill="white", width=2)
-
-    # -------- QR --------
-    qr_bg_margin = 15
-    qr_bg_x1 = (width - qr_size)//2 - qr_bg_margin
-    qr_bg_y1 = 120 - qr_bg_margin
-    qr_bg_x2 = (width + qr_size)//2 + qr_bg_margin
-    qr_bg_y2 = 120 + qr_size + qr_bg_margin
-
-    # Fondo blanco QR
-    draw.rectangle(
-        [(qr_bg_x1, qr_bg_y1), (qr_bg_x2, qr_bg_y2)],
-        fill="white"
-    )
-
-    qr_x = (width - qr_size) // 2
-    etiqueta.paste(qr_img, (qr_x, 120))
-
-    # -------- ID --------
-    texto_id = id.zfill(6)
-    bbox = draw.textbbox((0, 0), texto_id, font=font_id)
-    w = bbox[2] - bbox[0]
-    draw.text(((width - w)//2, 400), texto_id, fill="white", font=font_id)
-
-    # -------- AÑO --------
-    texto_anio = str(anio_actual)
-    bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
-    w = bbox[2] - bbox[0]
-    draw.text(((width - w)//2, 465), texto_anio, fill="white", font=font_year)
-
     # =========================================================
-    # 🔥 ESCALA A 24mm SIN ROMPER DISEÑO
+    # 🔥 TAMAÑO REAL 24mm x 30mm (SIN ESCALAR DESPUÉS)
     # =========================================================
     dpi = 300
     mm_to_inch = 25.4
-    target_mm = 24
-    target_px = int((target_mm / mm_to_inch) * dpi)
 
-    etiqueta.thumbnail((target_px, target_px), Image.LANCZOS)
+    width_mm = 24
+    height_mm = 30
 
-    final = Image.new("RGB", (target_px, target_px), "black")
-    x = (target_px - etiqueta.width) // 2
-    y = (target_px - etiqueta.height) // 2
-    final.paste(etiqueta, (x, y))
-    etiqueta = final
+    width = int((width_mm / mm_to_inch) * dpi)   # ~283 px
+    height = int((height_mm / mm_to_inch) * dpi) # ~354 px
 
-    # Exportar
+    etiqueta = Image.new('RGB', (width, height), 'black')
+    draw = ImageDraw.Draw(etiqueta)
+
+    # =========================================================
+    # QR (proporcional al tamaño)
+    # =========================================================
+    qr_size = int(width * 0.75)
+
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url_qr)
+    qr.make(fit=True)
+
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    qr_img = qr_img.resize((qr_size, qr_size))
+
+    qr_x = (width - qr_size) // 2
+    qr_y = int(height * 0.18)
+
+    # Fondo blanco QR
+    draw.rectangle(
+        [(qr_x - 6, qr_y - 6), (qr_x + qr_size + 6, qr_y + qr_size + 6)],
+        fill="white"
+    )
+
+    etiqueta.paste(qr_img, (qr_x, qr_y))
+
+    # =========================================================
+    # FUENTES (proporcionales)
+    # =========================================================
+    font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(width * 0.12))
+    font_id = ImageFont.truetype("DejaVuSans-Bold.ttf", int(width * 0.22))
+    font_year = ImageFont.truetype("DejaVuSans.ttf", int(width * 0.10))
+
+    # =========================================================
+    # TÍTULO ARRIBA
+    # =========================================================
+    titulo = "DIR. PATRIMONIO"
+
+    bbox = draw.textbbox((0, 0), titulo, font=font_title)
+    w = bbox[2] - bbox[0]
+
+    draw.text(
+        ((width - w)//2, 10),
+        titulo,
+        fill="white",
+        font=font_title
+    )
+
+    # =========================================================
+    # ID ABAJO GRANDE
+    # =========================================================
+    texto_id = id.zfill(6)
+
+    bbox = draw.textbbox((0, 0), texto_id, font=font_id)
+    w = bbox[2] - bbox[0]
+
+    draw.text(
+        ((width - w)//2, int(height * 0.78)),
+        texto_id,
+        fill="white",
+        font=font_id
+    )
+
+    # =========================================================
+    # AÑO
+    # =========================================================
+    texto_anio = "2026"
+
+    bbox = draw.textbbox((0, 0), texto_anio, font=font_year)
+    w = bbox[2] - bbox[0]
+
+    draw.text(
+        ((width - w)//2, int(height * 0.90)),
+        texto_anio,
+        fill="white",
+        font=font_year
+    )
+
+    # =========================================================
+    # EXPORTAR
+    # =========================================================
     buffer = io.BytesIO()
     etiqueta.save(buffer, format='PNG')
     buffer.seek(0)
 
-    return send_file(
-        buffer,
-        mimetype='image/png',
-        download_name=f"etiqueta_{id}.png"
-    )
+    return send_file(buffer, mimetype='image/png')
 
 #vista que me llevan los qr---------------------------------------------------------------------
 @app.route('/api/mobiliario/<mobiliario_id>/advertencia', methods=['GET'])
