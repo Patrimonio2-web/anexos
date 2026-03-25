@@ -1609,7 +1609,7 @@ def generar_etiqueta(id):
     h_sub   = h(sub, font_sub)
     h_id    = h(texto_id, font_id)
     h_year  = h(anio, font_year)
-    h_legal = h(legal, font_legal)
+
 
     # Altura total bloque
     total_height = (
@@ -1619,9 +1619,7 @@ def generar_etiqueta(id):
         spacing_big +
         h_id +
         spacing_small +
-        h_year +
-        spacing_big +
-        h_legal
+        h_year
     )
 
     # CENTRADO VERTICAL
@@ -1647,8 +1645,6 @@ def generar_etiqueta(id):
 
     draw_centered(anio, y, font_year)
     y += h_year + spacing_big
-
-    draw_centered(legal, y, font_legal)
 
     # =========================================================
     # EXPORTAR
