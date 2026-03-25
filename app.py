@@ -1597,8 +1597,8 @@ def generar_etiqueta(id):
     
 
     # Espaciado
-    spacing_small = int(height * 0.06)
-    spacing_big = int(height * 0.12)
+    spacing_small = int(height * 0.05)
+    spacing_big = int(height * 0.09)
 
     # Función altura real
     def h(text, font):
