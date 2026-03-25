@@ -543,7 +543,7 @@ def get_auditoria():
     sql = """
         SELECT
             id,
-            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha,
+            to_char(fecha, 'DD/MM/YYYY HH24:MI') AS fecha_formateada,
             usuario,
             accion,
             tabla_afectada,
@@ -586,7 +586,7 @@ def get_auditoria():
         sql += " AND id_registro = :id_registro "
         params["id_registro"] = str(id_reg)
 
-    sql += " ORDER BY fecha DESC, id DESC LIMIT :limit OFFSET :offset "
+    sql += " ORDER BY auditoria.fecha DESC, auditoria.id DESC LIMIT :limit OFFSET :offset "
     params["limit"] = limit
     params["offset"] = offset
 
@@ -595,7 +595,12 @@ def get_auditoria():
     try:
         with db.engine.connect() as conn:
             result = conn.execute(text(sql), params)
-            data = [dict(row._mapping) for row in result]
+            data = []
+
+            for row in result:
+                item = dict(row._mapping)
+                item["fecha"] = item.pop("fecha_formateada")
+                data.append(item)
 
         print("[/api/auditoria] rows:", len(data))
         return jsonify(data), 200
