@@ -1595,7 +1595,7 @@ def generar_etiqueta(id):
     sub = "Dirección de Patrimonio"
     texto_id = f"ID: {id.zfill(6)}"
     anio = f"AÑO {datetime.now().year}"
-    legal = "Prohibido remover o adulterar esta etiqueta"
+    legal = "Prohibido remover o adulterar"
 
     # Espaciado
     spacing_small = int(height * 0.03)
