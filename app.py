@@ -1585,10 +1585,10 @@ def generar_etiqueta(id):
 
     # Fuentes (escala optimizada)
     font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.14))
-    font_sub   = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
+    font_sub   = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.12))
     font_id    = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.30))
-    font_year  = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.11))
-    font_legal = ImageFont.truetype("DejaVuSans.ttf", int(height * 0.09))
+    font_year  = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.11))
+    font_legal = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.11))
 
     # Textos
     titulo = "FUNCION LEGISLATIVA"
