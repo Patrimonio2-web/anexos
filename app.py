@@ -1586,19 +1586,19 @@ def generar_etiqueta(id):
     font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.14))
     font_sub   = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.12))
     font_id    = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.30))
-    font_year  = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.11))
-    font_legal = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.11))
+    font_year  = ImageFont.truetype("DejaVuSans-Bold.ttf", int(height * 0.15))
+
 
     # Textos
     titulo = "FUNCION LEGISLATIVA"
     sub = "Dirección de Patrimonio"
     texto_id = f"ID: {id.zfill(6)}"
     anio = f"AÑO {datetime.now().year}"
-    legal = "Prohibido remover o adulterar"
+    
 
     # Espaciado
-    spacing_small = int(height * 0.03)
-    spacing_big = int(height * 0.06)
+    spacing_small = int(height * 0.06)
+    spacing_big = int(height * 0.12)
 
     # Función altura real
     def h(text, font):
