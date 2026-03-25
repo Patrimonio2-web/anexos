@@ -1537,9 +1537,8 @@ def generar_etiqueta(id):
     # =========================================================
     # URL QR
     # =========================================================
-    ruta_local = url_for('ver_mobiliario_por_id', id=id)
     BASE_URL = "https://anexos.onrender.com"
-    url_qr = BASE_URL + ruta_local
+    url_qr = f"{BASE_URL}/ver?id={id}"
 
     # =========================================================
     # TAMAÑO (65mm x 24mm)
