@@ -827,6 +827,196 @@ def eliminar_subdependencia(id):
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# API NUEVA: RELEVAMIENTOS
+# -----------------------------------------------------------------------------
+# Bloque agregado para registrar fechas de relevamiento completado sin modificar
+# las tablas existentes de anexos, subdependencias ni mobiliario.
+# Crea y usa tablas independientes:
+#   - relevamientos_anexos
+#   - relevamientos_subdependencias
+# =============================================================================
+
+def _ensure_relevamientos_tables():
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS relevamientos_anexos (
+            id_anexo INTEGER PRIMARY KEY REFERENCES anexos(id) ON DELETE CASCADE,
+            fecha_completado DATE NOT NULL,
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS relevamientos_subdependencias (
+            id_subdependencia INTEGER PRIMARY KEY REFERENCES subdependencias(id) ON DELETE CASCADE,
+            fecha_completado DATE NOT NULL,
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.commit()
+
+
+def _parse_fecha_relevamiento(data):
+    fecha = str(data.get("fecha_completado") or data.get("fecha") or "").strip()
+    if not fecha:
+        raise ValueError("Falta la fecha de relevamiento")
+    try:
+        return datetime.strptime(fecha, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("La fecha debe tener formato YYYY-MM-DD")
+
+
+def _fecha_iso(value):
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _relevamiento_anexo_to_dict(row):
+    return {
+        "id_anexo": row["id_anexo"],
+        "fecha_completado": _fecha_iso(row["fecha_completado"]),
+        "fecha_creacion": _fecha_iso(row["fecha_creacion"]),
+        "fecha_actualizacion": _fecha_iso(row["fecha_actualizacion"]),
+    }
+
+
+def _relevamiento_subdependencia_to_dict(row):
+    return {
+        "id_subdependencia": row["id_subdependencia"],
+        "id_anexo": row["id_anexo"] if "id_anexo" in row else None,
+        "fecha_completado": _fecha_iso(row["fecha_completado"]),
+        "fecha_creacion": _fecha_iso(row["fecha_creacion"]),
+        "fecha_actualizacion": _fecha_iso(row["fecha_actualizacion"]),
+    }
+
+
+@app.route('/api/relevamientos/anexos', methods=['GET'])
+def obtener_relevamientos_anexos():
+    try:
+        _ensure_relevamientos_tables()
+        rows = db.session.execute(text("""
+            SELECT id_anexo, fecha_completado, fecha_creacion, fecha_actualizacion
+            FROM relevamientos_anexos
+            ORDER BY id_anexo ASC
+        """)).mappings().all()
+        return jsonify([_relevamiento_anexo_to_dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/relevamientos/anexos/<int:id_anexo>', methods=['PUT'])
+def guardar_relevamiento_anexo(id_anexo):
+    try:
+        _ensure_relevamientos_tables()
+        if not db.session.get(Anexo, id_anexo):
+            return jsonify({"error": "Anexo no encontrado"}), 404
+
+        fecha = _parse_fecha_relevamiento(request.get_json(silent=True) or {})
+        row = db.session.execute(text("""
+            INSERT INTO relevamientos_anexos (id_anexo, fecha_completado)
+            VALUES (:id_anexo, :fecha_completado)
+            ON CONFLICT (id_anexo) DO UPDATE SET
+                fecha_completado = EXCLUDED.fecha_completado,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            RETURNING id_anexo, fecha_completado, fecha_creacion, fecha_actualizacion
+        """), {
+            "id_anexo": id_anexo,
+            "fecha_completado": fecha,
+        }).mappings().first()
+        db.session.commit()
+        return jsonify(_relevamiento_anexo_to_dict(row)), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/relevamientos/anexos/<int:id_anexo>', methods=['DELETE'])
+def eliminar_relevamiento_anexo(id_anexo):
+    try:
+        _ensure_relevamientos_tables()
+        db.session.execute(text("""
+            DELETE FROM relevamientos_anexos
+            WHERE id_anexo = :id_anexo
+        """), {"id_anexo": id_anexo})
+        db.session.commit()
+        return jsonify({"mensaje": "Relevamiento de anexo eliminado"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/relevamientos/anexos/<int:id_anexo>/subdependencias', methods=['GET'])
+def obtener_relevamientos_subdependencias_por_anexo(id_anexo):
+    try:
+        _ensure_relevamientos_tables()
+        rows = db.session.execute(text("""
+            SELECT
+                rs.id_subdependencia,
+                s.id_anexo,
+                rs.fecha_completado,
+                rs.fecha_creacion,
+                rs.fecha_actualizacion
+            FROM relevamientos_subdependencias rs
+            JOIN subdependencias s ON s.id = rs.id_subdependencia
+            WHERE s.id_anexo = :id_anexo
+            ORDER BY rs.id_subdependencia ASC
+        """), {"id_anexo": id_anexo}).mappings().all()
+        return jsonify([_relevamiento_subdependencia_to_dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/relevamientos/subdependencias/<int:id_subdependencia>', methods=['PUT'])
+def guardar_relevamiento_subdependencia(id_subdependencia):
+    try:
+        _ensure_relevamientos_tables()
+        if not db.session.get(Subdependencia, id_subdependencia):
+            return jsonify({"error": "Subdependencia no encontrada"}), 404
+
+        fecha = _parse_fecha_relevamiento(request.get_json(silent=True) or {})
+        row = db.session.execute(text("""
+            INSERT INTO relevamientos_subdependencias (id_subdependencia, fecha_completado)
+            VALUES (:id_subdependencia, :fecha_completado)
+            ON CONFLICT (id_subdependencia) DO UPDATE SET
+                fecha_completado = EXCLUDED.fecha_completado,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            RETURNING id_subdependencia, fecha_completado, fecha_creacion, fecha_actualizacion
+        """), {
+            "id_subdependencia": id_subdependencia,
+            "fecha_completado": fecha,
+        }).mappings().first()
+        db.session.commit()
+        return jsonify(_relevamiento_subdependencia_to_dict(row)), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/relevamientos/subdependencias/<int:id_subdependencia>', methods=['DELETE'])
+def eliminar_relevamiento_subdependencia(id_subdependencia):
+    try:
+        _ensure_relevamientos_tables()
+        db.session.execute(text("""
+            DELETE FROM relevamientos_subdependencias
+            WHERE id_subdependencia = :id_subdependencia
+        """), {"id_subdependencia": id_subdependencia})
+        db.session.commit()
+        return jsonify({"mensaje": "Relevamiento de subdependencia eliminado"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 
 
 

@@ -196,6 +196,32 @@ CREATE TABLE public.subdependencias (
 
 ALTER TABLE public.subdependencias OWNER TO patrimonio_ppfk_user;
 
+
+--
+-- API NUEVA: relevamientos; tablas independientes para no modificar anexos ni subdependencias
+--
+
+CREATE TABLE IF NOT EXISTS public.relevamientos_anexos (
+    id_anexo integer PRIMARY KEY REFERENCES public.anexos(id) ON DELETE CASCADE,
+    fecha_completado date NOT NULL,
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.relevamientos_anexos OWNER TO patrimonio_ppfk_user;
+
+
+CREATE TABLE IF NOT EXISTS public.relevamientos_subdependencias (
+    id_subdependencia integer PRIMARY KEY REFERENCES public.subdependencias(id) ON DELETE CASCADE,
+    fecha_completado date NOT NULL,
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.relevamientos_subdependencias OWNER TO patrimonio_ppfk_user;
+
 --
 -- Name: vista_mobiliario_con_ubicacion; Type: VIEW; Schema: public; Owner: patrimonio_ppfk_user
 --
