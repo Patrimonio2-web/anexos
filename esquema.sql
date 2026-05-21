@@ -198,6 +198,17 @@ ALTER TABLE public.subdependencias OWNER TO patrimonio_ppfk_user;
 
 
 --
+-- API NUEVA: perfil de usuario; datos opcionales sobre usuarios existentes
+--
+
+ALTER TABLE IF EXISTS public.usuarios
+    ADD COLUMN IF NOT EXISTS nombre character varying(100);
+
+ALTER TABLE IF EXISTS public.usuarios
+    ADD COLUMN IF NOT EXISTS apellido character varying(100);
+
+
+--
 -- API NUEVA: relevamientos; tablas independientes para no modificar anexos ni subdependencias
 --
 

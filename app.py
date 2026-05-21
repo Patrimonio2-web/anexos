@@ -148,6 +148,8 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)  # hash
+    nombre = db.Column(db.String(100))
+    apellido = db.Column(db.String(100))
     role = db.Column(db.String(20), nullable=False, default='usuario')
     activo = db.Column(db.Boolean, nullable=False, default=True)
     fecha_creacion = db.Column(db.DateTime, server_default=db.func.now())
@@ -288,6 +290,20 @@ def subir_imagen():
 import psycopg2  # para capturar UndefinedColumn
 from werkzeug.security import check_password_hash, generate_password_hash
 
+
+def _password_esta_hasheada(value):
+    return str(value or "").startswith(("pbkdf2:", "scrypt:", "argon2:"))
+
+
+def _password_coincide(stored, provided):
+    if _password_esta_hasheada(stored):
+        try:
+            return check_password_hash(stored, provided)
+        except ValueError:
+            return False
+    return (stored or "") == (provided or "")
+
+
 @app.post("/api/login")
 def api_login():
     data = request.get_json() or {}
@@ -338,15 +354,15 @@ def api_login():
 
     def is_hashed(p: str) -> bool:
         # Heurística para hashes de werkzeug (pbkdf2:sha256:...)
-        return p.startswith("pbkdf2:")
+        return _password_esta_hasheada(p)
 
     # Caso 1: ya está hasheada → validar normal
     if is_hashed(stored):
-        if not check_password_hash(stored, password):
+        if not _password_coincide(stored, password):
             return jsonify({"error": "invalid_credentials"}), 401
     else:
         # Caso 2: estaba en texto plano → migrar si coincide
-        if stored != password:
+        if not _password_coincide(stored, password):
             return jsonify({"error": "invalid_credentials"}), 401
         try:
             new_hash = generate_password_hash(password)
@@ -369,6 +385,160 @@ def api_login():
 @login_required_api
 def api_me():
     return jsonify({"username": session.get("username"), "role": session.get("role")}), 200
+
+
+# =============================================================================
+# API NUEVA: PERFIL USUARIO
+# -----------------------------------------------------------------------------
+# Bloque agregado para editar datos del usuario autenticado sin resetear cuentas
+# existentes. Las columnas nombre/apellido son opcionales sobre usuarios.
+# =============================================================================
+
+def _ensure_perfil_usuario_columns():
+    db.session.execute(text("""
+        ALTER TABLE IF EXISTS usuarios
+        ADD COLUMN IF NOT EXISTS nombre VARCHAR(100)
+    """))
+    db.session.execute(text("""
+        ALTER TABLE IF EXISTS usuarios
+        ADD COLUMN IF NOT EXISTS apellido VARCHAR(100)
+    """))
+    db.session.commit()
+
+
+def _perfil_usuario_actual():
+    return db.session.execute(text("""
+        SELECT id, username, nombre, apellido
+        FROM usuarios
+        WHERE username = :username
+        LIMIT 1
+    """), {"username": session.get("username")}).mappings().first()
+
+
+def _perfil_usuario_to_dict(row):
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "nombre": row["nombre"] or "",
+        "apellido": row["apellido"] or "",
+        "role": session.get("role") or "usuario",
+    }
+
+
+def _texto_perfil(data, key, max_length):
+    value = str(data.get(key) or "").strip()
+    if len(value) > max_length:
+        raise ValueError(f"{key} supera el maximo de {max_length} caracteres")
+    return value or None
+
+
+@app.get("/api/perfil")
+@login_required_api
+def obtener_perfil_usuario():
+    try:
+        _ensure_perfil_usuario_columns()
+        row = _perfil_usuario_actual()
+        if not row:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        return jsonify(_perfil_usuario_to_dict(row)), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.put("/api/perfil")
+@login_required_api
+def actualizar_perfil_usuario():
+    try:
+        _ensure_perfil_usuario_columns()
+        data = request.get_json(silent=True) or {}
+        username = str(data.get("username") or "").strip()
+        if not username:
+            return jsonify({"error": "El usuario es obligatorio"}), 400
+        if len(username) > 50:
+            return jsonify({"error": "El usuario supera el maximo de 50 caracteres"}), 400
+
+        actual = _perfil_usuario_actual()
+        if not actual:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        nombre = _texto_perfil(data, "nombre", 100)
+        apellido = _texto_perfil(data, "apellido", 100)
+        repetido = db.session.execute(text("""
+            SELECT id
+            FROM usuarios
+            WHERE LOWER(username) = LOWER(:username)
+              AND id <> :id
+            LIMIT 1
+        """), {"username": username, "id": actual["id"]}).mappings().first()
+        if repetido:
+            db.session.rollback()
+            return jsonify({"error": "Ese nombre de usuario ya esta en uso"}), 409
+
+        row = db.session.execute(text("""
+            UPDATE usuarios
+            SET username = :username,
+                nombre = :nombre,
+                apellido = :apellido
+            WHERE id = :id
+            RETURNING id, username, nombre, apellido
+        """), {
+            "id": actual["id"],
+            "username": username,
+            "nombre": nombre,
+            "apellido": apellido,
+        }).mappings().first()
+        db.session.commit()
+        session["username"] = row["username"]
+        return jsonify(_perfil_usuario_to_dict(row)), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.put("/api/perfil/password")
+@login_required_api
+def actualizar_password_perfil_usuario():
+    try:
+        data = request.get_json(silent=True) or {}
+        actual_password = data.get("password_actual") or ""
+        nueva_password = data.get("password_nueva") or ""
+        confirmar_password = data.get("password_confirmacion") or ""
+        if not actual_password or not nueva_password or not confirmar_password:
+            return jsonify({"error": "Completa todos los campos de contrasena"}), 400
+        if nueva_password != confirmar_password:
+            return jsonify({"error": "La confirmacion de contrasena no coincide"}), 400
+        if len(nueva_password) < 6:
+            return jsonify({"error": "La nueva contrasena debe tener al menos 6 caracteres"}), 400
+
+        row = db.session.execute(text("""
+            SELECT id, password
+            FROM usuarios
+            WHERE username = :username
+            LIMIT 1
+        """), {"username": session.get("username")}).mappings().first()
+        if not row:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        if not _password_coincide(row["password"], actual_password):
+            return jsonify({"error": "La contrasena actual es incorrecta"}), 400
+
+        db.session.execute(text("""
+            UPDATE usuarios
+            SET password = :password
+            WHERE id = :id
+        """), {
+            "id": row["id"],
+            "password": generate_password_hash(nueva_password),
+        })
+        db.session.commit()
+        return jsonify({"mensaje": "Contrasena actualizada"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 
 @app.post("/api/logout")
 def api_logout():
