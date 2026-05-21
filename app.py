@@ -834,7 +834,9 @@ def eliminar_subdependencia(id):
 # las tablas existentes de anexos, subdependencias ni mobiliario.
 # Crea y usa tablas independientes:
 #   - relevamientos_anexos
+#   - relevamientos_anexos_historial
 #   - relevamientos_subdependencias
+#   - relevamientos_subdependencias_historial
 # =============================================================================
 
 def _ensure_relevamientos_tables():
@@ -847,11 +849,66 @@ def _ensure_relevamientos_tables():
         )
     """))
     db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS relevamientos_anexos_historial (
+            id SERIAL PRIMARY KEY,
+            id_anexo INTEGER NOT NULL REFERENCES anexos(id) ON DELETE CASCADE,
+            fecha_completado DATE NOT NULL,
+            comentario TEXT,
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS relevamientos_subdependencias (
             id_subdependencia INTEGER PRIMARY KEY REFERENCES subdependencias(id) ON DELETE CASCADE,
             fecha_completado DATE NOT NULL,
             fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS relevamientos_subdependencias_historial (
+            id SERIAL PRIMARY KEY,
+            id_subdependencia INTEGER NOT NULL REFERENCES subdependencias(id) ON DELETE CASCADE,
+            fecha_completado DATE NOT NULL,
+            comentario TEXT,
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_relevamientos_anexos_historial_anexo
+        ON relevamientos_anexos_historial (id_anexo, fecha_completado DESC, fecha_creacion DESC)
+    """))
+    db.session.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_relevamientos_subdependencias_historial_subdependencia
+        ON relevamientos_subdependencias_historial (
+            id_subdependencia,
+            fecha_completado DESC,
+            fecha_creacion DESC
+        )
+    """))
+    db.session.execute(text("""
+        INSERT INTO relevamientos_anexos_historial (id_anexo, fecha_completado)
+        SELECT ra.id_anexo, ra.fecha_completado
+        FROM relevamientos_anexos ra
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM relevamientos_anexos_historial rah
+            WHERE rah.id_anexo = ra.id_anexo
+              AND rah.fecha_completado = ra.fecha_completado
+        )
+    """))
+    db.session.execute(text("""
+        INSERT INTO relevamientos_subdependencias_historial (
+            id_subdependencia,
+            fecha_completado
+        )
+        SELECT rs.id_subdependencia, rs.fecha_completado
+        FROM relevamientos_subdependencias rs
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM relevamientos_subdependencias_historial rsh
+            WHERE rsh.id_subdependencia = rs.id_subdependencia
+              AND rsh.fecha_completado = rs.fecha_completado
         )
     """))
     db.session.commit()
@@ -865,6 +922,11 @@ def _parse_fecha_relevamiento(data):
         return datetime.strptime(fecha, "%Y-%m-%d").date()
     except ValueError:
         raise ValueError("La fecha debe tener formato YYYY-MM-DD")
+
+
+def _parse_comentario_relevamiento(data):
+    comentario = str(data.get("comentario") or "").strip()
+    return comentario or None
 
 
 def _fecha_iso(value):
@@ -892,6 +954,27 @@ def _relevamiento_subdependencia_to_dict(row):
     }
 
 
+def _historial_relevamiento_anexo_to_dict(row):
+    return {
+        "id": row["id"],
+        "id_anexo": row["id_anexo"],
+        "fecha_completado": _fecha_iso(row["fecha_completado"]),
+        "comentario": row["comentario"],
+        "fecha_creacion": _fecha_iso(row["fecha_creacion"]),
+    }
+
+
+def _historial_relevamiento_subdependencia_to_dict(row):
+    return {
+        "id": row["id"],
+        "id_subdependencia": row["id_subdependencia"],
+        "id_anexo": row["id_anexo"] if "id_anexo" in row else None,
+        "fecha_completado": _fecha_iso(row["fecha_completado"]),
+        "comentario": row["comentario"],
+        "fecha_creacion": _fecha_iso(row["fecha_creacion"]),
+    }
+
+
 @app.route('/api/relevamientos/anexos', methods=['GET'])
 def obtener_relevamientos_anexos():
     try:
@@ -914,7 +997,9 @@ def guardar_relevamiento_anexo(id_anexo):
         if not db.session.get(Anexo, id_anexo):
             return jsonify({"error": "Anexo no encontrado"}), 404
 
-        fecha = _parse_fecha_relevamiento(request.get_json(silent=True) or {})
+        data = request.get_json(silent=True) or {}
+        fecha = _parse_fecha_relevamiento(data)
+        comentario = _parse_comentario_relevamiento(data)
         row = db.session.execute(text("""
             INSERT INTO relevamientos_anexos (id_anexo, fecha_completado)
             VALUES (:id_anexo, :fecha_completado)
@@ -926,6 +1011,25 @@ def guardar_relevamiento_anexo(id_anexo):
             "id_anexo": id_anexo,
             "fecha_completado": fecha,
         }).mappings().first()
+        db.session.execute(text("""
+            INSERT INTO relevamientos_anexos_historial (
+                id_anexo,
+                fecha_completado,
+                comentario
+            )
+            SELECT :id_anexo, :fecha_completado, :comentario
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM relevamientos_anexos_historial rah
+                WHERE rah.id_anexo = :id_anexo
+                  AND rah.fecha_completado = :fecha_completado
+                  AND COALESCE(rah.comentario, '') = COALESCE(:comentario, '')
+            )
+        """), {
+            "id_anexo": id_anexo,
+            "fecha_completado": fecha,
+            "comentario": comentario,
+        })
         db.session.commit()
         return jsonify(_relevamiento_anexo_to_dict(row)), 200
     except ValueError as e:
@@ -946,6 +1050,22 @@ def eliminar_relevamiento_anexo(id_anexo):
         """), {"id_anexo": id_anexo})
         db.session.commit()
         return jsonify({"mensaje": "Relevamiento de anexo eliminado"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/relevamientos/anexos/<int:id_anexo>/historial', methods=['GET'])
+def obtener_historial_relevamientos_anexo(id_anexo):
+    try:
+        _ensure_relevamientos_tables()
+        rows = db.session.execute(text("""
+            SELECT id, id_anexo, fecha_completado, comentario, fecha_creacion
+            FROM relevamientos_anexos_historial
+            WHERE id_anexo = :id_anexo
+            ORDER BY fecha_completado DESC, fecha_creacion DESC, id DESC
+        """), {"id_anexo": id_anexo}).mappings().all()
+        return jsonify([_historial_relevamiento_anexo_to_dict(row) for row in rows])
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -973,6 +1093,29 @@ def obtener_relevamientos_subdependencias_por_anexo(id_anexo):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/relevamientos/subdependencias/<int:id_subdependencia>/historial', methods=['GET'])
+def obtener_historial_relevamientos_subdependencia(id_subdependencia):
+    try:
+        _ensure_relevamientos_tables()
+        rows = db.session.execute(text("""
+            SELECT
+                rh.id,
+                rh.id_subdependencia,
+                s.id_anexo,
+                rh.fecha_completado,
+                rh.comentario,
+                rh.fecha_creacion
+            FROM relevamientos_subdependencias_historial rh
+            JOIN subdependencias s ON s.id = rh.id_subdependencia
+            WHERE rh.id_subdependencia = :id_subdependencia
+            ORDER BY rh.fecha_completado DESC, rh.fecha_creacion DESC, rh.id DESC
+        """), {"id_subdependencia": id_subdependencia}).mappings().all()
+        return jsonify([_historial_relevamiento_subdependencia_to_dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/relevamientos/subdependencias/<int:id_subdependencia>', methods=['PUT'])
 def guardar_relevamiento_subdependencia(id_subdependencia):
     try:
@@ -980,7 +1123,9 @@ def guardar_relevamiento_subdependencia(id_subdependencia):
         if not db.session.get(Subdependencia, id_subdependencia):
             return jsonify({"error": "Subdependencia no encontrada"}), 404
 
-        fecha = _parse_fecha_relevamiento(request.get_json(silent=True) or {})
+        data = request.get_json(silent=True) or {}
+        fecha = _parse_fecha_relevamiento(data)
+        comentario = _parse_comentario_relevamiento(data)
         row = db.session.execute(text("""
             INSERT INTO relevamientos_subdependencias (id_subdependencia, fecha_completado)
             VALUES (:id_subdependencia, :fecha_completado)
@@ -992,6 +1137,25 @@ def guardar_relevamiento_subdependencia(id_subdependencia):
             "id_subdependencia": id_subdependencia,
             "fecha_completado": fecha,
         }).mappings().first()
+        db.session.execute(text("""
+            INSERT INTO relevamientos_subdependencias_historial (
+                id_subdependencia,
+                fecha_completado,
+                comentario
+            )
+            SELECT :id_subdependencia, :fecha_completado, :comentario
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM relevamientos_subdependencias_historial rsh
+                WHERE rsh.id_subdependencia = :id_subdependencia
+                  AND rsh.fecha_completado = :fecha_completado
+                  AND COALESCE(rsh.comentario, '') = COALESCE(:comentario, '')
+            )
+        """), {
+            "id_subdependencia": id_subdependencia,
+            "fecha_completado": fecha,
+            "comentario": comentario,
+        })
         db.session.commit()
         return jsonify(_relevamiento_subdependencia_to_dict(row)), 200
     except ValueError as e:
