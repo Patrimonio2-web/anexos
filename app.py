@@ -12,7 +12,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from datetime import datetime, timedelta
 
-import os, tempfile, io, json
+import os, tempfile, io, json, hmac, secrets, time
 import pytz
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
@@ -74,7 +74,12 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 # CORS permitido solo para los frontends configurados.
-CORS(app, supports_credentials=True, origins=FRONTEND_ORIGINS)
+CORS(
+    app,
+    supports_credentials=True,
+    origins=FRONTEND_ORIGINS,
+    allow_headers=["Content-Type", "X-CSRF-Token"],
+)
 
 # Cookies de sesion para cross-site (Vercel <-> Render).
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
@@ -137,6 +142,53 @@ def _is_viewer_session():
     return role == "viewer" or username == "dante"
 
 
+LOGIN_ATTEMPTS = {}
+LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
+LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "900"))
+
+
+def _login_rate_key(username):
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+    return f"{ip}:{(username or '').strip().lower()}"
+
+
+def _login_rate_allowed(username):
+    key = _login_rate_key(username)
+    now = time.time()
+    attempts = [
+        ts for ts in LOGIN_ATTEMPTS.get(key, [])
+        if now - ts < LOGIN_RATE_WINDOW_SECONDS
+    ]
+    LOGIN_ATTEMPTS[key] = attempts
+    if len(attempts) >= LOGIN_RATE_LIMIT:
+        retry_after = max(1, int(LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0])))
+        return False, retry_after
+    return True, 0
+
+
+def _record_login_failure(username):
+    key = _login_rate_key(username)
+    LOGIN_ATTEMPTS.setdefault(key, []).append(time.time())
+
+
+def _clear_login_failures(username):
+    LOGIN_ATTEMPTS.pop(_login_rate_key(username), None)
+
+
+def _ensure_csrf_token():
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def _csrf_token_valid():
+    expected = session.get("csrf_token")
+    provided = request.headers.get("X-CSRF-Token") or ""
+    return bool(expected and provided and hmac.compare_digest(expected, provided))
+
+
 def admin_required_api(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -167,6 +219,7 @@ PUBLIC_API_ENDPOINTS = {
     "mobiliario_advertencia_por_id",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+CSRF_EXEMPT_ENDPOINTS = PUBLIC_API_ENDPOINTS
 
 
 def _origin_is_allowed():
@@ -191,6 +244,10 @@ def proteger_api():
 
     if not (_main_username() or _personal_username()):
         return jsonify({"error": "unauthorized"}), 401
+
+    if request.method in UNSAFE_METHODS and request.endpoint not in CSRF_EXEMPT_ENDPOINTS:
+        if not _csrf_token_valid():
+            return jsonify({"error": "csrf_invalid"}), 403
 
     return None
 
@@ -405,6 +462,13 @@ def api_login():
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
 
+    allowed, retry_after = _login_rate_allowed(username)
+    if not allowed:
+        return jsonify({
+            "error": "too_many_attempts",
+            "retry_after": retry_after,
+        }), 429
+
     try:
         conn, cur = get_conn_dict()
         try:
@@ -439,8 +503,10 @@ def api_login():
         return jsonify({"error": "db_error"}), 500
 
     if not user:
+        _record_login_failure(username)
         return jsonify({"error": "invalid_credentials"}), 401
     if not user.get("activo", True):
+        _record_login_failure(username)
         return jsonify({"error": "user_inactive"}), 403
 
     stored = user.get("password") or ""
@@ -452,10 +518,12 @@ def api_login():
     # Caso 1: ya está hasheada → validar normal
     if is_hashed(stored):
         if not _password_coincide(stored, password):
+            _record_login_failure(username)
             return jsonify({"error": "invalid_credentials"}), 401
     else:
         # Caso 2: estaba en texto plano → migrar si coincide
         if not _password_coincide(stored, password):
+            _record_login_failure(username)
             return jsonify({"error": "invalid_credentials"}), 401
         try:
             new_hash = generate_password_hash(password)
@@ -472,12 +540,20 @@ def api_login():
     session.permanent = True
     session["username"] = user["username"]
     session["role"] = user.get("role", "usuario")
+    session["csrf_token"] = secrets.token_urlsafe(32)
+    _clear_login_failures(username)
     return jsonify({"username": session["username"], "role": session["role"]}), 200
 
 @app.get("/api/me")
 @login_required_api
 def api_me():
     return jsonify({"username": session.get("username"), "role": session.get("role")}), 200
+
+
+@app.get("/api/csrf")
+@login_required_api
+def api_csrf():
+    return jsonify({"csrf_token": _ensure_csrf_token()}), 200
 
 
 # =============================================================================
@@ -637,6 +713,7 @@ def actualizar_password_perfil_usuario():
 def api_logout():
     session.pop("username", None)
     session.pop("role", None)
+    session.pop("csrf_token", None)
     return jsonify({"ok": True}), 200
 
 
@@ -645,6 +722,7 @@ def api_logout():
 def logout():
     session.pop('username', None)
     session.pop('role', None)
+    session.pop('csrf_token', None)
     flash('Has cerrado sesión correctamente.', 'success')
     return redirect(url_for('login'))
 
@@ -3572,6 +3650,13 @@ def api_login_personal():
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
 
+    allowed, retry_after = _login_rate_allowed(username)
+    if not allowed:
+        return jsonify({
+            "error": "too_many_attempts",
+            "retry_after": retry_after,
+        }), 429
+
     # --------------------------------------------------
     # 1) Buscar usuario en texto plano (SIN HASH)
     # --------------------------------------------------
@@ -3591,11 +3676,13 @@ def api_login_personal():
         return jsonify({"error": "db_error"}), 500
 
     if not row:
+        _record_login_failure(username)
         return jsonify({"error": "invalid_credentials"}), 401
 
     user = dict(row)
 
     if not user.get("activo", True):
+        _record_login_failure(username)
         return jsonify({"error": "user_inactive"}), 403
 
     # --------------------------------------------------
@@ -3605,9 +3692,11 @@ def api_login_personal():
 
     if _password_esta_hasheada(stored_password):
         if not _password_coincide(stored_password, password):
+            _record_login_failure(username)
             return jsonify({"error": "invalid_credentials"}), 401
     else:
         if not _password_coincide(stored_password, password):
+            _record_login_failure(username)
             return jsonify({"error": "invalid_credentials"}), 401
         try:
             new_hash = generate_password_hash(password)
@@ -3628,6 +3717,8 @@ def api_login_personal():
     session.permanent = True
     session["username_personal"] = user["username"]
     session["role_personal"] = user.get("role", "personal")
+    session["csrf_token"] = secrets.token_urlsafe(32)
+    _clear_login_failures(username)
 
     return jsonify({
         "username": user["username"],
@@ -3652,6 +3743,7 @@ def api_me_personal():
 def api_logout_personal():
     session.pop("username_personal", None)
     session.pop("role_personal", None)
+    session.pop("csrf_token", None)
     return jsonify({"ok": True}), 200
 
 #Decorador para proteger rutas del personal
