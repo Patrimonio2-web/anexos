@@ -18,6 +18,7 @@ import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
 import qrcode
 import pandas as pd
+from dotenv import load_dotenv
 
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
@@ -25,49 +26,82 @@ from openpyxl import Workbook
 
 
 # ===================== APP & CONFIG =====================
-app = Flask(__name__)
+load_dotenv()
 
-# 🔐 SECRET KEY (mover a env en prod)
-app.secret_key = os.getenv("SECRET_KEY", "clave-secreta-segura-123")
+IS_PRODUCTION = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
 
-# 🌐 CORS (Vercel + local) — una sola vez y con credenciales
-CORS(app, supports_credentials=True, origins=[
+
+def _split_env_list(name, fallback=None):
+    raw = os.getenv(name)
+    if not raw:
+        return list(fallback or [])
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _required_env(name):
+    value = os.getenv(name)
+    if value:
+        return value
+    if IS_PRODUCTION:
+        raise RuntimeError(f"Falta configurar la variable de entorno {name}")
+    return ""
+
+
+def _normalize_database_url(value):
+    if value.startswith("postgres://"):
+        return value.replace("postgres://", "postgresql://", 1)
+    return value
+
+
+DEFAULT_FRONTEND_ORIGINS = [
     "https://heritage-management.vercel.app",
     "https://control-personal-legislatura-lr.vercel.app",
-    "http://localhost:3000"
-])
+    "http://localhost:3000",
+]
+FRONTEND_ORIGINS = _split_env_list("FRONTEND_ORIGINS", DEFAULT_FRONTEND_ORIGINS)
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://anexos.onrender.com"
+ALLOWED_ORIGINS = {origin.rstrip("/") for origin in (FRONTEND_ORIGINS + [BACKEND_PUBLIC_URL])}
 
-# 🍪 Cookies de sesión para cross-site (Vercel ↔ Render)
+SECRET_KEY = _required_env("SECRET_KEY") or "dev-secret-key-change-me"
+DATABASE_URL = _normalize_database_url(_required_env("DATABASE_URL") or "sqlite:///local-dev.db")
+CLOUDINARY_CLOUD_NAME = _required_env("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = _required_env("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = _required_env("CLOUDINARY_API_SECRET")
+
+app = Flask(__name__)
+
+# SECRET_KEY viene desde variables de entorno.
+app.secret_key = SECRET_KEY
+
+# CORS permitido solo para los frontends configurados.
+CORS(app, supports_credentials=True, origins=FRONTEND_ORIGINS)
+
+# Cookies de sesion para cross-site (Vercel <-> Render).
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["SESSION_COOKIE_SECURE"] = True      # Render usa HTTPS
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.permanent_session_lifetime = timedelta(days=7)
 
-# 🗄️ Base de datos (mover a env en prod)
-app.config['SQLALCHEMY_DATABASE_URI'] = (
-    "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2"
-    "@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
-)
+# Base de datos configurada por DATABASE_URL.
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 db = SQLAlchemy(app)
 
-# ☁️ Cloudinary (mover a env)
+# Cloudinary configurado por variables de entorno.
 cloudinary.config(
-    cloud_name="deokbrzem",
-    api_key="628521442744972",
-    api_secret="UI7D6jgGKoAzjB_NLAgTi1XAwXQ"
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET
 )
 
 # ===================== HELPERS =====================
 def get_conn_dict():
     conn = psycopg2.connect(
-        host="dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com",
-        database="patrimonio_ppfk",
-        user="patrimonio_ppfk_user",
-        password="SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2",
+        DATABASE_URL,
         cursor_factory=psycopg2.extras.DictCursor,
-        sslmode="require"  # 👈 importante en Render
+        sslmode=os.getenv("DB_SSLMODE", "require")
     )
     cur = conn.cursor()
     return conn, cur
@@ -89,19 +123,77 @@ def login_required_api(f):
     return wrapped
 
 
-# Configuración de la base de datos PostgreSQL-
-# app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://patrimonio_ppfk_user:SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2@dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com/patrimonio_ppfk"
-# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limite de 16MB para archivos
+def _main_username():
+    return session.get("username")
 
-# Configuración Cloudinary
-#cloudinary.config(
-    #cloud_name="deokbrzem",
-    #api_key="628521442744972",
-    #api_secret="UI7D6jgGKoAzjB_NLAgTi1XAwXQ"
-#)
 
-#db = SQLAlchemy(app)
+def _personal_username():
+    return session.get("username_personal")
+
+
+def _is_viewer_session():
+    username = (_main_username() or "").lower()
+    role = (session.get("role") or "usuario").lower()
+    return role == "viewer" or username == "dante"
+
+
+def admin_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not _main_username():
+            return jsonify({"error": "unauthorized"}), 401
+        if _is_viewer_session():
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def personal_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if _personal_username() or (_main_username() and not _is_viewer_session()):
+            return f(*args, **kwargs)
+        return jsonify({"error": "unauthorized"}), 401
+    return wrapped
+
+
+PUBLIC_API_ENDPOINTS = {
+    "api_login",
+    "api_logout",
+    "api_me",
+    "api_login_personal",
+    "api_logout_personal",
+    "api_me_personal",
+    "mobiliario_advertencia_por_id",
+}
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _origin_is_allowed():
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    if not origin:
+        return True
+    return origin in ALLOWED_ORIGINS
+
+
+@app.before_request
+def proteger_api():
+    if not request.path.startswith("/api/"):
+        return None
+    if request.method == "OPTIONS":
+        return None
+
+    if request.method in UNSAFE_METHODS and not _origin_is_allowed():
+        return jsonify({"error": "origin_forbidden"}), 403
+
+    if request.endpoint in PUBLIC_API_ENDPOINTS:
+        return None
+
+    if not (_main_username() or _personal_username()):
+        return jsonify({"error": "unauthorized"}), 401
+
+    return None
+
 
 # MODELOS
 # Modelos
@@ -269,6 +361,7 @@ def upload_to_cloudinary(filepath):
     return result.get("secure_url")
 
 @app.route('/api/uploads', methods=['POST'])
+@personal_required_api
 def subir_imagen():
     if 'foto' not in request.files:
         return jsonify({"error": "No se envió la imagen"}), 400
@@ -343,7 +436,7 @@ def api_login():
             cur.close(); conn.close()
     except Exception as e:
         print("🔴 DB ERROR /api/login:", e)
-        return jsonify({"error": f"db_error: {str(e)}"}), 500
+        return jsonify({"error": "db_error"}), 500
 
     if not user:
         return jsonify({"error": "invalid_credentials"}), 401
@@ -636,7 +729,7 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
     Guarda la fecha en AR usando timezone('America/Argentina/Buenos_Aires', now()) en SQL.
     """
     try:
-        usuario = session.get("username") or request.headers.get("X-User") or "desconocido"
+        usuario = session.get("username") or session.get("username_personal") or "desconocido"
         ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
         ua = request.headers.get("User-Agent") or ""
 
@@ -680,6 +773,7 @@ def registrar_auditoria(accion, tabla, id_registro, before=None, after=None, des
 
 
 @app.route('/api/auditoria', methods=['GET'])
+@admin_required_api
 def get_auditoria():
     """
     Listado de auditoría (más reciente primero).
@@ -863,6 +957,7 @@ def editar_anexos():
 # EDITAR ANEXOS
 # ======================
 @app.route('/api/anexos/<int:id>', methods=['PUT', 'PATCH'])
+@admin_required_api
 def editar_anexo(id):
     try:
         data = request.get_json(silent=True) or {}
@@ -897,6 +992,7 @@ def editar_anexo(id):
 # EDITAR SUBDEPENDENCIAS
 # ======================
 @app.route('/api/subdependencias/<int:id>', methods=['PUT', 'PATCH'])
+@admin_required_api
 def editar_subdependencia(id):
     try:
         data = request.get_json(silent=True) or {}
@@ -935,6 +1031,7 @@ def editar_subdependencia(id):
 
 # API para AGREGAR anexos
 @app.route('/api/anexos', methods=['POST'])
+@admin_required_api
 def agregar_anexo():
     data = request.json
     nuevo_anexo = Anexo(id=data['id'], nombre=data['nombre'], direccion=data.get('direccion'))
@@ -950,6 +1047,7 @@ def obtener_anexos():
 
 # --- SUBDEPENDENCIAS ---
 @app.route('/api/subdependencias', methods=['POST'])
+@admin_required_api
 def agregar_subdependencia():
     data = request.json
     nueva_subdependencia = Subdependencia(id=data['id'], id_anexo=data['id_anexo'], nombre=data['nombre'])
@@ -970,6 +1068,7 @@ def obtener_subdependencias(id_anexo):
 
 # Eliminar anexo------------------------------------------------------
 @app.route('/api/anexos/<int:id>', methods=['DELETE'])
+@admin_required_api
 def eliminar_anexo(id):
     try:
         anexo = db.session.get(Anexo, id)
@@ -984,6 +1083,7 @@ def eliminar_anexo(id):
 
 # Eliminar subdependencia---------------------------------------------
 @app.route('/api/subdependencias/<int:id>', methods=['DELETE'])
+@admin_required_api
 def eliminar_subdependencia(id):
     try:
         sub = db.session.get(Subdependencia, id)
@@ -1161,6 +1261,7 @@ def obtener_relevamientos_anexos():
 
 
 @app.route('/api/relevamientos/anexos/<int:id_anexo>', methods=['PUT'])
+@admin_required_api
 def guardar_relevamiento_anexo(id_anexo):
     try:
         _ensure_relevamientos_tables()
@@ -1211,6 +1312,7 @@ def guardar_relevamiento_anexo(id_anexo):
 
 
 @app.route('/api/relevamientos/anexos/<int:id_anexo>', methods=['DELETE'])
+@admin_required_api
 def eliminar_relevamiento_anexo(id_anexo):
     try:
         _ensure_relevamientos_tables()
@@ -1287,6 +1389,7 @@ def obtener_historial_relevamientos_subdependencia(id_subdependencia):
 
 
 @app.route('/api/relevamientos/subdependencias/<int:id_subdependencia>', methods=['PUT'])
+@admin_required_api
 def guardar_relevamiento_subdependencia(id_subdependencia):
     try:
         _ensure_relevamientos_tables()
@@ -1337,6 +1440,7 @@ def guardar_relevamiento_subdependencia(id_subdependencia):
 
 
 @app.route('/api/relevamientos/subdependencias/<int:id_subdependencia>', methods=['DELETE'])
+@admin_required_api
 def eliminar_relevamiento_subdependencia(id_subdependencia):
     try:
         _ensure_relevamientos_tables()
@@ -1674,6 +1778,7 @@ def buscar_mobiliario_avanzado():
 
 # ====== API para eliminar un registro de patrimonio -----------------------------
 @app.route('/api/patrimonio/<string:id>', methods=['DELETE'])
+@admin_required_api
 def eliminar_patrimonio(id):
     try:
         registro = db.session.get(Mobiliario, id)
@@ -1707,6 +1812,7 @@ def eliminar_patrimonio(id):
 
 # ====== API para editar mobiliario ---------------------------------------------
 @app.route('/api/mobiliario/<string:id>', methods=['PUT'])
+@admin_required_api
 def editar_mobiliario(id):
     mobiliario = Mobiliario.query.get_or_404(id)
     try:
@@ -1804,6 +1910,7 @@ def editar_mobiliario(id):
 
 # ====== API para registrar un nuevo mobiliario ---------------------------------
 @app.route('/api/mobiliario', methods=['POST'])
+@admin_required_api
 def registrar_mobiliario():
     try:
         data = request.json or {}
@@ -2791,7 +2898,7 @@ def generar_listado_json():
 
 # EJECUCIÓN
 #if __name__ == '__main__':
- #   app.run(debug=True)
+ #   app.run(debug=not IS_PRODUCTION)
 
 
 
@@ -2812,10 +2919,8 @@ from openpyxl import Workbook
 # 📌 Conexión directa a Render PostgreSQL
 def get_db_connection():
     return psycopg2.connect(
-        host="dpg-cv8oiprqf0us73bbbbfg-a.oregon-postgres.render.com",
-        database="patrimonio_ppfk",
-        user="patrimonio_ppfk_user",
-        password="SabopRq1mqHqRXBZaZBaWsEcqfHYJWM2"
+        DATABASE_URL,
+        sslmode=os.getenv("DB_SSLMODE", "require")
     )
 
 # 📦 Blueprint
@@ -3195,7 +3300,7 @@ def control():
 
 # 🚀 Crear app y registrar blueprint
 #app = Flask(__name__)
-app.secret_key = 'clave-secreta-segura-123'  # 🔐 solo esta instancia
+# La clave de sesion se configura una sola vez desde SECRET_KEY.
 app.register_blueprint(bp)
 # 🔢 Filtro para convertir strings tipo "$ 12,345.67" a float
 def to_float(value):
@@ -3226,6 +3331,7 @@ def mobiliario_filtros():
 
 # 🟢 1️⃣ CREAR UN NUEVO AGENTE -------------------------------------------------
 @app.route('/api/agentes', methods=['POST'])
+@personal_required_api
 def crear_agente():
     """
     Crea un nuevo agente en la base de datos.
@@ -3318,6 +3424,7 @@ def obtener_agente(id):
 
 # 🟣 4️⃣ EDITAR UN AGENTE EXISTENTE --------------------------------------------
 @app.route('/api/agentes/<int:id>', methods=['PUT', 'PATCH'])
+@personal_required_api
 def editar_agente(id):
     """
     Actualiza los datos de un agente existente.
@@ -3352,6 +3459,7 @@ def editar_agente(id):
 
 # 🔴 5️⃣ ELIMINAR UN AGENTE ----------------------------------------------------
 @app.route('/api/agentes/<int:id>', methods=['DELETE'])
+@personal_required_api
 def eliminar_agente(id):
     """
     Elimina un agente por su ID.
@@ -3461,8 +3569,6 @@ def api_login_personal():
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
 
-    print("LOGIN_PERSONAL_RECIBIDO:", data)
-
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
 
@@ -3493,12 +3599,28 @@ def api_login_personal():
         return jsonify({"error": "user_inactive"}), 403
 
     # --------------------------------------------------
-    # 2) VALIDAR EN TEXTO PLANO (SIN HASH)
+    # 2) Validar contrasena y migrar a hash si estaba en texto plano
     # --------------------------------------------------
     stored_password = user.get("password", "")
 
-    if stored_password != password:
-        return jsonify({"error": "invalid_credentials"}), 401
+    if _password_esta_hasheada(stored_password):
+        if not _password_coincide(stored_password, password):
+            return jsonify({"error": "invalid_credentials"}), 401
+    else:
+        if not _password_coincide(stored_password, password):
+            return jsonify({"error": "invalid_credentials"}), 401
+        try:
+            new_hash = generate_password_hash(password)
+            conn, cur = get_conn_dict()
+            cur.execute(
+                "UPDATE usuariospersonal SET password = %s WHERE id = %s",
+                (new_hash, user["id"])
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print("DB ERROR migrando password personal:", e)
 
     # --------------------------------------------------
     # 3) Crear sesión
@@ -3544,5 +3666,5 @@ def login_required_personal(f):
 
 # ▶️ Ejecutar con python app.py
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=not IS_PRODUCTION)
 
