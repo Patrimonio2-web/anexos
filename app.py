@@ -145,6 +145,7 @@ def _is_viewer_session():
 LOGIN_ATTEMPTS = {}
 LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
 LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "900"))
+IDLE_SESSION_TIMEOUT_SECONDS = int(os.getenv("IDLE_SESSION_TIMEOUT_SECONDS", "600"))
 
 
 def _login_rate_key(username):
@@ -189,6 +190,36 @@ def _csrf_token_valid():
     return bool(expected and provided and hmac.compare_digest(expected, provided))
 
 
+def _session_has_auth():
+    return bool(_main_username() or _personal_username())
+
+
+def _clear_auth_session():
+    for key in (
+        "username",
+        "role",
+        "username_personal",
+        "role_personal",
+        "csrf_token",
+        "last_activity",
+    ):
+        session.pop(key, None)
+
+
+def _session_idle_expired():
+    last_activity = session.get("last_activity")
+    if not last_activity:
+        return False
+    try:
+        return time.time() - float(last_activity) > IDLE_SESSION_TIMEOUT_SECONDS
+    except (TypeError, ValueError):
+        return True
+
+
+def _touch_session_activity():
+    session["last_activity"] = time.time()
+
+
 def admin_required_api(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -218,6 +249,13 @@ PUBLIC_API_ENDPOINTS = {
     "api_me_personal",
     "mobiliario_advertencia_por_id",
 }
+IDLE_EXEMPT_ENDPOINTS = {
+    "api_login",
+    "api_logout",
+    "api_login_personal",
+    "api_logout_personal",
+    "mobiliario_advertencia_por_id",
+}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_EXEMPT_ENDPOINTS = PUBLIC_API_ENDPOINTS
 
@@ -239,15 +277,24 @@ def proteger_api():
     if request.method in UNSAFE_METHODS and not _origin_is_allowed():
         return jsonify({"error": "origin_forbidden"}), 403
 
+    if _session_has_auth() and request.endpoint not in IDLE_EXEMPT_ENDPOINTS:
+        if _session_idle_expired():
+            _clear_auth_session()
+            return jsonify({"error": "session_expired"}), 401
+
     if request.endpoint in PUBLIC_API_ENDPOINTS:
+        if _session_has_auth() and request.endpoint in {"api_me", "api_me_personal"}:
+            _touch_session_activity()
         return None
 
-    if not (_main_username() or _personal_username()):
+    if not _session_has_auth():
         return jsonify({"error": "unauthorized"}), 401
 
     if request.method in UNSAFE_METHODS and request.endpoint not in CSRF_EXEMPT_ENDPOINTS:
         if not _csrf_token_valid():
             return jsonify({"error": "csrf_invalid"}), 403
+
+    _touch_session_activity()
 
     return None
 
@@ -541,6 +588,7 @@ def api_login():
     session["username"] = user["username"]
     session["role"] = user.get("role", "usuario")
     session["csrf_token"] = secrets.token_urlsafe(32)
+    _touch_session_activity()
     _clear_login_failures(username)
     return jsonify({"username": session["username"], "role": session["role"]}), 200
 
@@ -711,18 +759,14 @@ def actualizar_password_perfil_usuario():
 
 @app.post("/api/logout")
 def api_logout():
-    session.pop("username", None)
-    session.pop("role", None)
-    session.pop("csrf_token", None)
+    _clear_auth_session()
     return jsonify({"ok": True}), 200
 
 
 
 @app.route('/logout')
 def logout():
-    session.pop('username', None)
-    session.pop('role', None)
-    session.pop('csrf_token', None)
+    _clear_auth_session()
     flash('Has cerrado sesión correctamente.', 'success')
     return redirect(url_for('login'))
 
@@ -3718,6 +3762,7 @@ def api_login_personal():
     session["username_personal"] = user["username"]
     session["role_personal"] = user.get("role", "personal")
     session["csrf_token"] = secrets.token_urlsafe(32)
+    _touch_session_activity()
     _clear_login_failures(username)
 
     return jsonify({
@@ -3741,9 +3786,7 @@ def api_me_personal():
 #cierre de sesion -----------
 @app.post("/api/logout_personal")
 def api_logout_personal():
-    session.pop("username_personal", None)
-    session.pop("role_personal", None)
-    session.pop("csrf_token", None)
+    _clear_auth_session()
     return jsonify({"ok": True}), 200
 
 #Decorador para proteger rutas del personal
