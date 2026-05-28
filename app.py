@@ -136,10 +136,36 @@ def _personal_username():
     return session.get("username_personal")
 
 
+SUPERADMIN_USERNAMES = {
+    item.lower()
+    for item in _split_env_list("SUPERADMIN_USERNAMES", ["hernan", "facu"])
+}
+VIEWER_USERNAMES = {
+    item.lower()
+    for item in _split_env_list("VIEWER_USERNAMES", ["dante", "vicegobernacion"])
+}
+
+
+def _normalize_main_role(username, role=None):
+    clean_username = str(username or "").strip().lower()
+    clean_role = str(role or "").strip().lower()
+    if clean_username in SUPERADMIN_USERNAMES or clean_role == "superadmin":
+        return "superadmin"
+    if clean_username in VIEWER_USERNAMES or clean_role in {"viewer", "solo_lectura", "solo lectura", "read_only", "readonly"}:
+        return "viewer"
+    return "admin"
+
+
+def _session_main_role():
+    return _normalize_main_role(_main_username(), session.get("role"))
+
+
 def _is_viewer_session():
-    username = (_main_username() or "").lower()
-    role = (session.get("role") or "usuario").lower()
-    return role == "viewer" or username == "dante"
+    return _session_main_role() == "viewer"
+
+
+def _is_superadmin_session():
+    return _session_main_role() == "superadmin"
 
 
 LOGIN_ATTEMPTS = {}
@@ -194,6 +220,28 @@ def _session_has_auth():
     return bool(_main_username() or _personal_username())
 
 
+def _refresh_main_session_from_db():
+    username = _main_username()
+    if not username:
+        return True
+    try:
+        row = db.session.execute(text("""
+            SELECT username, COALESCE(role, 'usuario') AS role, COALESCE(activo, TRUE) AS activo
+            FROM usuarios
+            WHERE username = :username
+            LIMIT 1
+        """), {"username": username}).mappings().first()
+        if not row or not row["activo"]:
+            _clear_auth_session()
+            return False
+        session["username"] = row["username"]
+        session["role"] = _normalize_main_role(row["username"], row["role"])
+        return True
+    except Exception:
+        db.session.rollback()
+        return True
+
+
 def _clear_auth_session():
     for key in (
         "username",
@@ -226,6 +274,17 @@ def admin_required_api(f):
         if not _main_username():
             return jsonify({"error": "unauthorized"}), 401
         if _is_viewer_session():
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def superadmin_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not _main_username():
+            return jsonify({"error": "unauthorized"}), 401
+        if not _is_superadmin_session():
             return jsonify({"error": "forbidden"}), 403
         return f(*args, **kwargs)
     return wrapped
@@ -276,6 +335,15 @@ def proteger_api():
 
     if request.method in UNSAFE_METHODS and not _origin_is_allowed():
         return jsonify({"error": "origin_forbidden"}), 403
+
+    if _main_username() and request.endpoint not in {
+        "api_login",
+        "api_logout",
+        "api_login_personal",
+        "api_logout_personal",
+    }:
+        if not _refresh_main_session_from_db():
+            return jsonify({"error": "unauthorized"}), 401
 
     if _session_has_auth() and request.endpoint not in IDLE_EXEMPT_ENDPOINTS:
         if _session_idle_expired():
@@ -586,7 +654,7 @@ def api_login():
 
     session.permanent = True
     session["username"] = user["username"]
-    session["role"] = user.get("role", "usuario")
+    session["role"] = _normalize_main_role(user["username"], user.get("role"))
     session["csrf_token"] = secrets.token_urlsafe(32)
     _touch_session_activity()
     _clear_login_failures(username)
@@ -595,7 +663,9 @@ def api_login():
 @app.get("/api/me")
 @login_required_api
 def api_me():
-    return jsonify({"username": session.get("username"), "role": session.get("role")}), 200
+    role = _session_main_role()
+    session["role"] = role
+    return jsonify({"username": session.get("username"), "role": role}), 200
 
 
 @app.get("/api/csrf")
@@ -633,12 +703,14 @@ def _perfil_usuario_actual():
 
 
 def _perfil_usuario_to_dict(row):
+    role = _session_main_role()
+    session["role"] = role
     return {
         "id": row["id"],
         "username": row["username"],
         "nombre": row["nombre"] or "",
         "apellido": row["apellido"] or "",
-        "role": session.get("role") or "usuario",
+        "role": role,
     }
 
 
@@ -749,6 +821,277 @@ def actualizar_password_perfil_usuario():
         """), {
             "id": row["id"],
             "password": generate_password_hash(nueva_password),
+        })
+        db.session.commit()
+        return jsonify({"mensaje": "Contrasena actualizada"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# API NUEVA: ADMIN USUARIOS
+# -----------------------------------------------------------------------------
+# Panel independiente para superadmin. Permite listar usuarios, crear cuentas,
+# cambiar rol admin/viewer, activar/desactivar y resetear contrasena sin tocar
+# los flujos existentes de inventario.
+# =============================================================================
+
+def _ensure_admin_usuarios_columns():
+    _ensure_perfil_usuario_columns()
+    db.session.execute(text("""
+        ALTER TABLE IF EXISTS usuarios
+        ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'usuario'
+    """))
+    db.session.execute(text("""
+        ALTER TABLE IF EXISTS usuarios
+        ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE
+    """))
+    db.session.execute(text("""
+        ALTER TABLE IF EXISTS usuarios
+        ADD COLUMN IF NOT EXISTS fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    """))
+    db.session.commit()
+
+
+def _admin_fecha_iso(value):
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _admin_bool(value, default=True):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "t", "yes", "si", "activo"}
+
+
+def _admin_texto(data, key, max_length, required=False):
+    value = str(data.get(key) or "").strip()
+    if required and not value:
+        raise ValueError(f"{key} es obligatorio")
+    if len(value) > max_length:
+        raise ValueError(f"{key} supera el maximo de {max_length} caracteres")
+    return value or None
+
+
+def _admin_role_para_guardar(username, role):
+    clean_username = str(username or "").strip().lower()
+    if clean_username in SUPERADMIN_USERNAMES:
+        return "superadmin"
+
+    clean_role = str(role or "").strip().lower()
+    if clean_role in {"", "usuario"}:
+        clean_role = "admin"
+    if clean_role not in {"admin", "viewer"}:
+        raise ValueError("Rol invalido")
+    return clean_role
+
+
+def _admin_usuario_to_dict(row):
+    username = row["username"]
+    role = _normalize_main_role(username, row["role"])
+    return {
+        "id": row["id"],
+        "username": username,
+        "nombre": row["nombre"] or "",
+        "apellido": row["apellido"] or "",
+        "role": role,
+        "activo": _admin_bool(row["activo"]),
+        "fecha_creacion": _admin_fecha_iso(row["fecha_creacion"]),
+        "protegido": str(username or "").strip().lower() in SUPERADMIN_USERNAMES,
+    }
+
+
+def _admin_usuario_por_id(id_usuario):
+    return db.session.execute(text("""
+        SELECT
+            id,
+            username,
+            nombre,
+            apellido,
+            COALESCE(role, 'usuario') AS role,
+            COALESCE(activo, TRUE) AS activo,
+            fecha_creacion
+        FROM usuarios
+        WHERE id = :id
+        LIMIT 1
+    """), {"id": id_usuario}).mappings().first()
+
+
+def _admin_usuario_actual_id():
+    row = db.session.execute(text("""
+        SELECT id
+        FROM usuarios
+        WHERE username = :username
+        LIMIT 1
+    """), {"username": session.get("username")}).mappings().first()
+    return row["id"] if row else None
+
+
+@app.get("/api/admin/usuarios")
+@superadmin_required_api
+def admin_listar_usuarios():
+    try:
+        _ensure_admin_usuarios_columns()
+        rows = db.session.execute(text("""
+            SELECT
+                id,
+                username,
+                nombre,
+                apellido,
+                COALESCE(role, 'usuario') AS role,
+                COALESCE(activo, TRUE) AS activo,
+                fecha_creacion
+            FROM usuarios
+            ORDER BY LOWER(username) ASC
+        """)).mappings().all()
+        return jsonify([_admin_usuario_to_dict(row) for row in rows]), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/usuarios")
+@superadmin_required_api
+def admin_crear_usuario():
+    try:
+        _ensure_admin_usuarios_columns()
+        data = request.get_json(silent=True) or {}
+        username = _admin_texto(data, "username", 50, required=True)
+        nombre = _admin_texto(data, "nombre", 100)
+        apellido = _admin_texto(data, "apellido", 100)
+        password = str(data.get("password") or "")
+        if len(password) < 6:
+            return jsonify({"error": "La contrasena debe tener al menos 6 caracteres"}), 400
+        role = _admin_role_para_guardar(username, data.get("role"))
+        activo = _admin_bool(data.get("activo"), True)
+        if role == "superadmin" and not activo:
+            return jsonify({"error": "Un superadmin no puede quedar inactivo"}), 400
+
+        repetido = db.session.execute(text("""
+            SELECT id
+            FROM usuarios
+            WHERE LOWER(username) = LOWER(:username)
+            LIMIT 1
+        """), {"username": username}).mappings().first()
+        if repetido:
+            return jsonify({"error": "Ese usuario ya existe"}), 409
+
+        row = db.session.execute(text("""
+            INSERT INTO usuarios (username, password, nombre, apellido, role, activo)
+            VALUES (:username, :password, :nombre, :apellido, :role, :activo)
+            RETURNING id, username, nombre, apellido, role, activo, fecha_creacion
+        """), {
+            "username": username,
+            "password": generate_password_hash(password),
+            "nombre": nombre,
+            "apellido": apellido,
+            "role": role,
+            "activo": activo,
+        }).mappings().first()
+        db.session.commit()
+        return jsonify(_admin_usuario_to_dict(row)), 201
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/usuarios/<int:id_usuario>")
+@superadmin_required_api
+def admin_actualizar_usuario(id_usuario):
+    try:
+        _ensure_admin_usuarios_columns()
+        data = request.get_json(silent=True) or {}
+        actual = _admin_usuario_por_id(id_usuario)
+        if not actual:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        username = _admin_texto(data, "username", 50, required=True)
+        nombre = _admin_texto(data, "nombre", 100)
+        apellido = _admin_texto(data, "apellido", 100)
+        role = _admin_role_para_guardar(username, data.get("role", actual["role"]))
+        activo = _admin_bool(data.get("activo"), True)
+
+        actual_username = str(actual["username"] or "").strip().lower()
+        next_username = str(username or "").strip().lower()
+        if actual_username in SUPERADMIN_USERNAMES and next_username not in SUPERADMIN_USERNAMES:
+            return jsonify({"error": "No se puede cambiar el usuario de un superadmin protegido"}), 400
+        if role == "superadmin" and not activo:
+            return jsonify({"error": "Un superadmin no puede quedar inactivo"}), 400
+
+        current_id = _admin_usuario_actual_id()
+        if current_id == id_usuario and (not activo or role != "superadmin"):
+            return jsonify({"error": "No podes quitarte tus propios permisos"}), 400
+
+        repetido = db.session.execute(text("""
+            SELECT id
+            FROM usuarios
+            WHERE LOWER(username) = LOWER(:username)
+              AND id <> :id
+            LIMIT 1
+        """), {"username": username, "id": id_usuario}).mappings().first()
+        if repetido:
+            return jsonify({"error": "Ese usuario ya existe"}), 409
+
+        row = db.session.execute(text("""
+            UPDATE usuarios
+            SET username = :username,
+                nombre = :nombre,
+                apellido = :apellido,
+                role = :role,
+                activo = :activo
+            WHERE id = :id
+            RETURNING id, username, nombre, apellido, role, activo, fecha_creacion
+        """), {
+            "id": id_usuario,
+            "username": username,
+            "nombre": nombre,
+            "apellido": apellido,
+            "role": role,
+            "activo": activo,
+        }).mappings().first()
+        db.session.commit()
+
+        if current_id == id_usuario:
+            session["username"] = row["username"]
+            session["role"] = _normalize_main_role(row["username"], row["role"])
+
+        return jsonify(_admin_usuario_to_dict(row)), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/usuarios/<int:id_usuario>/password")
+@superadmin_required_api
+def admin_resetear_password_usuario(id_usuario):
+    try:
+        _ensure_admin_usuarios_columns()
+        data = request.get_json(silent=True) or {}
+        password = str(data.get("password") or "")
+        if len(password) < 6:
+            return jsonify({"error": "La contrasena debe tener al menos 6 caracteres"}), 400
+
+        actual = _admin_usuario_por_id(id_usuario)
+        if not actual:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        db.session.execute(text("""
+            UPDATE usuarios
+            SET password = :password
+            WHERE id = :id
+        """), {
+            "id": id_usuario,
+            "password": generate_password_hash(password),
         })
         db.session.commit()
         return jsonify({"mensaje": "Contrasena actualizada"}), 200

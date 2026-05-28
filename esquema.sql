@@ -207,6 +207,15 @@ ALTER TABLE IF EXISTS public.usuarios
 ALTER TABLE IF EXISTS public.usuarios
     ADD COLUMN IF NOT EXISTS apellido character varying(100);
 
+ALTER TABLE IF EXISTS public.usuarios
+    ADD COLUMN IF NOT EXISTS role character varying(20) DEFAULT 'usuario' NOT NULL;
+
+ALTER TABLE IF EXISTS public.usuarios
+    ADD COLUMN IF NOT EXISTS activo boolean DEFAULT true NOT NULL;
+
+ALTER TABLE IF EXISTS public.usuarios
+    ADD COLUMN IF NOT EXISTS fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP;
+
 
 --
 -- API NUEVA: relevamientos; tablas independientes para no modificar anexos ni subdependencias
