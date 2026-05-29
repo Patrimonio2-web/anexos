@@ -172,6 +172,7 @@ LOGIN_ATTEMPTS = {}
 LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
 LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "900"))
 IDLE_SESSION_TIMEOUT_SECONDS = int(os.getenv("IDLE_SESSION_TIMEOUT_SECONDS", "600"))
+PRESENCE_ONLINE_SECONDS = int(os.getenv("PRESENCE_ONLINE_SECONDS", "180"))
 
 
 def _login_rate_key(username):
@@ -285,6 +286,17 @@ def superadmin_required_api(f):
         if not _main_username():
             return jsonify({"error": "unauthorized"}), 401
         if not _is_superadmin_session():
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def hernan_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not _main_username():
+            return jsonify({"error": "unauthorized"}), 401
+        if str(_main_username() or "").strip().lower() != "hernan":
             return jsonify({"error": "forbidden"}), 403
         return f(*args, **kwargs)
     return wrapped
@@ -672,6 +684,94 @@ def api_me():
 @login_required_api
 def api_csrf():
     return jsonify({"csrf_token": _ensure_csrf_token()}), 200
+
+
+# =============================================================================
+# API NUEVA: USUARIOS EN LINEA
+# -----------------------------------------------------------------------------
+# Guarda un pulso liviano por usuario autenticado y permite que todos los roles
+# vean quien tuvo actividad reciente.
+# =============================================================================
+
+def _ensure_presencia_usuarios_table():
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS usuarios_online (
+            username VARCHAR(50) PRIMARY KEY,
+            role VARCHAR(20),
+            ultima_actividad TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.commit()
+
+
+def _presencia_to_dict(row):
+    value = row["ultima_actividad"]
+    return {
+        "username": row["username"],
+        "role": _normalize_main_role(row["username"], row["role"]),
+        "ultima_actividad": value.isoformat() if hasattr(value, "isoformat") else str(value),
+    }
+
+
+def _actualizar_presencia_actual():
+    username = _main_username()
+    if not username:
+        return None
+    role = _session_main_role()
+    row = db.session.execute(text("""
+        INSERT INTO usuarios_online (username, role, ultima_actividad)
+        VALUES (:username, :role, CURRENT_TIMESTAMP)
+        ON CONFLICT (username) DO UPDATE SET
+            role = EXCLUDED.role,
+            ultima_actividad = CURRENT_TIMESTAMP
+        RETURNING username, role, ultima_actividad
+    """), {"username": username, "role": role}).mappings().first()
+    db.session.commit()
+    return row
+
+
+def _eliminar_presencia_usuario(username):
+    if not username:
+        return
+    try:
+        _ensure_presencia_usuarios_table()
+        db.session.execute(text("""
+            DELETE FROM usuarios_online
+            WHERE username = :username
+        """), {"username": username})
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+@app.post("/api/presencia/ping")
+@login_required_api
+def ping_presencia_usuario():
+    try:
+        _ensure_presencia_usuarios_table()
+        row = _actualizar_presencia_actual()
+        return jsonify(_presencia_to_dict(row)), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/presencia/usuarios")
+@login_required_api
+def listar_usuarios_online():
+    try:
+        _ensure_presencia_usuarios_table()
+        _actualizar_presencia_actual()
+        rows = db.session.execute(text("""
+            SELECT username, role, ultima_actividad
+            FROM usuarios_online
+            WHERE ultima_actividad >= CURRENT_TIMESTAMP - make_interval(secs => :seconds)
+            ORDER BY ultima_actividad DESC, LOWER(username) ASC
+        """), {"seconds": PRESENCE_ONLINE_SECONDS}).mappings().all()
+        return jsonify([_presencia_to_dict(row) for row in rows]), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # =============================================================================
@@ -1102,6 +1202,7 @@ def admin_resetear_password_usuario(id_usuario):
 
 @app.post("/api/logout")
 def api_logout():
+    _eliminar_presencia_usuario(session.get("username"))
     _clear_auth_session()
     return jsonify({"ok": True}), 200
 
@@ -1109,6 +1210,7 @@ def api_logout():
 
 @app.route('/logout')
 def logout():
+    _eliminar_presencia_usuario(session.get("username"))
     _clear_auth_session()
     flash('Has cerrado sesión correctamente.', 'success')
     return redirect(url_for('login'))
@@ -2243,7 +2345,7 @@ def buscar_mobiliario_avanzado():
 
 # ====== API para eliminar un registro de patrimonio -----------------------------
 @app.route('/api/patrimonio/<string:id>', methods=['DELETE'])
-@admin_required_api
+@hernan_required_api
 def eliminar_patrimonio(id):
     try:
         registro = db.session.get(Mobiliario, id)
@@ -2465,6 +2567,82 @@ def registrar_mobiliario():
 
 
 
+
+
+def _generar_ids_mobiliario(cantidad):
+    ids_actuales = db.session.query(Mobiliario.id).all()
+    ids_numericos = [
+        int(item[0])
+        for item in ids_actuales
+        if item[0] and str(item[0]).isdigit()
+    ]
+    siguiente = (max(ids_numericos) + 1) if ids_numericos else 1
+    return [str(siguiente + idx) for idx in range(cantidad)]
+
+
+def _clonar_mobiliario(origen, nuevo_id):
+    return Mobiliario(
+        id=nuevo_id,
+        ubicacion_id=origen.ubicacion_id,
+        clase_bien_id=origen.clase_bien_id,
+        rubro_id=origen.rubro_id,
+        descripcion=origen.descripcion,
+        resolucion=origen.resolucion,
+        fecha_resolucion=origen.fecha_resolucion,
+        estado_conservacion=origen.estado_conservacion,
+        estado_control=origen.estado_control,
+        historial_movimientos=origen.historial_movimientos,
+        no_dado=origen.no_dado,
+        para_reparacion=origen.para_reparacion,
+        para_baja=origen.para_baja,
+        faltante=origen.faltante,
+        sobrante=origen.sobrante,
+        problema_etiqueta=origen.problema_etiqueta,
+        comentarios=origen.comentarios,
+        foto_url=origen.foto_url,
+    )
+
+
+@app.post("/api/mobiliario/<string:id>/duplicar")
+@admin_required_api
+def duplicar_mobiliario(id):
+    try:
+        data = request.get_json(silent=True) or {}
+        try:
+            cantidad = int(data.get("cantidad", 1))
+        except (TypeError, ValueError):
+            return jsonify({"error": "La cantidad debe ser numerica"}), 400
+        if cantidad < 1 or cantidad > 100:
+            return jsonify({"error": "La cantidad debe estar entre 1 y 100"}), 400
+
+        origen = db.session.get(Mobiliario, id)
+        if not origen:
+            return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+        ids_generados = _generar_ids_mobiliario(cantidad)
+        for nuevo_id in ids_generados:
+            nuevo = _clonar_mobiliario(origen, nuevo_id)
+            db.session.add(nuevo)
+            db.session.flush()
+            registrar_auditoria(
+                accion="CREATE",
+                tabla="mobiliario",
+                id_registro=nuevo.id,
+                before=None,
+                after=model_to_dict(nuevo),
+                descripcion=f"Duplicacion de mobiliario desde ID {id}"
+            )
+
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Mobiliario duplicado correctamente",
+            "id_origen": id,
+            "cantidad": cantidad,
+            "ids_generados": ids_generados,
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # Ruta para obtener un mobiliario por ID--------------------------------------

@@ -218,6 +218,20 @@ ALTER TABLE IF EXISTS public.usuarios
 
 
 --
+-- API NUEVA: usuarios online; presencia temporal por actividad reciente
+--
+
+CREATE TABLE IF NOT EXISTS public.usuarios_online (
+    username character varying(50) PRIMARY KEY,
+    role character varying(20),
+    ultima_actividad timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.usuarios_online OWNER TO patrimonio_ppfk_user;
+
+
+--
 -- API NUEVA: relevamientos; tablas independientes para no modificar anexos ni subdependencias
 --
 
