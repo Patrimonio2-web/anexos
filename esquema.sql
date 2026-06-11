@@ -80,11 +80,15 @@ CREATE TABLE public.mobiliario (
     rubro_id integer,
     clase_bien_id integer,
     estado_control character varying(20),
-    historial_movimientos text
+    historial_movimientos text,
+    valor numeric(12,2)
 );
 
 
 ALTER TABLE public.mobiliario OWNER TO patrimonio_ppfk_user;
+
+ALTER TABLE IF EXISTS public.mobiliario
+    ADD COLUMN IF NOT EXISTS valor numeric(12,2);
 
 --
 -- Name: movimientos_altas; Type: TABLE; Schema: public; Owner: patrimonio_ppfk_user

@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import os, tempfile, io, json, hmac, secrets, time
 import pytz
@@ -531,9 +532,52 @@ class Mobiliario(db.Model):
 
     comentarios = db.Column(db.Text)
     foto_url = db.Column(db.String(255))
+    valor = db.Column(db.Numeric(12, 2))
 
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_actualizacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+_mobiliario_valor_column_ready = False
+
+
+def _ensure_mobiliario_valor_column():
+    global _mobiliario_valor_column_ready
+    if _mobiliario_valor_column_ready:
+        return
+    if db.engine.dialect.name == "sqlite":
+        columns = db.session.execute(text("PRAGMA table_info(mobiliario)")).fetchall()
+        if not any(row[1] == "valor" for row in columns):
+            db.session.execute(text("ALTER TABLE mobiliario ADD COLUMN valor NUMERIC(12, 2)"))
+    else:
+        db.session.execute(text("""
+            ALTER TABLE IF EXISTS mobiliario
+            ADD COLUMN IF NOT EXISTS valor NUMERIC(12, 2)
+        """))
+    db.session.commit()
+    _mobiliario_valor_column_ready = True
+
+
+def _parse_mobiliario_valor(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+
+    raw = str(value).strip().replace("$", "").replace(" ", "")
+    if not raw:
+        return None
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    return Decimal(raw)
+
+
+def _mobiliario_valor_json(value):
+    if value is None:
+        return None
+    return float(value)
 
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
@@ -2033,6 +2077,7 @@ from datetime import timedelta
 @app.route('/api/mobiliario/ultimos', methods=['GET'])
 def ultimos_mobiliarios():
     try:
+        _ensure_mobiliario_valor_column()
         query = """
         SELECT 
             m.id                      AS id_mobiliario,
@@ -2050,6 +2095,7 @@ def ultimos_mobiliarios():
             m.problema_etiqueta,
             m.comentarios,
             m.foto_url,
+            m.valor,
             m.fecha_creacion,
             m.fecha_actualizacion,
             m.historial_movimientos,
@@ -2092,6 +2138,7 @@ def ultimos_mobiliarios():
                 r["fecha_creacion"] = (r["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
             if r["fecha_actualizacion"]:
                 r["fecha_actualizacion"] = (r["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+            r["valor"] = _mobiliario_valor_json(r.get("valor"))
 
         return jsonify(results)
     except Exception as e:
@@ -2108,6 +2155,8 @@ from sqlalchemy import text
 def _serialize(v):
     if isinstance(v, (datetime, date)):
         return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v)
     return v
 
 def model_to_dict(instance, exclude=('fecha_creacion', 'fecha_actualizacion')):
@@ -2133,6 +2182,7 @@ def _compute_diff(before: dict, after: dict):
 @app.route("/api/mobiliario/buscar", methods=["GET"])
 def buscar_mobiliario_avanzado():
     try:
+        _ensure_mobiliario_valor_column()
         q = (request.args.get("q") or "").strip()
         anexo_id = request.args.get("anexo_id", type=int)
         subdependencia_id = request.args.get("subdependencia_id", type=int)
@@ -2289,6 +2339,7 @@ def buscar_mobiliario_avanzado():
                 m.problema_etiqueta,
                 m.comentarios,
                 m.foto_url,
+                m.valor,
                 m.fecha_creacion,
                 m.fecha_actualizacion,
                 r.nombre                  AS rubro,
@@ -2322,6 +2373,7 @@ def buscar_mobiliario_avanzado():
                 it["fecha_creacion"] = (it["fecha_creacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
             if it.get("fecha_actualizacion"):
                 it["fecha_actualizacion"] = (it["fecha_actualizacion"] - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+            it["valor"] = _mobiliario_valor_json(it.get("valor"))
 
             # no hace falta mandarlo al front
             if "search_rank" in it:
@@ -2381,6 +2433,7 @@ def eliminar_patrimonio(id):
 @app.route('/api/mobiliario/<string:id>', methods=['PUT'])
 @admin_required_api
 def editar_mobiliario(id):
+    _ensure_mobiliario_valor_column()
     mobiliario = Mobiliario.query.get_or_404(id)
     try:
         data = request.json or {}
@@ -2452,6 +2505,8 @@ def editar_mobiliario(id):
         mobiliario.problema_etiqueta = data.get("problema_etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
+        if "valor" in data:
+            mobiliario.valor = _parse_mobiliario_valor(data.get("valor"))
 
         # Snapshot DESPUÉS
         after = model_to_dict(mobiliario)
@@ -2480,6 +2535,7 @@ def editar_mobiliario(id):
 @admin_required_api
 def registrar_mobiliario():
     try:
+        _ensure_mobiliario_valor_column()
         data = request.json or {}
         print("🟢 Data recibida en /api/mobiliario:", data)
 
@@ -2534,7 +2590,8 @@ def registrar_mobiliario():
             sobrante=data.get("sobrante", False),
             problema_etiqueta=data.get("problema_etiqueta", False),
             comentarios=comentarios,
-            foto_url=data.get("foto_url", "")
+            foto_url=data.get("foto_url", ""),
+            valor=_parse_mobiliario_valor(data.get("valor"))
         )
 
         db.session.add(nuevo)
@@ -2600,6 +2657,7 @@ def _clonar_mobiliario(origen, nuevo_id):
         problema_etiqueta=origen.problema_etiqueta,
         comentarios=origen.comentarios,
         foto_url=origen.foto_url,
+        valor=origen.valor,
     )
 
 
@@ -2607,6 +2665,7 @@ def _clonar_mobiliario(origen, nuevo_id):
 @admin_required_api
 def duplicar_mobiliario(id):
     try:
+        _ensure_mobiliario_valor_column()
         data = request.get_json(silent=True) or {}
         try:
             cantidad = int(data.get("cantidad", 1))
@@ -2648,6 +2707,7 @@ def duplicar_mobiliario(id):
 # Ruta para obtener un mobiliario por ID--------------------------------------
 @app.route('/api/mobiliario/<string:id>', methods=['GET'])
 def obtener_mobiliario_por_id(id):
+    _ensure_mobiliario_valor_column()
     resultado = db.session.query(
         Mobiliario,
         Subdependencia.nombre.label("subdependencia"),
@@ -2685,6 +2745,7 @@ def obtener_mobiliario_por_id(id):
         "historial_movimientos": m.historial_movimientos,
         "comentarios": m.comentarios,
         "foto_url": m.foto_url,
+        "valor": _mobiliario_valor_json(m.valor),
         "ubicacion_id": m.ubicacion_id,
         "subdependencia": sub_nombre,
         "id_anexo": id_anexo,
@@ -2709,6 +2770,7 @@ def obtener_mobiliario_por_id(id):
 @app.route('/api/mobiliario/para-baja', methods=['GET'])
 def obtener_mobiliarios_para_baja():
     try:
+        _ensure_mobiliario_valor_column()
         query = """
         SELECT
             m.id                      AS id,
@@ -2726,6 +2788,7 @@ def obtener_mobiliarios_para_baja():
             m.problema_etiqueta,
             m.comentarios,
             m.foto_url,
+            m.valor,
             m.fecha_creacion,
             m.fecha_actualizacion,
             m.historial_movimientos,
@@ -2772,6 +2835,7 @@ def obtener_mobiliarios_para_baja():
                     r["fecha_resolucion"] = r["fecha_resolucion"].isoformat()
                 except Exception:
                     pass
+            r["valor"] = _mobiliario_valor_json(r.get("valor"))
 
         return jsonify(results), 200
 
@@ -3214,11 +3278,13 @@ def mob_to_dict(m):
         "problema_etiqueta": bool(m.problema_etiqueta),
         "comentarios": m.comentarios or "",
         "foto_url": m.foto_url or "",
+        "valor": _mobiliario_valor_json(m.valor),
     }
 
 # --- Listar mobiliario por subdependencia ---
 @app.route('/api/mobiliario_por_subdependencia/<int:sub_id>', methods=['GET'])
 def mobiliario_por_subdependencia(sub_id):
+    _ensure_mobiliario_valor_column()
     items = Mobiliario.query.filter_by(ubicacion_id=sub_id)\
                             .order_by(Mobiliario.id.asc()).all()
     return jsonify([mob_to_dict(m) for m in items])
@@ -3227,6 +3293,7 @@ def mobiliario_por_subdependencia(sub_id):
 
 @app.route('/api/mobiliario_filtrado', methods=['POST'])
 def mobiliario_filtrado():
+    _ensure_mobiliario_valor_column()
     data = request.get_json()
     subdep_id = data['subdependencia_id']
     filtros = data.get('filtros', [])
