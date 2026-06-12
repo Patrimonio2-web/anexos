@@ -2065,10 +2065,568 @@ def eliminar_relevamiento_subdependencia(id_subdependencia):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+# =============================================================================
+# API NUEVA: MATAFUEGOS
+# -----------------------------------------------------------------------------
+# Modulo independiente para controlar matafuegos por anexo/subdependencia sin
+# modificar las tablas existentes de anexos, subdependencias ni mobiliario.
+# Permite vincular registros ya cargados como mobiliario mediante id_mobiliario.
+# =============================================================================
+
+def _ensure_matafuegos_tables():
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS matafuegos (
+            id SERIAL PRIMARY KEY,
+            id_anexo INTEGER NOT NULL REFERENCES anexos(id) ON DELETE CASCADE,
+            id_subdependencia INTEGER REFERENCES subdependencias(id) ON DELETE SET NULL,
+            id_mobiliario VARCHAR(50) REFERENCES mobiliario(id) ON DELETE SET NULL,
+            codigo VARCHAR(80),
+            ubicacion_detalle TEXT,
+            tipo VARCHAR(80),
+            capacidad VARCHAR(80),
+            fecha_vencimiento DATE,
+            fecha_control DATE,
+            estado VARCHAR(20) DEFAULT 'activo' NOT NULL,
+            observaciones TEXT,
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS id_anexo INTEGER"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS id_subdependencia INTEGER"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS id_mobiliario VARCHAR(50)"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS codigo VARCHAR(80)"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS ubicacion_detalle TEXT"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS tipo VARCHAR(80)"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS capacidad VARCHAR(80)"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_vencimiento DATE"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_control DATE"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'activo' NOT NULL"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS observaciones TEXT"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP"))
+    db.session.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_matafuegos_id_mobiliario
+        ON matafuegos (id_mobiliario)
+        WHERE id_mobiliario IS NOT NULL
+    """))
+    db.session.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_matafuegos_anexo
+        ON matafuegos (id_anexo, estado, fecha_vencimiento)
+    """))
+    db.session.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_matafuegos_subdependencia
+        ON matafuegos (id_subdependencia)
+    """))
+    db.session.commit()
 
 
+def _parse_fecha_matafuego(data, key, required=False):
+    fecha = str(data.get(key) or "").strip()
+    if not fecha:
+        if required:
+            raise ValueError(f"Falta la fecha {key}")
+        return None
+    try:
+        return datetime.strptime(fecha, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("La fecha debe tener formato YYYY-MM-DD")
 
 
+def _text_or_none(value):
+    clean = str(value or "").strip()
+    return clean or None
+
+
+def _estado_matafuego(value):
+    clean = str(value or "activo").strip().lower()
+    return clean if clean in {"activo", "inactivo"} else "activo"
+
+
+def _dias_matafuego(fecha_vencimiento):
+    if not fecha_vencimiento:
+        return None
+    today = datetime.now(pytz.timezone("America/Argentina/Buenos_Aires")).date()
+    return (fecha_vencimiento - today).days
+
+
+def _alerta_matafuego(fecha_vencimiento, estado="activo"):
+    if estado != "activo":
+        return "inactivo"
+    dias = _dias_matafuego(fecha_vencimiento)
+    if dias is None:
+        return "sin_fecha"
+    if dias < 0:
+        return "vencido"
+    if dias <= 10:
+        return "vence_10"
+    if dias <= 30:
+        return "vence_30"
+    if dias <= 90:
+        return "vence_90"
+    return "vigente"
+
+
+MATAFUEGOS_SELECT = """
+    SELECT
+        mf.id,
+        mf.id_anexo,
+        a.nombre AS anexo,
+        mf.id_subdependencia,
+        s.nombre AS subdependencia,
+        mf.id_mobiliario,
+        m.descripcion AS descripcion_mobiliario,
+        m.foto_url AS foto_url,
+        mf.codigo,
+        mf.ubicacion_detalle,
+        mf.tipo,
+        mf.capacidad,
+        mf.fecha_vencimiento,
+        mf.fecha_control,
+        mf.estado,
+        mf.observaciones,
+        mf.fecha_creacion,
+        mf.fecha_actualizacion
+    FROM matafuegos mf
+    JOIN anexos a ON a.id = mf.id_anexo
+    LEFT JOIN subdependencias s ON s.id = mf.id_subdependencia
+    LEFT JOIN mobiliario m ON m.id = mf.id_mobiliario
+"""
+
+
+def _matafuego_to_dict(row):
+    fecha_vencimiento = row["fecha_vencimiento"]
+    dias = _dias_matafuego(fecha_vencimiento)
+    return {
+        "id": row["id"],
+        "id_anexo": row["id_anexo"],
+        "anexo": row["anexo"],
+        "id_subdependencia": row["id_subdependencia"],
+        "subdependencia": row["subdependencia"],
+        "id_mobiliario": row["id_mobiliario"],
+        "descripcion_mobiliario": row["descripcion_mobiliario"],
+        "foto_url": row["foto_url"],
+        "codigo": row["codigo"],
+        "ubicacion_detalle": row["ubicacion_detalle"],
+        "tipo": row["tipo"],
+        "capacidad": row["capacidad"],
+        "fecha_vencimiento": _fecha_iso(fecha_vencimiento),
+        "fecha_control": _fecha_iso(row["fecha_control"]),
+        "estado": row["estado"],
+        "observaciones": row["observaciones"],
+        "dias_para_vencer": dias,
+        "alerta": _alerta_matafuego(fecha_vencimiento, row["estado"]),
+        "fecha_creacion": _fecha_iso(row["fecha_creacion"]),
+        "fecha_actualizacion": _fecha_iso(row["fecha_actualizacion"]),
+    }
+
+
+def _matafuego_row(id_matafuego):
+    return db.session.execute(text(f"""
+        {MATAFUEGOS_SELECT}
+        WHERE mf.id = :id_matafuego
+    """), {"id_matafuego": id_matafuego}).mappings().first()
+
+
+def _validar_ubicacion_matafuego(data):
+    id_anexo = data.get("id_anexo")
+    id_subdependencia = data.get("id_subdependencia")
+
+    if id_subdependencia in ("", None):
+        id_subdependencia = None
+    else:
+        id_subdependencia = int(id_subdependencia)
+        sub = db.session.get(Subdependencia, id_subdependencia)
+        if not sub:
+            raise ValueError("Subdependencia no encontrada")
+        id_anexo = sub.id_anexo
+
+    if id_anexo in ("", None):
+        raise ValueError("Falta el anexo")
+
+    id_anexo = int(id_anexo)
+    if not db.session.get(Anexo, id_anexo):
+        raise ValueError("Anexo no encontrado")
+
+    return id_anexo, id_subdependencia
+
+
+def _matafuegos_resumen_from_rows(rows):
+    resumen = {}
+    for row in rows:
+        id_anexo = row["id_anexo"]
+        item = resumen.setdefault(id_anexo, {
+            "id_anexo": id_anexo,
+            "total": 0,
+            "vencidos": 0,
+            "vence_10": 0,
+            "vence_30": 0,
+            "vence_90": 0,
+            "sin_fecha": 0,
+            "vigentes": 0,
+            "criticos": 0,
+            "alerta_principal": "sin_matafuegos",
+        })
+        alerta = _alerta_matafuego(row["fecha_vencimiento"], row["estado"])
+        item["total"] += 1
+        if alerta == "vencido":
+            item["vencidos"] += 1
+        elif alerta == "vence_10":
+            item["vence_10"] += 1
+        elif alerta == "vence_30":
+            item["vence_30"] += 1
+        elif alerta == "vence_90":
+            item["vence_90"] += 1
+        elif alerta == "sin_fecha":
+            item["sin_fecha"] += 1
+        elif alerta == "vigente":
+            item["vigentes"] += 1
+        item["criticos"] = item["vencidos"] + item["vence_10"]
+
+    prioridad = ["vencido", "vence_10", "vence_30", "vence_90", "sin_fecha", "vigente"]
+    for item in resumen.values():
+        for alerta in prioridad:
+            if (
+                (alerta == "vencido" and item["vencidos"])
+                or (alerta == "vence_10" and item["vence_10"])
+                or (alerta == "vence_30" and item["vence_30"])
+                or (alerta == "vence_90" and item["vence_90"])
+                or (alerta == "sin_fecha" and item["sin_fecha"])
+                or (alerta == "vigente" and item["vigentes"])
+            ):
+                item["alerta_principal"] = alerta
+                break
+    return resumen
+
+
+@app.route('/api/matafuegos/anexos/resumen', methods=['GET'])
+def obtener_resumen_matafuegos_anexos():
+    try:
+        _ensure_matafuegos_tables()
+        rows = db.session.execute(text("""
+            SELECT id_anexo, fecha_vencimiento, estado
+            FROM matafuegos
+            WHERE estado <> 'inactivo'
+        """)).mappings().all()
+        return jsonify(list(_matafuegos_resumen_from_rows(rows).values()))
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matafuegos/anexos/<int:id_anexo>', methods=['GET'])
+def obtener_matafuegos_por_anexo(id_anexo):
+    try:
+        _ensure_matafuegos_tables()
+        if not db.session.get(Anexo, id_anexo):
+            return jsonify({"error": "Anexo no encontrado"}), 404
+        incluir_inactivos = str(request.args.get("incluir_inactivos") or "").lower() == "true"
+        where_estado = "" if incluir_inactivos else "AND mf.estado <> 'inactivo'"
+        rows = db.session.execute(text(f"""
+            {MATAFUEGOS_SELECT}
+            WHERE mf.id_anexo = :id_anexo
+            {where_estado}
+            ORDER BY
+                mf.fecha_vencimiento ASC NULLS LAST,
+                mf.id ASC
+        """), {"id_anexo": id_anexo}).mappings().all()
+        return jsonify([_matafuego_to_dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matafuegos/candidatos', methods=['GET'])
+def obtener_candidatos_matafuegos():
+    try:
+        _ensure_matafuegos_tables()
+        id_anexo = request.args.get("anexo_id", type=int)
+        params = {}
+        where_anexo = ""
+        if id_anexo:
+            where_anexo = "AND a.id = :id_anexo"
+            params["id_anexo"] = id_anexo
+
+        rows = db.session.execute(text(f"""
+            SELECT
+                m.id AS id_mobiliario,
+                m.descripcion,
+                m.foto_url,
+                m.comentarios,
+                sd.id AS id_subdependencia,
+                sd.nombre AS subdependencia,
+                a.id AS id_anexo,
+                a.nombre AS anexo,
+                cb.descripcion AS clase_bien,
+                r.nombre AS rubro
+            FROM mobiliario m
+            JOIN subdependencias sd ON sd.id = m.ubicacion_id
+            JOIN anexos a ON a.id = sd.id_anexo
+            LEFT JOIN clases_bienes cb ON cb.id_clase = m.clase_bien_id
+            LEFT JOIN rubros r ON r.id_rubro = m.rubro_id
+            LEFT JOIN matafuegos mf ON mf.id_mobiliario = m.id
+            WHERE mf.id IS NULL
+              {where_anexo}
+              AND (
+                LOWER(COALESCE(m.descripcion, '')) LIKE '%matafuego%'
+                OR LOWER(COALESCE(m.descripcion, '')) LIKE '%mata fuego%'
+                OR LOWER(COALESCE(m.descripcion, '')) LIKE '%mata-fuego%'
+                OR LOWER(COALESCE(m.descripcion, '')) LIKE '%extintor%'
+                OR LOWER(COALESCE(m.descripcion, '')) LIKE '%extintores%'
+                OR LOWER(COALESCE(cb.descripcion, '')) LIKE '%matafuego%'
+                OR LOWER(COALESCE(cb.descripcion, '')) LIKE '%extintor%'
+                OR LOWER(COALESCE(r.nombre, '')) LIKE '%matafuego%'
+                OR LOWER(COALESCE(r.nombre, '')) LIKE '%extintor%'
+              )
+            ORDER BY a.id ASC, sd.id ASC, m.id ASC
+        """), params).mappings().all()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matafuegos', methods=['POST'])
+@admin_required_api
+def crear_matafuego():
+    try:
+        _ensure_matafuegos_tables()
+        data = request.get_json(silent=True) or {}
+        id_anexo, id_subdependencia = _validar_ubicacion_matafuego(data)
+        fecha_vencimiento = _parse_fecha_matafuego(data, "fecha_vencimiento")
+        fecha_control = _parse_fecha_matafuego(data, "fecha_control")
+
+        new_id = db.session.execute(text("""
+            INSERT INTO matafuegos (
+                id_anexo,
+                id_subdependencia,
+                id_mobiliario,
+                codigo,
+                ubicacion_detalle,
+                tipo,
+                capacidad,
+                fecha_vencimiento,
+                fecha_control,
+                estado,
+                observaciones
+            )
+            VALUES (
+                :id_anexo,
+                :id_subdependencia,
+                :id_mobiliario,
+                :codigo,
+                :ubicacion_detalle,
+                :tipo,
+                :capacidad,
+                :fecha_vencimiento,
+                :fecha_control,
+                :estado,
+                :observaciones
+            )
+            RETURNING id
+        """), {
+            "id_anexo": id_anexo,
+            "id_subdependencia": id_subdependencia,
+            "id_mobiliario": _text_or_none(data.get("id_mobiliario")),
+            "codigo": _text_or_none(data.get("codigo")),
+            "ubicacion_detalle": _text_or_none(data.get("ubicacion_detalle")),
+            "tipo": _text_or_none(data.get("tipo")),
+            "capacidad": _text_or_none(data.get("capacidad")),
+            "fecha_vencimiento": fecha_vencimiento,
+            "fecha_control": fecha_control,
+            "estado": _estado_matafuego(data.get("estado")),
+            "observaciones": _text_or_none(data.get("observaciones")),
+        }).scalar()
+        db.session.commit()
+        return jsonify(_matafuego_to_dict(_matafuego_row(new_id))), 201
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matafuegos/<int:id_matafuego>', methods=['PUT'])
+@admin_required_api
+def editar_matafuego(id_matafuego):
+    try:
+        _ensure_matafuegos_tables()
+        if not _matafuego_row(id_matafuego):
+            return jsonify({"error": "Matafuego no encontrado"}), 404
+        data = request.get_json(silent=True) or {}
+        id_anexo, id_subdependencia = _validar_ubicacion_matafuego(data)
+        fecha_vencimiento = _parse_fecha_matafuego(data, "fecha_vencimiento")
+        fecha_control = _parse_fecha_matafuego(data, "fecha_control")
+
+        db.session.execute(text("""
+            UPDATE matafuegos
+            SET
+                id_anexo = :id_anexo,
+                id_subdependencia = :id_subdependencia,
+                codigo = :codigo,
+                ubicacion_detalle = :ubicacion_detalle,
+                tipo = :tipo,
+                capacidad = :capacidad,
+                fecha_vencimiento = :fecha_vencimiento,
+                fecha_control = :fecha_control,
+                estado = :estado,
+                observaciones = :observaciones,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = :id_matafuego
+        """), {
+            "id_matafuego": id_matafuego,
+            "id_anexo": id_anexo,
+            "id_subdependencia": id_subdependencia,
+            "codigo": _text_or_none(data.get("codigo")),
+            "ubicacion_detalle": _text_or_none(data.get("ubicacion_detalle")),
+            "tipo": _text_or_none(data.get("tipo")),
+            "capacidad": _text_or_none(data.get("capacidad")),
+            "fecha_vencimiento": fecha_vencimiento,
+            "fecha_control": fecha_control,
+            "estado": _estado_matafuego(data.get("estado")),
+            "observaciones": _text_or_none(data.get("observaciones")),
+        })
+        db.session.commit()
+        return jsonify(_matafuego_to_dict(_matafuego_row(id_matafuego))), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matafuegos/<int:id_matafuego>', methods=['DELETE'])
+@admin_required_api
+def desactivar_matafuego(id_matafuego):
+    try:
+        _ensure_matafuegos_tables()
+        db.session.execute(text("""
+            UPDATE matafuegos
+            SET estado = 'inactivo',
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = :id_matafuego
+        """), {"id_matafuego": id_matafuego})
+        db.session.commit()
+        return jsonify({"mensaje": "Matafuego marcado como inactivo"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/matafuegos/importar-mobiliario', methods=['POST'])
+@admin_required_api
+def importar_matafuegos_desde_mobiliario():
+    try:
+        _ensure_matafuegos_tables()
+        data = request.get_json(silent=True) or {}
+        ids = data.get("ids_mobiliario") or []
+        if data.get("id_mobiliario"):
+            ids.append(data.get("id_mobiliario"))
+        ids = [str(item).strip() for item in ids if str(item).strip()]
+        if not ids:
+            return jsonify({"error": "Selecciona al menos un mobiliario"}), 400
+
+        fecha_vencimiento = _parse_fecha_matafuego(data, "fecha_vencimiento")
+        fecha_control = _parse_fecha_matafuego(data, "fecha_control")
+        observaciones = _text_or_none(data.get("observaciones"))
+        imported_ids = []
+
+        for id_mobiliario in ids:
+            candidate = db.session.execute(text("""
+                SELECT
+                    m.id AS id_mobiliario,
+                    m.descripcion,
+                    sd.id AS id_subdependencia,
+                    sd.nombre AS subdependencia,
+                    a.id AS id_anexo
+                FROM mobiliario m
+                JOIN subdependencias sd ON sd.id = m.ubicacion_id
+                JOIN anexos a ON a.id = sd.id_anexo
+                WHERE m.id = :id_mobiliario
+                LIMIT 1
+            """), {"id_mobiliario": id_mobiliario}).mappings().first()
+            if not candidate:
+                continue
+
+            existing = db.session.execute(text("""
+                SELECT id
+                FROM matafuegos
+                WHERE id_mobiliario = :id_mobiliario
+                LIMIT 1
+            """), {"id_mobiliario": id_mobiliario}).mappings().first()
+
+            if existing:
+                db.session.execute(text("""
+                    UPDATE matafuegos
+                    SET
+                        id_anexo = :id_anexo,
+                        id_subdependencia = :id_subdependencia,
+                        ubicacion_detalle = COALESCE(ubicacion_detalle, :ubicacion_detalle),
+                        fecha_vencimiento = COALESCE(:fecha_vencimiento, fecha_vencimiento),
+                        fecha_control = COALESCE(:fecha_control, fecha_control),
+                        observaciones = COALESCE(:observaciones, observaciones),
+                        estado = 'activo',
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                    WHERE id = :id_matafuego
+                """), {
+                    "id_matafuego": existing["id"],
+                    "id_anexo": candidate["id_anexo"],
+                    "id_subdependencia": candidate["id_subdependencia"],
+                    "ubicacion_detalle": candidate["subdependencia"],
+                    "fecha_vencimiento": fecha_vencimiento,
+                    "fecha_control": fecha_control,
+                    "observaciones": observaciones,
+                })
+                imported_ids.append(existing["id"])
+            else:
+                new_id = db.session.execute(text("""
+                    INSERT INTO matafuegos (
+                        id_anexo,
+                        id_subdependencia,
+                        id_mobiliario,
+                        ubicacion_detalle,
+                        fecha_vencimiento,
+                        fecha_control,
+                        estado,
+                        observaciones
+                    )
+                    VALUES (
+                        :id_anexo,
+                        :id_subdependencia,
+                        :id_mobiliario,
+                        :ubicacion_detalle,
+                        :fecha_vencimiento,
+                        :fecha_control,
+                        'activo',
+                        :observaciones
+                    )
+                    RETURNING id
+                """), {
+                    "id_anexo": candidate["id_anexo"],
+                    "id_subdependencia": candidate["id_subdependencia"],
+                    "id_mobiliario": id_mobiliario,
+                    "ubicacion_detalle": candidate["subdependencia"],
+                    "fecha_vencimiento": fecha_vencimiento,
+                    "fecha_control": fecha_control,
+                    "observaciones": observaciones,
+                }).scalar()
+                imported_ids.append(new_id)
+
+        db.session.commit()
+        rows = []
+        for item_id in imported_ids:
+            row = _matafuego_row(item_id)
+            if row:
+                rows.append(_matafuego_to_dict(row))
+        return jsonify({"importados": rows, "cantidad": len(rows)}), 201
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # API para obtener los registros de mobiliario-----------------------
