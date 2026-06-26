@@ -4380,6 +4380,251 @@ def eliminar_alta(id):
 #    return render_template('altas.html')
 
 
+# =============================================================================
+# API NUEVA: PLANILLAS - ALTAS
+# -----------------------------------------------------------------------------
+# Endpoints JSON para usar la carga de altas desde el frontend Next sin romper
+# las pantallas HTML existentes (/altas, /altas/editar, /altas/exportar_pdf).
+# =============================================================================
+
+def _parse_numeric_alta(value):
+    try:
+        if isinstance(value, str):
+            value = value.replace("$", "").replace(" ", "").strip()
+            if "," in value:
+                value = value.replace(".", "").replace(",", ".")
+        return float(value or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _parse_int_or_none(value):
+    try:
+        if value in ("", None):
+            return None
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _alta_to_dict(row):
+    return {
+        "id": row["id"],
+        "fecha_alta": _fecha_iso(row["fecha_alta"]),
+        "cantidad": row["cantidad"],
+        "concepto": row["concepto"],
+        "disposicion": row["disposicion"],
+        "fecha_resolucion": _fecha_iso(row["fecha_resolucion"]),
+        "valor_unitario": float(row["valor_unitario"] or 0),
+        "valor_total": float(row["valor_total"] or 0),
+        "causa_alta": row["causa_alta"],
+        "codigo_presup": row["codigo_presup"],
+        "identidad": row["identidad"],
+        "mes_planilla": row["mes_planilla"],
+        "anio_planilla": row["anio_planilla"],
+        "id_rubro": row["id_rubro"],
+        "id_clase": row["id_clase"],
+        "rubro_nombre": row["rubro_nombre"],
+        "clase_nombre": row["clase_nombre"],
+    }
+
+
+def _alta_payload(data):
+    cantidad = _parse_int_or_none(data.get("cantidad"))
+    valor_unitario = _parse_numeric_alta(data.get("valor_unitario"))
+    valor_total = _parse_numeric_alta(data.get("valor_total"))
+    if not valor_total and cantidad:
+        valor_total = cantidad * valor_unitario
+
+    id_rubro = _parse_int_or_none(data.get("id_rubro"))
+    id_clase = _parse_int_or_none(data.get("id_clase"))
+    codigo_presup = _text_or_none(data.get("codigo_presup"))
+    if not codigo_presup and id_rubro:
+        codigo_presup = str(id_rubro)
+
+    return {
+        "fecha_alta": _text_or_none(data.get("fecha_alta")),
+        "cantidad": cantidad,
+        "concepto": _text_or_none(data.get("concepto")),
+        "disposicion": _text_or_none(data.get("disposicion")),
+        "fecha_resolucion": _text_or_none(data.get("fecha_resolucion")),
+        "valor_unitario": valor_unitario,
+        "valor_total": valor_total,
+        "causa_alta": _text_or_none(data.get("causa_alta")),
+        "codigo_presup": codigo_presup,
+        "identidad": _text_or_none(data.get("identidad")),
+        "mes_planilla": _text_or_none(data.get("mes_planilla")),
+        "anio_planilla": _text_or_none(data.get("anio_planilla")),
+        "id_rubro": id_rubro,
+        "id_clase": id_clase,
+    }
+
+
+def _validar_alta_payload(payload):
+    required = ["fecha_alta", "cantidad", "concepto", "mes_planilla", "anio_planilla"]
+    for key in required:
+        if payload.get(key) in ("", None):
+            raise ValueError(f"Falta el campo obligatorio: {key}")
+
+
+@bp.route('/api/altas', methods=['GET'])
+def api_listar_altas():
+    try:
+        mes = request.args.get("mes")
+        anio = request.args.get("anio")
+        params = {}
+        where = []
+        if mes:
+            where.append("m.mes_planilla = :mes")
+            params["mes"] = mes
+        if anio:
+            where.append("m.anio_planilla = :anio")
+            params["anio"] = anio
+
+        where_sql = "WHERE " + " AND ".join(where) if where else ""
+        rows = db.session.execute(text(f"""
+            SELECT
+                m.*,
+                r.nombre AS rubro_nombre,
+                c.descripcion AS clase_nombre
+            FROM movimientos_altas m
+            LEFT JOIN rubros r ON m.id_rubro = r.id_rubro
+            LEFT JOIN clases_bienes c ON m.id_clase = c.id_clase
+            {where_sql}
+            ORDER BY m.fecha_alta DESC, m.id DESC
+        """), params).mappings().all()
+        return jsonify([_alta_to_dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/<int:id>', methods=['GET'])
+def api_obtener_alta(id):
+    try:
+        row = db.session.execute(text("""
+            SELECT
+                m.*,
+                r.nombre AS rubro_nombre,
+                c.descripcion AS clase_nombre
+            FROM movimientos_altas m
+            LEFT JOIN rubros r ON m.id_rubro = r.id_rubro
+            LEFT JOIN clases_bienes c ON m.id_clase = c.id_clase
+            WHERE m.id = :id
+        """), {"id": id}).mappings().first()
+        if not row:
+            return jsonify({"error": "Alta no encontrada"}), 404
+        return jsonify(_alta_to_dict(row))
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas', methods=['POST'])
+@admin_required_api
+def api_crear_alta():
+    try:
+        payload = _alta_payload(request.get_json(silent=True) or {})
+        _validar_alta_payload(payload)
+        row = db.session.execute(text("""
+            INSERT INTO movimientos_altas (
+                fecha_alta,
+                cantidad,
+                concepto,
+                disposicion,
+                fecha_resolucion,
+                valor_unitario,
+                valor_total,
+                causa_alta,
+                codigo_presup,
+                identidad,
+                mes_planilla,
+                anio_planilla,
+                id_rubro,
+                id_clase
+            )
+            VALUES (
+                :fecha_alta,
+                :cantidad,
+                :concepto,
+                :disposicion,
+                :fecha_resolucion,
+                :valor_unitario,
+                :valor_total,
+                :causa_alta,
+                :codigo_presup,
+                :identidad,
+                :mes_planilla,
+                :anio_planilla,
+                :id_rubro,
+                :id_clase
+            )
+            RETURNING id
+        """), payload).mappings().first()
+        db.session.commit()
+        return api_obtener_alta(row["id"])
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/<int:id>', methods=['PUT'])
+@admin_required_api
+def api_editar_alta(id):
+    try:
+        if not db.session.execute(text("SELECT 1 FROM movimientos_altas WHERE id = :id"), {"id": id}).first():
+            return jsonify({"error": "Alta no encontrada"}), 404
+        payload = _alta_payload(request.get_json(silent=True) or {})
+        _validar_alta_payload(payload)
+        db.session.execute(text("""
+            UPDATE movimientos_altas
+            SET
+                fecha_alta = :fecha_alta,
+                cantidad = :cantidad,
+                concepto = :concepto,
+                disposicion = :disposicion,
+                fecha_resolucion = :fecha_resolucion,
+                valor_unitario = :valor_unitario,
+                valor_total = :valor_total,
+                causa_alta = :causa_alta,
+                codigo_presup = :codigo_presup,
+                identidad = :identidad,
+                mes_planilla = :mes_planilla,
+                anio_planilla = :anio_planilla,
+                id_rubro = :id_rubro,
+                id_clase = :id_clase
+            WHERE id = :id
+        """), {**payload, "id": id})
+        db.session.commit()
+        return api_obtener_alta(id)
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/<int:id>', methods=['DELETE'])
+@admin_required_api
+def api_eliminar_alta(id):
+    try:
+        result = db.session.execute(text("""
+            DELETE FROM movimientos_altas
+            WHERE id = :id
+        """), {"id": id})
+        db.session.commit()
+        if result.rowcount == 0:
+            return jsonify({"error": "Alta no encontrada"}), 404
+        return jsonify({"mensaje": "Alta eliminada"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 
 @bp.route("/altas/exportar_pdf")
 def exportar_pdf_altas():
