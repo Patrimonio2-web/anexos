@@ -4631,6 +4631,340 @@ def api_eliminar_alta(id):
         return jsonify({"error": str(e)}), 500
 
 
+# =============================================================================
+# API NUEVA: REVISION DE PLANILLAS DE ALTAS
+# -----------------------------------------------------------------------------
+# Capa independiente para que superadmin revise/apruebe planillas de altas sin
+# modificar la tabla principal movimientos_altas ni el flujo normal de carga.
+# =============================================================================
+
+def _ensure_altas_revision_tables():
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS altas_planilla_revisiones (
+            id SERIAL PRIMARY KEY,
+            mes_planilla VARCHAR(20) NOT NULL,
+            anio_planilla VARCHAR(10) NOT NULL,
+            estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+            comentario TEXT,
+            revisado_por VARCHAR(50),
+            fecha_aprobacion TIMESTAMP WITHOUT TIME ZONE,
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (mes_planilla, anio_planilla)
+        )
+    """))
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS altas_movimiento_revisiones (
+            id_alta INTEGER PRIMARY KEY REFERENCES movimientos_altas(id) ON DELETE CASCADE,
+            revisado BOOLEAN NOT NULL DEFAULT FALSE,
+            comentario TEXT,
+            revisado_por VARCHAR(50),
+            fecha_revision TIMESTAMP WITHOUT TIME ZONE,
+            fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.commit()
+
+
+def _alta_revision_estado(value):
+    estado = str(value or "pendiente").strip().lower()
+    if estado not in {"pendiente", "en_revision", "aprobada"}:
+        raise ValueError("Estado de revision invalido")
+    return estado
+
+
+def _alta_revision_key(mes, anio):
+    mes_clean = str(mes or "").strip()
+    anio_clean = str(anio or "").strip()
+    if not mes_clean or not anio_clean:
+        raise ValueError("Faltan mes y anio de planilla")
+    return mes_clean, anio_clean
+
+
+def _ensure_altas_revision_planilla(mes, anio):
+    db.session.execute(text("""
+        INSERT INTO altas_planilla_revisiones (mes_planilla, anio_planilla)
+        VALUES (:mes, :anio)
+        ON CONFLICT (mes_planilla, anio_planilla) DO NOTHING
+    """), {"mes": mes, "anio": anio})
+
+
+def _alta_revision_resumen_to_dict(row):
+    total = int(row["total_movimientos"] or 0)
+    revisados = int(row["movimientos_revisados"] or 0)
+    estado = row["estado"] or "pendiente"
+    return {
+        "mes_planilla": row["mes_planilla"],
+        "anio_planilla": row["anio_planilla"],
+        "estado": estado,
+        "comentario": row["comentario"],
+        "revisado_por": row["revisado_por"],
+        "fecha_aprobacion": _fecha_iso(row["fecha_aprobacion"]),
+        "fecha_actualizacion": _fecha_iso(row["fecha_actualizacion"]),
+        "total_movimientos": total,
+        "movimientos_revisados": revisados,
+        "movimientos_pendientes": max(total - revisados, 0),
+        "total_valor": float(row["total_valor"] or 0),
+    }
+
+
+def _alta_revision_item_to_dict(row):
+    alta = _alta_to_dict(row)
+    alta["revision"] = {
+        "revisado": bool(row["revision_revisado"]),
+        "comentario": row["revision_comentario"],
+        "revisado_por": row["revision_revisado_por"],
+        "fecha_revision": _fecha_iso(row["revision_fecha_revision"]),
+        "fecha_actualizacion": _fecha_iso(row["revision_fecha_actualizacion"]),
+    }
+    return alta
+
+
+def _alta_revision_resumen_sql(where_sql="", extra_params=None):
+    params = extra_params or {}
+    return db.session.execute(text(f"""
+        WITH planillas AS (
+            SELECT
+                m.mes_planilla,
+                m.anio_planilla,
+                COUNT(*) AS total_movimientos,
+                COALESCE(SUM(COALESCE(m.valor_total, 0)), 0) AS total_valor,
+                SUM(CASE WHEN COALESCE(amr.revisado, FALSE) THEN 1 ELSE 0 END) AS movimientos_revisados
+            FROM movimientos_altas m
+            LEFT JOIN altas_movimiento_revisiones amr ON amr.id_alta = m.id
+            WHERE COALESCE(TRIM(m.mes_planilla), '') <> ''
+              AND COALESCE(TRIM(m.anio_planilla), '') <> ''
+              {where_sql}
+            GROUP BY m.mes_planilla, m.anio_planilla
+        )
+        SELECT
+            p.mes_planilla,
+            p.anio_planilla,
+            p.total_movimientos,
+            p.total_valor,
+            p.movimientos_revisados,
+            COALESCE(apr.estado, 'pendiente') AS estado,
+            apr.comentario,
+            apr.revisado_por,
+            apr.fecha_aprobacion,
+            apr.fecha_actualizacion
+        FROM planillas p
+        LEFT JOIN altas_planilla_revisiones apr
+          ON apr.mes_planilla = p.mes_planilla
+         AND apr.anio_planilla = p.anio_planilla
+        ORDER BY p.anio_planilla DESC,
+            CASE LOWER(p.mes_planilla)
+                WHEN 'enero' THEN 1
+                WHEN 'febrero' THEN 2
+                WHEN 'marzo' THEN 3
+                WHEN 'abril' THEN 4
+                WHEN 'mayo' THEN 5
+                WHEN 'junio' THEN 6
+                WHEN 'julio' THEN 7
+                WHEN 'agosto' THEN 8
+                WHEN 'septiembre' THEN 9
+                WHEN 'octubre' THEN 10
+                WHEN 'noviembre' THEN 11
+                WHEN 'diciembre' THEN 12
+                ELSE 99
+            END DESC
+    """), params).mappings().all()
+
+
+@bp.route('/api/altas/revisiones', methods=['GET'])
+@superadmin_required_api
+def api_listar_revisiones_altas():
+    try:
+        _ensure_altas_revision_tables()
+        rows = _alta_revision_resumen_sql()
+        return jsonify([_alta_revision_resumen_to_dict(row) for row in rows]), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/revisiones/notificaciones', methods=['GET'])
+@superadmin_required_api
+def api_notificaciones_revisiones_altas():
+    try:
+        _ensure_altas_revision_tables()
+        rows = _alta_revision_resumen_sql()
+        pendientes = [
+            _alta_revision_resumen_to_dict(row)
+            for row in rows
+            if (row["estado"] or "pendiente") != "aprobada"
+        ]
+        return jsonify({
+            "pendientes": len(pendientes),
+            "planillas": pendientes[:5],
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/revisiones/movimientos/<int:id_alta>', methods=['PUT'])
+@superadmin_required_api
+def api_guardar_revision_movimiento_alta(id_alta):
+    try:
+        _ensure_altas_revision_tables()
+        if not db.session.execute(text("SELECT 1 FROM movimientos_altas WHERE id = :id"), {"id": id_alta}).first():
+            return jsonify({"error": "Alta no encontrada"}), 404
+
+        data = request.get_json(silent=True) or {}
+        revisado = bool(data.get("revisado"))
+        comentario = _text_or_none(data.get("comentario"))
+        usuario = _main_username()
+
+        row = db.session.execute(text("""
+            INSERT INTO altas_movimiento_revisiones (
+                id_alta,
+                revisado,
+                comentario,
+                revisado_por,
+                fecha_revision,
+                fecha_actualizacion
+            )
+            VALUES (
+                :id_alta,
+                :revisado,
+                :comentario,
+                :revisado_por,
+                CASE WHEN :revisado THEN CURRENT_TIMESTAMP ELSE NULL END,
+                CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id_alta) DO UPDATE SET
+                revisado = EXCLUDED.revisado,
+                comentario = EXCLUDED.comentario,
+                revisado_por = EXCLUDED.revisado_por,
+                fecha_revision = CASE WHEN EXCLUDED.revisado THEN CURRENT_TIMESTAMP ELSE NULL END,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            RETURNING id_alta, revisado, comentario, revisado_por, fecha_revision, fecha_actualizacion
+        """), {
+            "id_alta": id_alta,
+            "revisado": revisado,
+            "comentario": comentario,
+            "revisado_por": usuario,
+        }).mappings().first()
+        db.session.commit()
+        return jsonify({
+            "id_alta": row["id_alta"],
+            "revisado": bool(row["revisado"]),
+            "comentario": row["comentario"],
+            "revisado_por": row["revisado_por"],
+            "fecha_revision": _fecha_iso(row["fecha_revision"]),
+            "fecha_actualizacion": _fecha_iso(row["fecha_actualizacion"]),
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/revisiones/<mes>/<anio>', methods=['GET'])
+@superadmin_required_api
+def api_obtener_revision_alta(mes, anio):
+    try:
+        _ensure_altas_revision_tables()
+        mes, anio = _alta_revision_key(mes, anio)
+        _ensure_altas_revision_planilla(mes, anio)
+        db.session.commit()
+
+        resumen_rows = _alta_revision_resumen_sql(
+            "AND m.mes_planilla = :mes AND m.anio_planilla = :anio",
+            {"mes": mes, "anio": anio},
+        )
+        if not resumen_rows:
+            return jsonify({"error": "Planilla sin movimientos"}), 404
+
+        rows = db.session.execute(text("""
+            SELECT
+                m.*,
+                r.nombre AS rubro_nombre,
+                c.descripcion AS clase_nombre,
+                COALESCE(amr.revisado, FALSE) AS revision_revisado,
+                amr.comentario AS revision_comentario,
+                amr.revisado_por AS revision_revisado_por,
+                amr.fecha_revision AS revision_fecha_revision,
+                amr.fecha_actualizacion AS revision_fecha_actualizacion
+            FROM movimientos_altas m
+            LEFT JOIN rubros r ON m.id_rubro = r.id_rubro
+            LEFT JOIN clases_bienes c ON m.id_clase = c.id_clase
+            LEFT JOIN altas_movimiento_revisiones amr ON amr.id_alta = m.id
+            WHERE m.mes_planilla = :mes AND m.anio_planilla = :anio
+            ORDER BY m.codigo_presup ASC NULLS LAST, m.id_clase ASC NULLS LAST, m.fecha_alta ASC, m.id ASC
+        """), {"mes": mes, "anio": anio}).mappings().all()
+
+        return jsonify({
+            "planilla": _alta_revision_resumen_to_dict(resumen_rows[0]),
+            "movimientos": [_alta_revision_item_to_dict(row) for row in rows],
+        }), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/revisiones/<mes>/<anio>', methods=['PUT'])
+@superadmin_required_api
+def api_actualizar_revision_alta(mes, anio):
+    try:
+        _ensure_altas_revision_tables()
+        mes, anio = _alta_revision_key(mes, anio)
+        data = request.get_json(silent=True) or {}
+        estado = _alta_revision_estado(data.get("estado"))
+        comentario = _text_or_none(data.get("comentario"))
+        usuario = _main_username()
+
+        row = db.session.execute(text("""
+            INSERT INTO altas_planilla_revisiones (
+                mes_planilla,
+                anio_planilla,
+                estado,
+                comentario,
+                revisado_por,
+                fecha_aprobacion,
+                fecha_actualizacion
+            )
+            VALUES (
+                :mes,
+                :anio,
+                :estado,
+                :comentario,
+                :revisado_por,
+                CASE WHEN :estado = 'aprobada' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (mes_planilla, anio_planilla) DO UPDATE SET
+                estado = EXCLUDED.estado,
+                comentario = EXCLUDED.comentario,
+                revisado_por = EXCLUDED.revisado_por,
+                fecha_aprobacion = CASE WHEN EXCLUDED.estado = 'aprobada' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            RETURNING mes_planilla, anio_planilla
+        """), {
+            "mes": mes,
+            "anio": anio,
+            "estado": estado,
+            "comentario": comentario,
+            "revisado_por": usuario,
+        }).mappings().first()
+        db.session.commit()
+
+        resumen_rows = _alta_revision_resumen_sql(
+            "AND m.mes_planilla = :mes AND m.anio_planilla = :anio",
+            {"mes": row["mes_planilla"], "anio": row["anio_planilla"]},
+        )
+        return jsonify(_alta_revision_resumen_to_dict(resumen_rows[0])), 200
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 
 @bp.route("/altas/exportar_pdf")
 def exportar_pdf_altas():
