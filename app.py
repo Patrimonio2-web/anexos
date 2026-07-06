@@ -4221,7 +4221,7 @@ def altas():
         mes_planilla = data['mes_planilla']
         anio_planilla = data['anio_planilla']
         id_rubro = int(data['id_rubro']) if data['id_rubro'] else None
-        id_clase = int(data['id_clase']) if data['id_clase'] else None
+        id_clase = int(data['id_clase']) if data['id_clase'] else 0
 
         # ✅ Ejecutar INSERT con fecha_resolucion incluida
         with get_db_connection() as conn:
@@ -4337,7 +4337,7 @@ def editar_alta(id):
                 data['codigo_presup'],
                 data['identidad'],
                 int(data['id_rubro']) if data['id_rubro'] else None,
-                int(data['id_clase']) if data['id_clase'] else None,
+                int(data['id_clase']) if data['id_clase'] else 0,
                 id
             ))
             conn.commit()
@@ -4407,7 +4407,13 @@ def _parse_int_or_none(value):
         return None
 
 
+def _parse_clase_alta(value):
+    parsed = _parse_int_or_none(value)
+    return parsed if parsed is not None else 0
+
+
 def _alta_to_dict(row):
+    id_clase = row["id_clase"] if row["id_clase"] is not None else 0
     return {
         "id": row["id"],
         "fecha_alta": _fecha_iso(row["fecha_alta"]),
@@ -4423,9 +4429,9 @@ def _alta_to_dict(row):
         "mes_planilla": row["mes_planilla"],
         "anio_planilla": row["anio_planilla"],
         "id_rubro": row["id_rubro"],
-        "id_clase": row["id_clase"],
+        "id_clase": id_clase,
         "rubro_nombre": row["rubro_nombre"],
-        "clase_nombre": row["clase_nombre"],
+        "clase_nombre": row["clase_nombre"] or ("0000" if id_clase == 0 else None),
     }
 
 
@@ -4437,7 +4443,7 @@ def _alta_payload(data):
         valor_total = cantidad * valor_unitario
 
     id_rubro = _parse_int_or_none(data.get("id_rubro"))
-    id_clase = _parse_int_or_none(data.get("id_clase"))
+    id_clase = _parse_clase_alta(data.get("id_clase"))
     codigo_presup = _text_or_none(data.get("codigo_presup"))
     if not codigo_presup and id_rubro:
         codigo_presup = str(id_rubro)
