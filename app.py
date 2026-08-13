@@ -395,6 +395,59 @@ class ClaseBien(db.Model):
     descripcion = db.Column(db.Text, nullable=False)
 
 
+_nomenclador_encoding_checked = False
+
+
+def _limpiar_texto_nomenclador(value):
+    if value is None:
+        return None
+    texto = str(value)
+    return (
+        texto
+        .replace("\ufffd", "\u00d1")
+        .replace("\u00c3\u2018", "\u00d1")
+        .replace("\u00c3\u00b1", "\u00f1")
+    )
+
+
+def _ensure_nomenclador_encoding():
+    # Corrige datos historicos del nomenclador que quedaron con la letra enye rota.
+    global _nomenclador_encoding_checked
+    if _nomenclador_encoding_checked:
+        return
+
+    try:
+        db.session.execute(text("""
+            UPDATE clases_bienes
+            SET descripcion = replace(
+                replace(
+                    replace(descripcion, :bad_replacement, :enye_mayus),
+                    :bad_enye_mayus,
+                    :enye_mayus
+                ),
+                :bad_enye_minus,
+                :enye_minus
+            )
+            WHERE descripcion LIKE :pattern_replacement
+               OR descripcion LIKE :pattern_enye_mayus
+               OR descripcion LIKE :pattern_enye_minus
+        """), {
+            "bad_replacement": "\ufffd",
+            "bad_enye_mayus": "\u00c3\u2018",
+            "bad_enye_minus": "\u00c3\u00b1",
+            "enye_mayus": "\u00d1",
+            "enye_minus": "\u00f1",
+            "pattern_replacement": "%\ufffd%",
+            "pattern_enye_mayus": "%\u00c3\u2018%",
+            "pattern_enye_minus": "%\u00c3\u00b1%",
+        })
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    finally:
+        _nomenclador_encoding_checked = True
+
+
 class Anexo(db.Model):
     __tablename__ = 'anexos'
     id = db.Column(db.Integer, primary_key=True)
@@ -1263,8 +1316,9 @@ def logout():
 # API para obtener todos los rubros ordenados por ID
 @app.route('/api/rubros', methods=['GET'])
 def obtener_rubros():
+    _ensure_nomenclador_encoding()
     rubros = Rubro.query.order_by(Rubro.id_rubro).all()
-    data = [{'id_rubro': r.id_rubro, 'nombre': r.nombre} for r in rubros]
+    data = [{'id_rubro': r.id_rubro, 'nombre': _limpiar_texto_nomenclador(r.nombre)} for r in rubros]
     return jsonify(data)
 
 
@@ -1273,6 +1327,7 @@ def obtener_rubros():
 @app.route('/api/clases-por-rubro', methods=['GET'])
 def clases_por_rubro():
     try:
+        _ensure_nomenclador_encoding()
         rubro_id = request.args.get('rubro_id', type=int)
         if not rubro_id:
             return jsonify({'error': 'Falta el parámetro rubro_id'}), 400
@@ -1281,7 +1336,7 @@ def clases_por_rubro():
 
         data = [{
             'id_clase': c.id_clase,
-            'descripcion': c.descripcion,
+            'descripcion': _limpiar_texto_nomenclador(c.descripcion),
             'id_rubro': c.id_rubro
         } for c in clases]
 
@@ -1295,6 +1350,7 @@ def clases_por_rubro():
 @app.route('/api/buscar-clase-global', methods=['GET'])
 def buscar_clase_global():
     try:
+        _ensure_nomenclador_encoding()
         query = (request.args.get('query') or "").strip()
         if not query:
             return jsonify([])
@@ -1316,7 +1372,7 @@ def buscar_clase_global():
 
         data = [{
             'id_clase': c.id_clase,
-            'descripcion': c.descripcion,
+            'descripcion': _limpiar_texto_nomenclador(c.descripcion),
             'id_rubro': c.id_rubro
         } for c in clases]
 
@@ -1519,6 +1575,7 @@ def subdependencias_por_anexo(anexo_id):
 #--------- busca por clase (legacy / impresora)
 @app.route('/api/buscar-clase', methods=['GET'])
 def buscar_clase():
+    _ensure_nomenclador_encoding()
     query = request.args.get('query', '', type=str)
 
     if not query:
@@ -1530,7 +1587,7 @@ def buscar_clase():
 
     data = [{
         'id_clase': c.id_clase,
-        'descripcion': c.descripcion,
+        'descripcion': _limpiar_texto_nomenclador(c.descripcion),
         'id_rubro': c.id_rubro
     } for c in clases]
 
@@ -1540,6 +1597,7 @@ def buscar_clase():
 #------- busca por id de clase
 @app.route('/api/clase/<int:id_clase>', methods=['GET'])
 def obtener_clase_por_id(id_clase):
+    _ensure_nomenclador_encoding()
     clase = ClaseBien.query.get(id_clase)
 
     if not clase:
@@ -1549,9 +1607,9 @@ def obtener_clase_por_id(id_clase):
 
     return jsonify({
         'id_clase': clase.id_clase,
-        'descripcion': clase.descripcion,
+        'descripcion': _limpiar_texto_nomenclador(clase.descripcion),
         'id_rubro': clase.id_rubro,
-        'rubro': rubro.nombre if rubro else 'Sin rubro'
+        'rubro': _limpiar_texto_nomenclador(rubro.nombre) if rubro else 'Sin rubro'
     })
 
 #Editar anexos y subdependencias -------------------------------------------------------------------
