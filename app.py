@@ -2694,7 +2694,16 @@ from datetime import timedelta
 def ultimos_mobiliarios():
     try:
         _ensure_mobiliario_valor_column()
-        query = """
+        include_historial = str(request.args.get("lite") or "").lower() not in ("1", "true", "si")
+        historial_select = (
+            "m.historial_movimientos"
+            if include_historial
+            else "NULL AS historial_movimientos"
+        )
+        ubicacion_id = request.args.get("ubicacion_id", type=int)
+        ubicacion_filter = "AND m.ubicacion_id = %s" if ubicacion_id is not None else ""
+        params = (ubicacion_id,) if ubicacion_id is not None else ()
+        query = f"""
         SELECT 
             m.id                      AS id_mobiliario,
             m.ubicacion_id            AS ubicacion_id,          -- ✅ agregado
@@ -2714,7 +2723,7 @@ def ultimos_mobiliarios():
             m.valor,
             m.fecha_creacion,
             m.fecha_actualizacion,
-            m.historial_movimientos,
+            {historial_select},
             r.nombre                  AS rubro,
             cb.descripcion            AS clase_bien,
             sd.id                     AS id_subdependencia,     -- opcional, útil para edición
@@ -2728,12 +2737,13 @@ def ultimos_mobiliarios():
         LEFT JOIN subdependencias sd ON m.ubicacion_id   = sd.id
         LEFT JOIN anexos           a ON sd.id_anexo      = a.id
         WHERE m.id ~ '^[0-9]+$'
+        {ubicacion_filter}
         ORDER BY m.id::integer DESC;
         """
 
         conn = db.engine.raw_connection()
         cur  = conn.cursor()
-        cur.execute(query)
+        cur.execute(query, params)
         columns = [col[0] for col in cur.description]
         results = [dict(zip(columns, row)) for row in cur.fetchall()]
         cur.close()
@@ -3139,6 +3149,59 @@ def editar_mobiliario(id):
 
         db.session.commit()
         return jsonify({"mensaje": "Registro actualizado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# API NUEVA: FOTO RAPIDA DE MOBILIARIO
+# -----------------------------------------------------------------------------
+# Permite actualizar solo la imagen desde el front movil sin pasar por el PUT
+# completo de edicion, conservando auditoria e historial.
+# =============================================================================
+@app.route('/api/mobiliario/<string:id>/foto', methods=['PATCH'])
+@admin_required_api
+def actualizar_foto_mobiliario(id):
+    mobiliario = Mobiliario.query.get_or_404(id)
+    try:
+        data = request.get_json(silent=True) or {}
+        foto_url = str(data.get("foto_url") or "").strip()
+        if not foto_url:
+            return jsonify({"error": "Falta foto_url"}), 400
+
+        ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%d-%m-%Y %H:%M")
+        historial = mobiliario.historial_movimientos or ""
+
+        before = model_to_dict(mobiliario)
+
+        mobiliario.foto_url = foto_url
+        mobiliario.historial_movimientos = (
+            historial + f"\n[{ahora}] Foto actualizada"
+        ).strip()
+
+        after = model_to_dict(mobiliario)
+        registrar_auditoria(
+            accion="UPDATE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=before,
+            after=after,
+            descripcion="Actualizacion rapida de foto"
+        )
+
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Foto actualizada correctamente",
+            "id": id,
+            "foto_url": mobiliario.foto_url,
+            "fecha_actualizacion": (
+                (mobiliario.fecha_actualizacion - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+                if mobiliario.fecha_actualizacion
+                else None
+            ),
+        }), 200
 
     except Exception as e:
         db.session.rollback()
