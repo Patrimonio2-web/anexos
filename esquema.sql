@@ -75,6 +75,7 @@ CREATE TABLE public.mobiliario (
     problema_etiqueta boolean DEFAULT false,
     comentarios text,
     foto_url character varying(255),
+    foto_url_2 character varying(255),
     fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     rubro_id integer,
@@ -89,6 +90,9 @@ ALTER TABLE public.mobiliario OWNER TO patrimonio_ppfk_user;
 
 ALTER TABLE IF EXISTS public.mobiliario
     ADD COLUMN IF NOT EXISTS valor numeric(12,2);
+
+ALTER TABLE IF EXISTS public.mobiliario
+    ADD COLUMN IF NOT EXISTS foto_url_2 character varying(255);
 
 --
 -- Name: movimientos_altas; Type: TABLE; Schema: public; Owner: patrimonio_ppfk_user
@@ -351,6 +355,7 @@ CREATE VIEW public.vista_mobiliario_con_ubicacion AS
     m.fecha_resolucion,
     m.resolucion,
     m.foto_url,
+    m.foto_url_2,
     m.fecha_creacion,
     m.fecha_actualizacion,
     s.id AS subdependencia_id,
