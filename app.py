@@ -2248,10 +2248,10 @@ def _alerta_matafuego(fecha_vencimiento, estado="activo"):
 MATAFUEGOS_SELECT = """
     SELECT
         mf.id,
-        mf.id_anexo,
-        a.nombre AS anexo,
-        mf.id_subdependencia,
-        s.nombre AS subdependencia,
+        COALESCE(actual_a.id, mf.id_anexo) AS id_anexo,
+        COALESCE(actual_a.nombre, a.nombre) AS anexo,
+        COALESCE(actual_sd.id, mf.id_subdependencia) AS id_subdependencia,
+        COALESCE(actual_sd.nombre, s.nombre) AS subdependencia,
         mf.id_mobiliario,
         m.descripcion AS descripcion_mobiliario,
         m.foto_url AS foto_url,
@@ -2267,9 +2267,11 @@ MATAFUEGOS_SELECT = """
         mf.fecha_creacion,
         mf.fecha_actualizacion
     FROM matafuegos mf
-    JOIN anexos a ON a.id = mf.id_anexo
-    LEFT JOIN subdependencias s ON s.id = mf.id_subdependencia
     LEFT JOIN mobiliario m ON m.id = mf.id_mobiliario
+    LEFT JOIN subdependencias actual_sd ON actual_sd.id = m.ubicacion_id
+    LEFT JOIN anexos actual_a ON actual_a.id = actual_sd.id_anexo
+    LEFT JOIN anexos a ON a.id = mf.id_anexo
+    LEFT JOIN subdependencias s ON s.id = mf.id_subdependencia
 """
 
 
@@ -2384,9 +2386,15 @@ def obtener_resumen_matafuegos_anexos():
     try:
         _ensure_matafuegos_tables()
         rows = db.session.execute(text("""
-            SELECT id_anexo, fecha_vencimiento, estado
-            FROM matafuegos
-            WHERE estado <> 'inactivo'
+            SELECT
+                COALESCE(actual_a.id, mf.id_anexo) AS id_anexo,
+                mf.fecha_vencimiento,
+                mf.estado
+            FROM matafuegos mf
+            LEFT JOIN mobiliario m ON m.id = mf.id_mobiliario
+            LEFT JOIN subdependencias actual_sd ON actual_sd.id = m.ubicacion_id
+            LEFT JOIN anexos actual_a ON actual_a.id = actual_sd.id_anexo
+            WHERE mf.estado <> 'inactivo'
         """)).mappings().all()
         return jsonify(list(_matafuegos_resumen_from_rows(rows).values()))
     except Exception as e:
@@ -2404,7 +2412,7 @@ def obtener_matafuegos_por_anexo(id_anexo):
         where_estado = "" if incluir_inactivos else "AND mf.estado <> 'inactivo'"
         rows = db.session.execute(text(f"""
             {MATAFUEGOS_SELECT}
-            WHERE mf.id_anexo = :id_anexo
+            WHERE COALESCE(actual_a.id, mf.id_anexo) = :id_anexo
             {where_estado}
             ORDER BY
                 mf.fecha_vencimiento ASC NULLS LAST,
@@ -2445,7 +2453,7 @@ def obtener_candidatos_matafuegos():
             JOIN anexos a ON a.id = sd.id_anexo
             LEFT JOIN clases_bienes cb ON cb.id_clase = m.clase_bien_id
             LEFT JOIN rubros r ON r.id_rubro = m.rubro_id
-            LEFT JOIN matafuegos mf ON mf.id_mobiliario = m.id
+            LEFT JOIN matafuegos mf ON mf.id_mobiliario = m.id AND mf.estado <> 'inactivo'
             WHERE mf.id IS NULL
               {where_anexo}
               AND (
