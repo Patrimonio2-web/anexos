@@ -4,6 +4,7 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from flask_compress import Compress
 
 from sqlalchemy import text, asc  # <- text y asc en una sola línea
 
@@ -73,6 +74,10 @@ app = Flask(__name__)
 
 # SECRET_KEY viene desde variables de entorno.
 app.secret_key = SECRET_KEY
+app.config["COMPRESS_ALGORITHM"] = ["gzip"]
+app.config["COMPRESS_LEVEL"] = 6
+app.config["COMPRESS_MIN_SIZE"] = 500
+Compress(app)
 
 # CORS permitido solo para los frontends configurados.
 CORS(
@@ -174,6 +179,7 @@ LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
 LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "900"))
 IDLE_SESSION_TIMEOUT_SECONDS = int(os.getenv("IDLE_SESSION_TIMEOUT_SECONDS", "600"))
 PRESENCE_ONLINE_SECONDS = int(os.getenv("PRESENCE_ONLINE_SECONDS", "180"))
+SESSION_USER_REFRESH_SECONDS = int(os.getenv("SESSION_USER_REFRESH_SECONDS", "30"))
 
 
 def _login_rate_key(username):
@@ -226,6 +232,13 @@ def _refresh_main_session_from_db():
     username = _main_username()
     if not username:
         return True
+    now = time.time()
+    last_checked = session.get("user_checked_at")
+    try:
+        if last_checked and now - float(last_checked) < SESSION_USER_REFRESH_SECONDS:
+            return True
+    except (TypeError, ValueError):
+        pass
     try:
         row = db.session.execute(text("""
             SELECT username, COALESCE(role, 'usuario') AS role, COALESCE(activo, TRUE) AS activo
@@ -238,6 +251,7 @@ def _refresh_main_session_from_db():
             return False
         session["username"] = row["username"]
         session["role"] = _normalize_main_role(row["username"], row["role"])
+        session["user_checked_at"] = now
         return True
     except Exception:
         db.session.rollback()
@@ -252,6 +266,7 @@ def _clear_auth_session():
         "role_personal",
         "csrf_token",
         "last_activity",
+        "user_checked_at",
     ):
         session.pop(key, None)
 
@@ -784,6 +799,7 @@ def api_login():
     session["username"] = user["username"]
     session["role"] = _normalize_main_role(user["username"], user.get("role"))
     session["csrf_token"] = secrets.token_urlsafe(32)
+    session["user_checked_at"] = time.time()
     _touch_session_activity()
     _clear_login_failures(username)
     return jsonify({"username": session["username"], "role": session["role"]}), 200
@@ -1277,6 +1293,7 @@ def admin_actualizar_usuario(id_usuario):
         if current_id == id_usuario:
             session["username"] = row["username"]
             session["role"] = _normalize_main_role(row["username"], row["role"])
+            session["user_checked_at"] = time.time()
 
         return jsonify(_admin_usuario_to_dict(row)), 200
     except ValueError as e:
