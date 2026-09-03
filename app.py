@@ -2164,6 +2164,12 @@ def _ensure_matafuegos_tables():
             capacidad VARCHAR(80),
             fecha_vencimiento DATE,
             fecha_control DATE,
+            fecha_recarga DATE,
+            estado_recarga VARCHAR(1),
+            senalizacion BOOLEAN,
+            presion_adecuada BOOLEAN,
+            color_marbete VARCHAR(30),
+            prueba_hidraulica DATE,
             estado VARCHAR(20) DEFAULT 'activo' NOT NULL,
             observaciones TEXT,
             fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -2179,6 +2185,12 @@ def _ensure_matafuegos_tables():
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS capacidad VARCHAR(80)"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_vencimiento DATE"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_control DATE"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_recarga DATE"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS estado_recarga VARCHAR(1)"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS senalizacion BOOLEAN"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS presion_adecuada BOOLEAN"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS color_marbete VARCHAR(30)"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS prueba_hidraulica DATE"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'activo' NOT NULL"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS observaciones TEXT"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_creacion TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP"))
@@ -2219,6 +2231,79 @@ def _text_or_none(value):
 def _estado_matafuego(value):
     clean = str(value or "activo").strip().lower()
     return clean if clean in {"activo", "inactivo"} else "activo"
+
+
+def _estado_recarga_matafuego(value):
+    clean = str(value or "").strip().upper()
+    if not clean:
+        return None
+    if clean not in {"M", "B"}:
+        raise ValueError("Estado de recarga invalido")
+    return clean
+
+
+def _bool_matafuego(value, field_name):
+    if value in ("", None):
+        return None
+    if isinstance(value, bool):
+        return value
+    clean = str(value).strip().lower()
+    if clean in {"si", "s", "true", "1", "yes"}:
+        return True
+    if clean in {"no", "n", "false", "0"}:
+        return False
+    raise ValueError(f"{field_name} debe ser si o no")
+
+
+def _color_marbete_matafuego(value):
+    clean = str(value or "").strip().lower()
+    if not clean:
+        return None
+    allowed = {
+        "blanco",
+        "amarillo",
+        "naranja",
+        "azul",
+        "verde",
+        "rojo",
+        "negro",
+        "violeta",
+        "morado",
+    }
+    if clean not in allowed:
+        raise ValueError("Color de marbete invalido")
+    return "violeta" if clean == "morado" else clean
+
+
+def _ubicacion_detalle_matafuego(data, id_subdependencia):
+    if id_subdependencia:
+        sub = db.session.get(Subdependencia, id_subdependencia)
+        if sub:
+            return sub.nombre
+    return _text_or_none(data.get("ubicacion_detalle"))
+
+
+def _actualizar_ubicacion_mobiliario_matafuego(id_mobiliario, id_subdependencia):
+    if not id_mobiliario or not id_subdependencia:
+        return
+
+    mobiliario = db.session.get(Mobiliario, str(id_mobiliario))
+    if not mobiliario or mobiliario.ubicacion_id == id_subdependencia:
+        return
+
+    sub_old = db.session.get(Subdependencia, mobiliario.ubicacion_id)
+    sub_new = db.session.get(Subdependencia, id_subdependencia)
+    anexo_old = db.session.get(Anexo, sub_old.id_anexo) if sub_old else None
+    anexo_new = db.session.get(Anexo, sub_new.id_anexo) if sub_new else None
+    ubicacion_old = f"{sub_old.nombre} - {anexo_old.nombre}" if sub_old and anexo_old else "Desconocido"
+    ubicacion_new = f"{sub_new.nombre} - {anexo_new.nombre}" if sub_new and anexo_new else "Desconocido"
+    ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%d-%m-%Y %H:%M")
+    historial = mobiliario.historial_movimientos or ""
+    historial += f"\n[{ahora}] Cambio de ubicacion desde matafuegos: de '{ubicacion_old}' a '{ubicacion_new}'"
+
+    mobiliario.ubicacion_id = id_subdependencia
+    mobiliario.historial_movimientos = historial
+    mobiliario.fecha_actualizacion = datetime.utcnow()
 
 
 def _dias_matafuego(fecha_vencimiento):
@@ -2262,6 +2347,12 @@ MATAFUEGOS_SELECT = """
         mf.capacidad,
         mf.fecha_vencimiento,
         mf.fecha_control,
+        mf.fecha_recarga,
+        mf.estado_recarga,
+        mf.senalizacion,
+        mf.presion_adecuada,
+        mf.color_marbete,
+        mf.prueba_hidraulica,
         mf.estado,
         mf.observaciones,
         mf.fecha_creacion,
@@ -2294,6 +2385,12 @@ def _matafuego_to_dict(row):
         "capacidad": row["capacidad"],
         "fecha_vencimiento": _fecha_iso(fecha_vencimiento),
         "fecha_control": _fecha_iso(row["fecha_control"]),
+        "fecha_recarga": _fecha_iso(row["fecha_recarga"]),
+        "estado_recarga": row["estado_recarga"],
+        "senalizacion": row["senalizacion"],
+        "presion_adecuada": row["presion_adecuada"],
+        "color_marbete": row["color_marbete"],
+        "prueba_hidraulica": _fecha_iso(row["prueba_hidraulica"]),
         "estado": row["estado"],
         "observaciones": row["observaciones"],
         "dias_para_vencer": dias,
@@ -2424,6 +2521,27 @@ def obtener_matafuegos_por_anexo(id_anexo):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/matafuegos', methods=['GET'])
+def obtener_matafuegos():
+    try:
+        _ensure_matafuegos_tables()
+        incluir_inactivos = str(request.args.get("incluir_inactivos") or "").lower() == "true"
+        where_estado = "" if incluir_inactivos else "WHERE mf.estado <> 'inactivo'"
+        rows = db.session.execute(text(f"""
+            {MATAFUEGOS_SELECT}
+            {where_estado}
+            ORDER BY
+                mf.fecha_vencimiento ASC NULLS LAST,
+                COALESCE(actual_a.id, mf.id_anexo) ASC,
+                COALESCE(actual_sd.nombre, s.nombre) ASC,
+                mf.id ASC
+        """)).mappings().all()
+        return jsonify([_matafuego_to_dict(row) for row in rows])
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/matafuegos/candidatos', methods=['GET'])
 def obtener_candidatos_matafuegos():
     try:
@@ -2484,6 +2602,10 @@ def crear_matafuego():
         id_anexo, id_subdependencia = _validar_ubicacion_matafuego(data)
         fecha_vencimiento = _parse_fecha_matafuego(data, "fecha_vencimiento")
         fecha_control = _parse_fecha_matafuego(data, "fecha_control")
+        fecha_recarga = _parse_fecha_matafuego(data, "fecha_recarga")
+        prueba_hidraulica = _parse_fecha_matafuego(data, "prueba_hidraulica")
+        id_mobiliario = _text_or_none(data.get("id_mobiliario"))
+        ubicacion_detalle = _ubicacion_detalle_matafuego(data, id_subdependencia)
 
         new_id = db.session.execute(text("""
             INSERT INTO matafuegos (
@@ -2496,6 +2618,12 @@ def crear_matafuego():
                 capacidad,
                 fecha_vencimiento,
                 fecha_control,
+                fecha_recarga,
+                estado_recarga,
+                senalizacion,
+                presion_adecuada,
+                color_marbete,
+                prueba_hidraulica,
                 estado,
                 observaciones
             )
@@ -2509,6 +2637,12 @@ def crear_matafuego():
                 :capacidad,
                 :fecha_vencimiento,
                 :fecha_control,
+                :fecha_recarga,
+                :estado_recarga,
+                :senalizacion,
+                :presion_adecuada,
+                :color_marbete,
+                :prueba_hidraulica,
                 :estado,
                 :observaciones
             )
@@ -2516,16 +2650,23 @@ def crear_matafuego():
         """), {
             "id_anexo": id_anexo,
             "id_subdependencia": id_subdependencia,
-            "id_mobiliario": _text_or_none(data.get("id_mobiliario")),
+            "id_mobiliario": id_mobiliario,
             "codigo": _text_or_none(data.get("codigo")),
-            "ubicacion_detalle": _text_or_none(data.get("ubicacion_detalle")),
+            "ubicacion_detalle": ubicacion_detalle,
             "tipo": _text_or_none(data.get("tipo")),
             "capacidad": _text_or_none(data.get("capacidad")),
             "fecha_vencimiento": fecha_vencimiento,
             "fecha_control": fecha_control,
+            "fecha_recarga": fecha_recarga,
+            "estado_recarga": _estado_recarga_matafuego(data.get("estado_recarga")),
+            "senalizacion": _bool_matafuego(data.get("senalizacion"), "senalizacion"),
+            "presion_adecuada": _bool_matafuego(data.get("presion_adecuada"), "presion adecuada"),
+            "color_marbete": _color_marbete_matafuego(data.get("color_marbete")),
+            "prueba_hidraulica": prueba_hidraulica,
             "estado": _estado_matafuego(data.get("estado")),
             "observaciones": _text_or_none(data.get("observaciones")),
         }).scalar()
+        _actualizar_ubicacion_mobiliario_matafuego(id_mobiliario, id_subdependencia)
         db.session.commit()
         return jsonify(_matafuego_to_dict(_matafuego_row(new_id))), 201
     except ValueError as e:
@@ -2541,12 +2682,16 @@ def crear_matafuego():
 def editar_matafuego(id_matafuego):
     try:
         _ensure_matafuegos_tables()
-        if not _matafuego_row(id_matafuego):
+        actual = _matafuego_row(id_matafuego)
+        if not actual:
             return jsonify({"error": "Matafuego no encontrado"}), 404
         data = request.get_json(silent=True) or {}
         id_anexo, id_subdependencia = _validar_ubicacion_matafuego(data)
         fecha_vencimiento = _parse_fecha_matafuego(data, "fecha_vencimiento")
         fecha_control = _parse_fecha_matafuego(data, "fecha_control")
+        fecha_recarga = _parse_fecha_matafuego(data, "fecha_recarga")
+        prueba_hidraulica = _parse_fecha_matafuego(data, "prueba_hidraulica")
+        ubicacion_detalle = _ubicacion_detalle_matafuego(data, id_subdependencia)
 
         db.session.execute(text("""
             UPDATE matafuegos
@@ -2559,6 +2704,12 @@ def editar_matafuego(id_matafuego):
                 capacidad = :capacidad,
                 fecha_vencimiento = :fecha_vencimiento,
                 fecha_control = :fecha_control,
+                fecha_recarga = :fecha_recarga,
+                estado_recarga = :estado_recarga,
+                senalizacion = :senalizacion,
+                presion_adecuada = :presion_adecuada,
+                color_marbete = :color_marbete,
+                prueba_hidraulica = :prueba_hidraulica,
                 estado = :estado,
                 observaciones = :observaciones,
                 fecha_actualizacion = CURRENT_TIMESTAMP
@@ -2568,14 +2719,21 @@ def editar_matafuego(id_matafuego):
             "id_anexo": id_anexo,
             "id_subdependencia": id_subdependencia,
             "codigo": _text_or_none(data.get("codigo")),
-            "ubicacion_detalle": _text_or_none(data.get("ubicacion_detalle")),
+            "ubicacion_detalle": ubicacion_detalle,
             "tipo": _text_or_none(data.get("tipo")),
             "capacidad": _text_or_none(data.get("capacidad")),
             "fecha_vencimiento": fecha_vencimiento,
             "fecha_control": fecha_control,
+            "fecha_recarga": fecha_recarga,
+            "estado_recarga": _estado_recarga_matafuego(data.get("estado_recarga")),
+            "senalizacion": _bool_matafuego(data.get("senalizacion"), "senalizacion"),
+            "presion_adecuada": _bool_matafuego(data.get("presion_adecuada"), "presion adecuada"),
+            "color_marbete": _color_marbete_matafuego(data.get("color_marbete")),
+            "prueba_hidraulica": prueba_hidraulica,
             "estado": _estado_matafuego(data.get("estado")),
             "observaciones": _text_or_none(data.get("observaciones")),
         })
+        _actualizar_ubicacion_mobiliario_matafuego(actual["id_mobiliario"], id_subdependencia)
         db.session.commit()
         return jsonify(_matafuego_to_dict(_matafuego_row(id_matafuego))), 200
     except ValueError as e:
@@ -2619,6 +2777,12 @@ def importar_matafuegos_desde_mobiliario():
 
         fecha_vencimiento = _parse_fecha_matafuego(data, "fecha_vencimiento")
         fecha_control = _parse_fecha_matafuego(data, "fecha_control")
+        fecha_recarga = _parse_fecha_matafuego(data, "fecha_recarga")
+        prueba_hidraulica = _parse_fecha_matafuego(data, "prueba_hidraulica")
+        estado_recarga = _estado_recarga_matafuego(data.get("estado_recarga"))
+        senalizacion = _bool_matafuego(data.get("senalizacion"), "senalizacion")
+        presion_adecuada = _bool_matafuego(data.get("presion_adecuada"), "presion adecuada")
+        color_marbete = _color_marbete_matafuego(data.get("color_marbete"))
         observaciones = _text_or_none(data.get("observaciones"))
         imported_ids = []
 
@@ -2655,6 +2819,12 @@ def importar_matafuegos_desde_mobiliario():
                         ubicacion_detalle = COALESCE(ubicacion_detalle, :ubicacion_detalle),
                         fecha_vencimiento = COALESCE(:fecha_vencimiento, fecha_vencimiento),
                         fecha_control = COALESCE(:fecha_control, fecha_control),
+                        fecha_recarga = COALESCE(:fecha_recarga, fecha_recarga),
+                        estado_recarga = COALESCE(:estado_recarga, estado_recarga),
+                        senalizacion = COALESCE(:senalizacion, senalizacion),
+                        presion_adecuada = COALESCE(:presion_adecuada, presion_adecuada),
+                        color_marbete = COALESCE(:color_marbete, color_marbete),
+                        prueba_hidraulica = COALESCE(:prueba_hidraulica, prueba_hidraulica),
                         observaciones = COALESCE(:observaciones, observaciones),
                         estado = 'activo',
                         fecha_actualizacion = CURRENT_TIMESTAMP
@@ -2666,6 +2836,12 @@ def importar_matafuegos_desde_mobiliario():
                     "ubicacion_detalle": candidate["subdependencia"],
                     "fecha_vencimiento": fecha_vencimiento,
                     "fecha_control": fecha_control,
+                    "fecha_recarga": fecha_recarga,
+                    "estado_recarga": estado_recarga,
+                    "senalizacion": senalizacion,
+                    "presion_adecuada": presion_adecuada,
+                    "color_marbete": color_marbete,
+                    "prueba_hidraulica": prueba_hidraulica,
                     "observaciones": observaciones,
                 })
                 imported_ids.append(existing["id"])
@@ -2678,6 +2854,12 @@ def importar_matafuegos_desde_mobiliario():
                         ubicacion_detalle,
                         fecha_vencimiento,
                         fecha_control,
+                        fecha_recarga,
+                        estado_recarga,
+                        senalizacion,
+                        presion_adecuada,
+                        color_marbete,
+                        prueba_hidraulica,
                         estado,
                         observaciones
                     )
@@ -2688,6 +2870,12 @@ def importar_matafuegos_desde_mobiliario():
                         :ubicacion_detalle,
                         :fecha_vencimiento,
                         :fecha_control,
+                        :fecha_recarga,
+                        :estado_recarga,
+                        :senalizacion,
+                        :presion_adecuada,
+                        :color_marbete,
+                        :prueba_hidraulica,
                         'activo',
                         :observaciones
                     )
@@ -2699,6 +2887,12 @@ def importar_matafuegos_desde_mobiliario():
                     "ubicacion_detalle": candidate["subdependencia"],
                     "fecha_vencimiento": fecha_vencimiento,
                     "fecha_control": fecha_control,
+                    "fecha_recarga": fecha_recarga,
+                    "estado_recarga": estado_recarga,
+                    "senalizacion": senalizacion,
+                    "presion_adecuada": presion_adecuada,
+                    "color_marbete": color_marbete,
+                    "prueba_hidraulica": prueba_hidraulica,
                     "observaciones": observaciones,
                 }).scalar()
                 imported_ids.append(new_id)
