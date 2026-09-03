@@ -3960,7 +3960,8 @@ def mobiliario_advertencia_por_id(mobiliario_id):
             r.nombre AS rubro,
             cb.descripcion AS clase_bien,
             sd.nombre AS subdependencia,
-            a.nombre AS anexo
+            a.nombre AS anexo,
+            a.direccion AS direccion_anexo
         FROM mobiliario m
         LEFT JOIN clases_bienes cb ON m.clase_bien_id = cb.id_clase
         LEFT JOIN rubros r ON m.rubro_id = r.id_rubro
