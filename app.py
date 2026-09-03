@@ -21,6 +21,7 @@ import psycopg2, psycopg2.extras
 import qrcode
 import pandas as pd
 from dotenv import load_dotenv
+from urllib.parse import urlencode
 
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
@@ -62,6 +63,10 @@ DEFAULT_FRONTEND_ORIGINS = [
 ]
 FRONTEND_ORIGINS = _split_env_list("FRONTEND_ORIGINS", DEFAULT_FRONTEND_ORIGINS)
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://anexos.onrender.com"
+FRONTEND_PUBLIC_URL = (
+    os.getenv("FRONTEND_PUBLIC_URL")
+    or (FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS else DEFAULT_FRONTEND_ORIGINS[0])
+).rstrip("/")
 ALLOWED_ORIGINS = {origin.rstrip("/") for origin in (FRONTEND_ORIGINS + [BACKEND_PUBLIC_URL])}
 
 SECRET_KEY = _required_env("SECRET_KEY") or "dev-secret-key-change-me"
@@ -3991,8 +3996,9 @@ def mobiliario_advertencia_por_id(mobiliario_id):
 
 @app.route('/ver')
 def ver_mobiliario():
-    # No hace falta capturar el id aquí, el JS en ver.html lo lee del query string
-    return render_template('ver.html')
+    mobiliario_id = (request.args.get('id') or '').strip()
+    query = f"?{urlencode({'id': mobiliario_id})}" if mobiliario_id else ""
+    return redirect(f"{FRONTEND_PUBLIC_URL}/ver{query}", code=302)
 
 
 #imprimir listados ------------------------------------------------------------
