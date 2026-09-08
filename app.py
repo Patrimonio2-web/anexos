@@ -340,6 +340,7 @@ PUBLIC_API_ENDPOINTS = {
     "api_logout_personal",
     "api_me_personal",
     "mobiliario_advertencia_por_id",
+    "inventario_publico_subdependencia",
 }
 IDLE_EXEMPT_ENDPOINTS = {
     "api_login",
@@ -347,6 +348,7 @@ IDLE_EXEMPT_ENDPOINTS = {
     "api_login_personal",
     "api_logout_personal",
     "mobiliario_advertencia_por_id",
+    "inventario_publico_subdependencia",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_EXEMPT_ENDPOINTS = PUBLIC_API_ENDPOINTS
@@ -4000,6 +4002,71 @@ def ver_mobiliario():
     mobiliario_id = (request.args.get('id') or '').strip()
     query = f"?{urlencode({'id': mobiliario_id})}" if mobiliario_id else ""
     return redirect(f"{FRONTEND_PUBLIC_URL}/ver{query}", code=302)
+
+
+@app.route(
+    '/api/publico/subdependencias/<int:id_subdependencia>/inventario',
+    methods=['GET']
+)
+def inventario_publico_subdependencia(id_subdependencia):
+    try:
+        _ensure_mobiliario_foto_2_column()
+
+        ubicacion = db.session.execute(text("""
+            SELECT
+                sd.id AS id_subdependencia,
+                sd.nombre AS subdependencia,
+                a.id AS id_anexo,
+                a.nombre AS anexo
+            FROM subdependencias sd
+            INNER JOIN anexos a ON a.id = sd.id_anexo
+            WHERE sd.id = :id_subdependencia
+            LIMIT 1
+        """), {"id_subdependencia": id_subdependencia}).mappings().first()
+
+        if not ubicacion:
+            return jsonify({"error": "Subdependencia no encontrada"}), 404
+
+        rows = db.session.execute(text("""
+            SELECT
+                m.id AS id_mobiliario,
+                m.descripcion,
+                m.estado_conservacion AS estado,
+                m.foto_url,
+                m.foto_url_2,
+                r.nombre AS rubro,
+                cb.descripcion AS clase_bien
+            FROM mobiliario m
+            LEFT JOIN rubros r ON r.id_rubro = m.rubro_id
+            LEFT JOIN clases_bienes cb ON cb.id_clase = m.clase_bien_id
+            WHERE m.ubicacion_id = :id_subdependencia
+              AND COALESCE(m.faltante, FALSE) = FALSE
+            ORDER BY r.nombre ASC NULLS LAST,
+                     cb.descripcion ASC NULLS LAST,
+                     m.id ASC
+        """), {"id_subdependencia": id_subdependencia}).mappings().all()
+
+        bienes = [dict(row) for row in rows]
+        response = jsonify({
+            "subdependencia": {
+                "id": ubicacion["id_subdependencia"],
+                "nombre": ubicacion["subdependencia"],
+            },
+            "anexo": {
+                "id": ubicacion["id_anexo"],
+                "nombre": ubicacion["anexo"],
+            },
+            "total_bienes": len(bienes),
+            "bienes": bienes,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    except Exception as e:
+        db.session.rollback()
+        print("Error en inventario publico por subdependencia:", e)
+        return jsonify({"error": "No se pudo cargar el inventario"}), 500
 
 
 #imprimir listados ------------------------------------------------------------
