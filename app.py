@@ -14,7 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-import os, tempfile, io, json, hmac, secrets, time
+import os, tempfile, io, json, hmac, secrets, time, re
 import pytz
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
@@ -155,6 +155,14 @@ VIEWER_USERNAMES = {
     item.lower()
     for item in _split_env_list("VIEWER_USERNAMES", ["dante", "vicegobernacion"])
 }
+MATAFUEGOS_USERNAMES = {
+    item.lower()
+    for item in _split_env_list("MATAFUEGOS_USERNAMES", ["contigencia1", "contigencia2"])
+}
+COMISARIO_USERNAMES = {
+    item.lower()
+    for item in _split_env_list("COMISARIO_USERNAMES", ["comisario"])
+}
 
 
 def _normalize_main_role(username, role=None):
@@ -162,6 +170,10 @@ def _normalize_main_role(username, role=None):
     clean_role = str(role or "").strip().lower()
     if clean_username in SUPERADMIN_USERNAMES or clean_role == "superadmin":
         return "superadmin"
+    if clean_username in MATAFUEGOS_USERNAMES or clean_role == "matafuegos":
+        return "matafuegos"
+    if clean_username in COMISARIO_USERNAMES or clean_role == "comisario":
+        return "comisario"
     if clean_username in VIEWER_USERNAMES or clean_role in {"viewer", "solo_lectura", "solo lectura", "read_only", "readonly"}:
         return "viewer"
     return "admin"
@@ -172,7 +184,7 @@ def _session_main_role():
 
 
 def _is_viewer_session():
-    return _session_main_role() == "viewer"
+    return _session_main_role() in {"viewer", "comisario"}
 
 
 def _is_superadmin_session():
@@ -295,7 +307,18 @@ def admin_required_api(f):
     def wrapped(*args, **kwargs):
         if not _main_username():
             return jsonify({"error": "unauthorized"}), 401
-        if _is_viewer_session():
+        if _session_main_role() not in {"admin", "superadmin"}:
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def matafuegos_edit_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not _main_username():
+            return jsonify({"error": "unauthorized"}), 401
+        if _session_main_role() not in {"admin", "superadmin", "matafuegos"}:
             return jsonify({"error": "forbidden"}), 403
         return f(*args, **kwargs)
     return wrapped
@@ -361,6 +384,44 @@ def _origin_is_allowed():
     return origin in ALLOWED_ORIGINS
 
 
+def _restricted_role_request_allowed(role):
+    path = request.path.rstrip("/") or "/"
+    method = request.method
+
+    self_service = {
+        ("GET", "/api/csrf"),
+        ("GET", "/api/perfil"),
+        ("GET", "/api/presencia/usuarios"),
+        ("POST", "/api/presencia/ping"),
+        ("PUT", "/api/perfil"),
+        ("PUT", "/api/perfil/password"),
+    }
+    if (method, path) in self_service:
+        return True
+
+    if role == "matafuegos":
+        if method == "GET" and (
+            path == "/api/anexos"
+            or path.startswith("/api/matafuegos")
+            or re.fullmatch(r"/api/anexos/\d+/subdependencias", path)
+        ):
+            return True
+        if method == "PUT" and re.fullmatch(r"/api/matafuegos/\d+", path):
+            return True
+        return False
+
+    if role in {"viewer", "comisario"} and method in UNSAFE_METHODS:
+        return False
+
+    if role == "comisario" and (
+        path.startswith("/api/altas")
+        or path.startswith("/api/auditoria")
+    ):
+        return False
+
+    return True
+
+
 @app.before_request
 def proteger_api():
     if not request.path.startswith("/api/"):
@@ -392,6 +453,10 @@ def proteger_api():
 
     if not _session_has_auth():
         return jsonify({"error": "unauthorized"}), 401
+
+    role = _session_main_role() if _main_username() else None
+    if role and not _restricted_role_request_allowed(role):
+        return jsonify({"error": "forbidden"}), 403
 
     if request.method in UNSAFE_METHODS and request.endpoint not in CSRF_EXEMPT_ENDPOINTS:
         if not _csrf_token_valid():
@@ -743,7 +808,7 @@ def api_login():
                        COALESCE(role, 'usuario')  AS role,
                        COALESCE(activo, TRUE)     AS activo
                 FROM usuarios
-                WHERE username = %s
+                WHERE LOWER(username) = LOWER(%s)
                 LIMIT 1
             """, (username,))
             row = cur.fetchone()
@@ -753,7 +818,7 @@ def api_login():
             cur.execute("""
                 SELECT id, username, password
                 FROM usuarios
-                WHERE username = %s
+                WHERE LOWER(username) = LOWER(%s)
                 LIMIT 1
             """, (username,))
             row = cur.fetchone()
@@ -1124,7 +1189,7 @@ def _admin_role_para_guardar(username, role):
     clean_role = str(role or "").strip().lower()
     if clean_role in {"", "usuario"}:
         clean_role = "admin"
-    if clean_role not in {"admin", "viewer"}:
+    if clean_role not in {"admin", "viewer", "matafuegos", "comisario"}:
         raise ValueError("Rol invalido")
     return clean_role
 
@@ -2702,7 +2767,7 @@ def crear_matafuego():
 
 
 @app.route('/api/matafuegos/<int:id_matafuego>', methods=['PUT'])
-@admin_required_api
+@matafuegos_edit_required_api
 def editar_matafuego(id_matafuego):
     try:
         _ensure_matafuegos_tables()
@@ -2754,7 +2819,11 @@ def editar_matafuego(id_matafuego):
             "presion_adecuada": _bool_matafuego(data.get("presion_adecuada"), "presion adecuada"),
             "color_marbete": _color_marbete_matafuego(data.get("color_marbete")),
             "prueba_hidraulica": prueba_hidraulica,
-            "estado": _estado_matafuego(data.get("estado")),
+            "estado": (
+                actual["estado"]
+                if _session_main_role() == "matafuegos"
+                else _estado_matafuego(data.get("estado"))
+            ),
             "observaciones": _text_or_none(data.get("observaciones")),
         })
         _actualizar_ubicacion_mobiliario_matafuego(actual["id_mobiliario"], id_subdependencia)
@@ -3310,6 +3379,65 @@ def eliminar_patrimonio(id):
 
 
 # ====== API para editar mobiliario ---------------------------------------------
+@app.route('/api/mobiliario/<string:id>/estado', methods=['PATCH'])
+@admin_required_api
+def actualizar_estado_mobiliario(id):
+    mobiliario = Mobiliario.query.get_or_404(id)
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_estado = str(data.get("estado_conservacion") or "").strip()
+        estado_key = (
+            raw_estado.lower()
+            .replace("á", "a")
+            .replace("é", "e")
+            .replace("í", "i")
+            .replace("ó", "o")
+            .replace("ú", "u")
+        )
+        estados = {
+            "nuevo": "Nuevo",
+            "bueno": "Bueno",
+            "regular": "Regular",
+            "malo": "Malo",
+            "inutil": "Inútil",
+        }
+        if estado_key not in estados:
+            return jsonify({"error": "Estado de conservación inválido"}), 400
+
+        nuevo_estado = estados[estado_key]
+        before = model_to_dict(mobiliario)
+        estado_anterior = mobiliario.estado_conservacion or "Sin estado"
+        ahora = (datetime.utcnow() - timedelta(hours=3)).strftime("%d-%m-%Y %H:%M")
+        historial = mobiliario.historial_movimientos or ""
+        mobiliario.estado_conservacion = nuevo_estado
+        mobiliario.historial_movimientos = (
+            historial
+            + f"\n[{ahora}] Estado de conservación: de '{estado_anterior}' a '{nuevo_estado}'"
+        ).strip()
+        mobiliario.fecha_actualizacion = datetime.utcnow()
+
+        after = model_to_dict(mobiliario)
+        registrar_auditoria(
+            accion="UPDATE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=before,
+            after=after,
+            descripcion="Cambio rápido de estado de conservación",
+        )
+
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Estado actualizado correctamente",
+            "id": id,
+            "estado_conservacion": mobiliario.estado_conservacion,
+            "fecha_actualizacion": _fecha_iso(mobiliario.fecha_actualizacion),
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/mobiliario/<string:id>', methods=['PUT'])
 @admin_required_api
 def editar_mobiliario(id):
