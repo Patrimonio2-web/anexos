@@ -671,6 +671,7 @@ class Mobiliario(db.Model):
     problema_etiqueta = db.Column(db.Boolean, default=False)
 
     comentarios = db.Column(db.Text)
+    vehiculo = db.Column(db.Text)
     foto_url = db.Column(db.String(255))
     foto_url_2 = db.Column(db.String(255))
     valor = db.Column(db.Numeric(12, 2))
@@ -708,10 +709,16 @@ def _ensure_mobiliario_foto_2_column():
         columns = db.session.execute(text("PRAGMA table_info(mobiliario)")).fetchall()
         if not any(row[1] == "foto_url_2" for row in columns):
             db.session.execute(text("ALTER TABLE mobiliario ADD COLUMN foto_url_2 VARCHAR(255)"))
+        if not any(row[1] == "vehiculo" for row in columns):
+            db.session.execute(text("ALTER TABLE mobiliario ADD COLUMN vehiculo TEXT"))
     else:
         db.session.execute(text("""
             ALTER TABLE IF EXISTS mobiliario
             ADD COLUMN IF NOT EXISTS foto_url_2 VARCHAR(255)
+        """))
+        db.session.execute(text("""
+            ALTER TABLE IF EXISTS mobiliario
+            ADD COLUMN IF NOT EXISTS vehiculo TEXT
         """))
     db.session.commit()
     _mobiliario_foto_2_column_ready = True
@@ -2428,6 +2435,7 @@ MATAFUEGOS_SELECT = """
         COALESCE(actual_sd.nombre, s.nombre) AS subdependencia,
         mf.id_mobiliario,
         m.descripcion AS descripcion_mobiliario,
+        m.vehiculo AS vehiculo,
         m.foto_url AS foto_url,
         m.foto_url_2 AS foto_url_2,
         mf.codigo,
@@ -2466,6 +2474,7 @@ def _matafuego_to_dict(row):
         "subdependencia": row["subdependencia"],
         "id_mobiliario": row["id_mobiliario"],
         "descripcion_mobiliario": row["descripcion_mobiliario"],
+        "vehiculo": row["vehiculo"],
         "foto_url": row["foto_url"],
         "foto_url_2": row["foto_url_2"],
         "codigo": row["codigo"],
@@ -2649,6 +2658,7 @@ def obtener_candidatos_matafuegos():
                 m.foto_url,
                 m.foto_url_2,
                 m.comentarios,
+                m.vehiculo,
                 sd.id AS id_subdependencia,
                 sd.nombre AS subdependencia,
                 a.id AS id_anexo,
@@ -3038,6 +3048,7 @@ def ultimos_mobiliarios():
             m.sobrante,
             m.problema_etiqueta,
             m.comentarios,
+            m.vehiculo,
             m.foto_url,
             m.foto_url_2,
             m.valor,
@@ -3155,6 +3166,7 @@ def buscar_mobiliario_avanzado():
             "descripcion": "m.descripcion",
             "anexo": "a.nombre",
             "subdependencia": "sd.nombre",
+            "vehiculo": "m.vehiculo",
             "rubro": "r.nombre",
             "clase": "cb.descripcion",
         }
@@ -3213,6 +3225,7 @@ def buscar_mobiliario_avanzado():
                 "LOWER(COALESCE(cb.descripcion,'')) LIKE :q_like",
                 "LOWER(COALESCE(sd.nombre,'')) LIKE :q_like",
                 "LOWER(COALESCE(a.nombre,'')) LIKE :q_like",
+                "LOWER(COALESCE(m.vehiculo,'')) LIKE :q_like",
             ]
 
             if q.isdigit():
@@ -3248,6 +3261,7 @@ def buscar_mobiliario_avanzado():
                 "WHEN LOWER(COALESCE(r.nombre,'')) LIKE :q_like THEN 8",
                 "WHEN LOWER(COALESCE(sd.nombre,'')) LIKE :q_like THEN 9",
                 "WHEN LOWER(COALESCE(a.nombre,'')) LIKE :q_like THEN 10",
+                "WHEN LOWER(COALESCE(m.vehiculo,'')) LIKE :q_like THEN 11",
             ])
 
             search_rank_sql = f"""
@@ -3285,6 +3299,7 @@ def buscar_mobiliario_avanzado():
                 m.sobrante,
                 m.problema_etiqueta,
                 m.comentarios,
+                m.vehiculo,
                 m.foto_url,
                 m.foto_url_2,
                 m.valor,
@@ -3382,6 +3397,7 @@ def eliminar_patrimonio(id):
 @app.route('/api/mobiliario/<string:id>/estado', methods=['PATCH'])
 @admin_required_api
 def actualizar_estado_mobiliario(id):
+    _ensure_mobiliario_foto_2_column()
     mobiliario = Mobiliario.query.get_or_404(id)
     try:
         data = request.get_json(silent=True) or {}
@@ -3513,6 +3529,8 @@ def editar_mobiliario(id):
         mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
         mobiliario.problema_etiqueta = data.get("problema_etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
+        if "vehiculo" in data:
+            mobiliario.vehiculo = _text_or_none(data.get("vehiculo"))
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
         mobiliario.foto_url_2 = data.get("foto_url_2", mobiliario.foto_url_2)
         if "valor" in data:
@@ -3666,6 +3684,7 @@ def registrar_mobiliario():
             sobrante=data.get("sobrante", False),
             problema_etiqueta=data.get("problema_etiqueta", False),
             comentarios=comentarios,
+            vehiculo=_text_or_none(data.get("vehiculo")),
             foto_url=data.get("foto_url", ""),
             foto_url_2=data.get("foto_url_2", ""),
             valor=_parse_mobiliario_valor(data.get("valor"))
@@ -3733,6 +3752,7 @@ def _clonar_mobiliario(origen, nuevo_id):
         sobrante=origen.sobrante,
         problema_etiqueta=origen.problema_etiqueta,
         comentarios=origen.comentarios,
+        vehiculo=origen.vehiculo,
         foto_url=origen.foto_url,
         foto_url_2=origen.foto_url_2,
         valor=origen.valor,
@@ -3824,6 +3844,7 @@ def obtener_mobiliario_por_id(id):
         "estado_control": m.estado_control,
         "historial_movimientos": m.historial_movimientos,
         "comentarios": m.comentarios,
+        "vehiculo": m.vehiculo,
         "foto_url": m.foto_url,
         "foto_url_2": m.foto_url_2,
         "valor": _mobiliario_valor_json(m.valor),
@@ -3869,6 +3890,7 @@ def obtener_mobiliarios_para_baja():
             m.sobrante,
             m.problema_etiqueta,
             m.comentarios,
+            m.vehiculo,
             m.foto_url,
             m.foto_url_2,
             m.valor,
@@ -4429,6 +4451,7 @@ def mob_to_dict(m):
         "sobrante": bool(m.sobrante),
         "problema_etiqueta": bool(m.problema_etiqueta),
         "comentarios": m.comentarios or "",
+        "vehiculo": m.vehiculo or "",
         "foto_url": m.foto_url or "",
         "foto_url_2": m.foto_url_2 or "",
         "valor": _mobiliario_valor_json(m.valor),

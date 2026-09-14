@@ -74,6 +74,7 @@ CREATE TABLE public.mobiliario (
     sobrante boolean DEFAULT false,
     problema_etiqueta boolean DEFAULT false,
     comentarios text,
+    vehiculo text,
     foto_url character varying(255),
     foto_url_2 character varying(255),
     fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
@@ -93,6 +94,9 @@ ALTER TABLE IF EXISTS public.mobiliario
 
 ALTER TABLE IF EXISTS public.mobiliario
     ADD COLUMN IF NOT EXISTS foto_url_2 character varying(255);
+
+ALTER TABLE IF EXISTS public.mobiliario
+    ADD COLUMN IF NOT EXISTS vehiculo text;
 
 --
 -- Name: movimientos_altas; Type: TABLE; Schema: public; Owner: patrimonio_ppfk_user
