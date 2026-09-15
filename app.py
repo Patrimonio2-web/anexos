@@ -5790,10 +5790,20 @@ def dashboard_data():
                 SELECT COUNT(*) FROM movimientos_altas
             """)).scalar() or 0
 
-            # Distribución por estado de conservación
+            # Distribucion normalizada por estado de conservacion.
             por_estado = conn.execute(text("""
-                SELECT COALESCE(NULLIF(TRIM(LOWER(estado_conservacion)), ''), 'sin dato') AS estado,
-                       COUNT(*) AS cantidad
+                SELECT
+                    CASE
+                        WHEN NULLIF(BTRIM(estado_conservacion), '') IS NULL THEN 'Sin estado'
+                        WHEN LOWER(BTRIM(estado_conservacion)) IN ('nuevo', 'nueva') THEN 'Nuevo'
+                        WHEN LOWER(BTRIM(estado_conservacion)) IN ('bueno', 'buen estado') THEN 'Bueno'
+                        WHEN LOWER(BTRIM(estado_conservacion)) = 'regular' THEN 'Regular'
+                        WHEN LOWER(BTRIM(estado_conservacion)) IN (
+                            'malo', 'mal estado', 'inutil', 'inútil'
+                        ) THEN 'Malo / Inutil'
+                        ELSE 'Otro'
+                    END AS estado,
+                    COUNT(*) AS cantidad
                 FROM mobiliario
                 GROUP BY 1
                 ORDER BY 2 DESC
@@ -5806,10 +5816,9 @@ def dashboard_data():
                 LEFT JOIN rubros r ON r.id_rubro = m.rubro_id
                 GROUP BY 1
                 ORDER BY 2 DESC
-                LIMIT 12
             """)).mappings().all()
 
-            # Conteo por anexo (top 12)
+            # Conteo completo por anexo.
             por_anexo = conn.execute(text("""
                 SELECT COALESCE(a.nombre, 'Sin anexo') AS anexo, COUNT(*) AS cantidad
                 FROM mobiliario m
@@ -5817,8 +5826,76 @@ def dashboard_data():
                 LEFT JOIN anexos a ON a.id = sd.id_anexo
                 GROUP BY 1
                 ORDER BY 2 DESC
-                LIMIT 12
             """)).mappings().all()
+
+            # Clases concretas para consultar el nomenclador desde el reporte.
+            por_clase = conn.execute(text("""
+                SELECT COALESCE(cb.descripcion, 'Sin clase') AS clase, COUNT(*) AS cantidad
+                FROM mobiliario m
+                LEFT JOIN clases_bienes cb ON cb.id_clase = m.clase_bien_id
+                GROUP BY 1
+                ORDER BY 2 DESC, 1 ASC
+            """)).mappings().all()
+
+            # Indicadores de bienes de consulta frecuente. Pueden superponerse.
+            destacados = conn.execute(text("""
+                WITH bienes AS (
+                    SELECT
+                        m.rubro_id,
+                        LOWER(
+                            COALESCE(cb.descripcion, '') || ' ' ||
+                            COALESCE(m.descripcion, '')
+                        ) AS texto
+                    FROM mobiliario m
+                    LEFT JOIN clases_bienes cb ON cb.id_clase = m.clase_bien_id
+                )
+                SELECT
+                    COUNT(*) FILTER (WHERE
+                        texto LIKE '%computador%'
+                        OR texto LIKE '%notebook%'
+                        OR texto LIKE '%netbook%'
+                        OR texto LIKE '%cpu%'
+                        OR texto ~ '(^|[^a-z])pc([^a-z]|$)'
+                    ) AS computadoras,
+                    COUNT(*) FILTER (WHERE texto LIKE '%impresor%') AS impresoras,
+                    COUNT(*) FILTER (WHERE texto LIKE '%monitor%') AS monitores,
+                    COUNT(*) FILTER (WHERE
+                        texto LIKE '%televisor%'
+                        OR texto ~ '(^|[^a-z])tv([^a-z]|$)'
+                    ) AS televisores,
+                    COUNT(*) FILTER (WHERE texto LIKE '%telefon%') AS telefonia,
+                    COUNT(*) FILTER (WHERE
+                        texto LIKE '%aire acondicionado%'
+                        OR texto LIKE '%ventilador%'
+                        OR texto LIKE '%calefactor%'
+                    ) AS climatizacion,
+                    COUNT(*) FILTER (WHERE rubro_id = 432) AS vehiculos,
+                    COUNT(*) FILTER (WHERE
+                        texto LIKE '%matafuego%'
+                        OR texto LIKE '%mata fuego%'
+                        OR texto LIKE '%mata-fuego%'
+                        OR texto LIKE '%extintor%'
+                    ) AS matafuegos
+                FROM bienes
+            """)).mappings().one()
+
+            alertas = conn.execute(text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE COALESCE(no_dado, FALSE)) AS no_dado,
+                    COUNT(*) FILTER (WHERE COALESCE(para_reparacion, FALSE)) AS para_reparacion,
+                    COUNT(*) FILTER (WHERE COALESCE(para_baja, FALSE)) AS para_baja,
+                    COUNT(*) FILTER (WHERE COALESCE(faltante, FALSE)) AS faltantes,
+                    COUNT(*) FILTER (WHERE COALESCE(sobrante, FALSE)) AS sobrantes,
+                    COUNT(*) FILTER (WHERE COALESCE(problema_etiqueta, FALSE)) AS problema_etiqueta,
+                    COUNT(*) FILTER (WHERE NULLIF(BTRIM(estado_conservacion), '') IS NULL) AS sin_estado,
+                    COUNT(*) FILTER (WHERE
+                        NULLIF(BTRIM(COALESCE(foto_url, '')), '') IS NULL
+                        AND NULLIF(BTRIM(COALESCE(foto_url_2, '')), '') IS NULL
+                    ) AS sin_foto,
+                    COUNT(*) FILTER (WHERE rubro_id IS NULL) AS sin_rubro,
+                    COUNT(*) FILTER (WHERE clase_bien_id IS NULL) AS sin_clase
+                FROM mobiliario
+            """)).mappings().one()
 
             # Serie mensual: cantidad de mobiliario creado (últimos 12 meses)
             serie_mob = conn.execute(text("""
@@ -5859,6 +5936,18 @@ def dashboard_data():
             "por_estado": [{"label": r["estado"], "value": int(r["cantidad"])} for r in por_estado],
             "por_rubro":  [{"label": r["rubro"], "value": int(r["cantidad"])} for r in por_rubro],
             "por_anexo":  [{"label": r["anexo"], "value": int(r["cantidad"])} for r in por_anexo],
+            "por_clase":  [{"label": r["clase"], "value": int(r["cantidad"])} for r in por_clase],
+            "destacados": [
+                {"label": "Computadoras", "value": int(destacados["computadoras"] or 0)},
+                {"label": "Impresoras", "value": int(destacados["impresoras"] or 0)},
+                {"label": "Monitores", "value": int(destacados["monitores"] or 0)},
+                {"label": "Televisores", "value": int(destacados["televisores"] or 0)},
+                {"label": "Telefonia", "value": int(destacados["telefonia"] or 0)},
+                {"label": "Climatizacion", "value": int(destacados["climatizacion"] or 0)},
+                {"label": "Vehiculos", "value": int(destacados["vehiculos"] or 0)},
+                {"label": "Matafuegos", "value": int(destacados["matafuegos"] or 0)},
+            ],
+            "alertas": {key: int(value or 0) for key, value in alertas.items()},
             "serie_mobiliario": [{"mes": r["mes"], "value": int(r["cantidad"])} for r in serie_mob],
             "serie_altas": [{"mes": r["mes"], "value": float(r["total"] or 0)} for r in serie_altas],
         }
