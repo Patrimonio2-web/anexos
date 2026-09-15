@@ -315,6 +315,7 @@ CREATE TABLE IF NOT EXISTS public.matafuegos (
     id_mobiliario character varying(50) REFERENCES public.mobiliario(id) ON DELETE SET NULL,
     codigo character varying(80),
     ubicacion_detalle text,
+    vehiculo text,
     tipo character varying(80),
     capacidad character varying(80),
     fecha_vencimiento date,
@@ -330,6 +331,10 @@ CREATE TABLE IF NOT EXISTS public.matafuegos (
     fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
+
+
+ALTER TABLE public.matafuegos
+    ADD COLUMN IF NOT EXISTS vehiculo text;
 
 
 ALTER TABLE public.matafuegos OWNER TO patrimonio_ppfk_user;

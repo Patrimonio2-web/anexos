@@ -2256,6 +2256,7 @@ def _ensure_matafuegos_tables():
             id_mobiliario VARCHAR(50) REFERENCES mobiliario(id) ON DELETE SET NULL,
             codigo VARCHAR(80),
             ubicacion_detalle TEXT,
+            vehiculo TEXT,
             tipo VARCHAR(80),
             capacidad VARCHAR(80),
             fecha_vencimiento DATE,
@@ -2277,6 +2278,7 @@ def _ensure_matafuegos_tables():
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS id_mobiliario VARCHAR(50)"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS codigo VARCHAR(80)"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS ubicacion_detalle TEXT"))
+    db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS vehiculo TEXT"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS tipo VARCHAR(80)"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS capacidad VARCHAR(80)"))
     db.session.execute(text("ALTER TABLE IF EXISTS matafuegos ADD COLUMN IF NOT EXISTS fecha_vencimiento DATE"))
@@ -2322,6 +2324,50 @@ def _parse_fecha_matafuego(data, key, required=False):
 def _text_or_none(value):
     clean = str(value or "").strip()
     return clean or None
+
+
+def _mobiliario_admite_vehiculo(rubro_id, clase_bien_id=None, descripcion=None):
+    if str(rubro_id or "").strip() == "432":
+        return True
+
+    textos = [descripcion]
+    if clase_bien_id:
+        clase = db.session.get(ClaseBien, clase_bien_id)
+        textos.append(clase.descripcion if clase else None)
+    if rubro_id:
+        rubro = db.session.get(Rubro, rubro_id)
+        textos.append(rubro.nombre if rubro else None)
+
+    contenido = " ".join(str(valor or "").lower() for valor in textos)
+    return any(
+        termino in contenido
+        for termino in ("matafuego", "mata fuego", "mata-fuego", "extintor")
+    )
+
+
+def _actualizar_vehiculo_mobiliario_matafuego(id_mobiliario, vehiculo):
+    if not id_mobiliario:
+        return
+
+    mobiliario = db.session.get(Mobiliario, str(id_mobiliario))
+    if not mobiliario:
+        return
+
+    nuevo_vehiculo = _text_or_none(vehiculo)
+    if mobiliario.vehiculo == nuevo_vehiculo:
+        return
+
+    vehiculo_anterior = mobiliario.vehiculo
+    mobiliario.vehiculo = nuevo_vehiculo
+    mobiliario.fecha_actualizacion = datetime.utcnow()
+    registrar_auditoria(
+        accion="UPDATE",
+        tabla="mobiliario",
+        id_registro=mobiliario.id,
+        before={"vehiculo": vehiculo_anterior},
+        after={"vehiculo": nuevo_vehiculo},
+        descripcion="Asignacion de vehiculo desde control de matafuegos",
+    )
 
 
 def _estado_matafuego(value):
@@ -2435,7 +2481,10 @@ MATAFUEGOS_SELECT = """
         COALESCE(actual_sd.nombre, s.nombre) AS subdependencia,
         mf.id_mobiliario,
         m.descripcion AS descripcion_mobiliario,
-        m.vehiculo AS vehiculo,
+        COALESCE(
+            NULLIF(BTRIM(m.vehiculo), ''),
+            NULLIF(BTRIM(mf.vehiculo), '')
+        ) AS vehiculo,
         m.foto_url AS foto_url,
         m.foto_url_2 AS foto_url_2,
         mf.codigo,
@@ -2713,6 +2762,7 @@ def crear_matafuego():
                 id_mobiliario,
                 codigo,
                 ubicacion_detalle,
+                vehiculo,
                 tipo,
                 capacidad,
                 fecha_vencimiento,
@@ -2732,6 +2782,7 @@ def crear_matafuego():
                 :id_mobiliario,
                 :codigo,
                 :ubicacion_detalle,
+                :vehiculo,
                 :tipo,
                 :capacidad,
                 :fecha_vencimiento,
@@ -2752,6 +2803,7 @@ def crear_matafuego():
             "id_mobiliario": id_mobiliario,
             "codigo": _text_or_none(data.get("codigo")),
             "ubicacion_detalle": ubicacion_detalle,
+            "vehiculo": _text_or_none(data.get("vehiculo")),
             "tipo": _text_or_none(data.get("tipo")),
             "capacidad": _text_or_none(data.get("capacidad")),
             "fecha_vencimiento": fecha_vencimiento,
@@ -2766,6 +2818,8 @@ def crear_matafuego():
             "observaciones": _text_or_none(data.get("observaciones")),
         }).scalar()
         _actualizar_ubicacion_mobiliario_matafuego(id_mobiliario, id_subdependencia)
+        if "vehiculo" in data:
+            _actualizar_vehiculo_mobiliario_matafuego(id_mobiliario, data.get("vehiculo"))
         db.session.commit()
         return jsonify(_matafuego_to_dict(_matafuego_row(new_id))), 201
     except ValueError as e:
@@ -2799,6 +2853,7 @@ def editar_matafuego(id_matafuego):
                 id_subdependencia = :id_subdependencia,
                 codigo = :codigo,
                 ubicacion_detalle = :ubicacion_detalle,
+                vehiculo = :vehiculo,
                 tipo = :tipo,
                 capacidad = :capacidad,
                 fecha_vencimiento = :fecha_vencimiento,
@@ -2819,6 +2874,7 @@ def editar_matafuego(id_matafuego):
             "id_subdependencia": id_subdependencia,
             "codigo": _text_or_none(data.get("codigo")),
             "ubicacion_detalle": ubicacion_detalle,
+            "vehiculo": _text_or_none(data.get("vehiculo")),
             "tipo": _text_or_none(data.get("tipo")),
             "capacidad": _text_or_none(data.get("capacidad")),
             "fecha_vencimiento": fecha_vencimiento,
@@ -2837,6 +2893,10 @@ def editar_matafuego(id_matafuego):
             "observaciones": _text_or_none(data.get("observaciones")),
         })
         _actualizar_ubicacion_mobiliario_matafuego(actual["id_mobiliario"], id_subdependencia)
+        if "vehiculo" in data:
+            _actualizar_vehiculo_mobiliario_matafuego(
+                actual["id_mobiliario"], data.get("vehiculo")
+            )
         db.session.commit()
         return jsonify(_matafuego_to_dict(_matafuego_row(id_matafuego))), 200
     except ValueError as e:
@@ -3055,7 +3115,9 @@ def ultimos_mobiliarios():
             m.fecha_creacion,
             m.fecha_actualizacion,
             {historial_select},
+            r.id_rubro                AS id_rubro,
             r.nombre                  AS rubro,
+            cb.id_clase               AS id_clase,
             cb.descripcion            AS clase_bien,
             sd.id                     AS id_subdependencia,     -- opcional, útil para edición
             sd.nombre                 AS subdependencia,
@@ -3102,6 +3164,24 @@ def ultimos_mobiliarios():
         print("🔴 Error en /api/mobiliario/ultimos:", e)
         return jsonify({'error': str(e)}), 500
 
+
+
+@app.route('/api/mobiliario/<string:id>/ultimo-editor', methods=['GET'])
+@login_required_api
+def ultimo_editor_mobiliario(id):
+    try:
+        usuario = db.session.execute(text("""
+            SELECT usuario
+            FROM auditoria
+            WHERE LOWER(BTRIM(COALESCE(tabla_afectada, ''))) = 'mobiliario'
+              AND id_registro = :id_registro
+            ORDER BY fecha DESC, id DESC
+            LIMIT 1
+        """), {"id_registro": str(id)}).scalar()
+        return jsonify({"usuario": _text_or_none(usuario)}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # ====== HELPERS DE AUDITORÍA ======
@@ -3529,8 +3609,15 @@ def editar_mobiliario(id):
         mobiliario.sobrante = data.get("sobrante", mobiliario.sobrante)
         mobiliario.problema_etiqueta = data.get("problema_etiqueta", mobiliario.problema_etiqueta)
         mobiliario.comentarios = data.get("comentarios", mobiliario.comentarios)
-        if "vehiculo" in data:
-            mobiliario.vehiculo = _text_or_none(data.get("vehiculo"))
+        if _mobiliario_admite_vehiculo(
+            mobiliario.rubro_id,
+            mobiliario.clase_bien_id,
+            mobiliario.descripcion,
+        ):
+            if "vehiculo" in data:
+                mobiliario.vehiculo = _text_or_none(data.get("vehiculo"))
+        else:
+            mobiliario.vehiculo = None
         mobiliario.foto_url = data.get("foto_url", mobiliario.foto_url)
         mobiliario.foto_url_2 = data.get("foto_url_2", mobiliario.foto_url_2)
         if "valor" in data:
@@ -3666,6 +3753,12 @@ def registrar_mobiliario():
         historial_movimientos = data.get("historial_movimientos") or None
         comentarios = data.get("comentarios") or None
 
+        admite_vehiculo = _mobiliario_admite_vehiculo(
+            data.get("rubro_id"),
+            data.get("clase_bien_id"),
+            data.get("descripcion"),
+        )
+
         nuevo = Mobiliario(
             id=id_mob,
             ubicacion_id=data.get("ubicacion_id"),
@@ -3684,7 +3777,11 @@ def registrar_mobiliario():
             sobrante=data.get("sobrante", False),
             problema_etiqueta=data.get("problema_etiqueta", False),
             comentarios=comentarios,
-            vehiculo=_text_or_none(data.get("vehiculo")),
+            vehiculo=(
+                _text_or_none(data.get("vehiculo"))
+                if admite_vehiculo
+                else None
+            ),
             foto_url=data.get("foto_url", ""),
             foto_url_2=data.get("foto_url_2", ""),
             valor=_parse_mobiliario_valor(data.get("valor"))
@@ -3752,7 +3849,15 @@ def _clonar_mobiliario(origen, nuevo_id):
         sobrante=origen.sobrante,
         problema_etiqueta=origen.problema_etiqueta,
         comentarios=origen.comentarios,
-        vehiculo=origen.vehiculo,
+        vehiculo=(
+            origen.vehiculo
+            if _mobiliario_admite_vehiculo(
+                origen.rubro_id,
+                origen.clase_bien_id,
+                origen.descripcion,
+            )
+            else None
+        ),
         foto_url=origen.foto_url,
         foto_url_2=origen.foto_url_2,
         valor=origen.valor,
