@@ -155,10 +155,14 @@ VIEWER_USERNAMES = {
     item.lower()
     for item in _split_env_list("VIEWER_USERNAMES", ["dante", "vicegobernacion"])
 }
+MATAFUEGOS_RENAMED_USERS = {
+    "contingencia1": "contigencia1",
+    "contingencia2": "contigencia2",
+}
 MATAFUEGOS_USERNAMES = {
     item.lower()
-    for item in _split_env_list("MATAFUEGOS_USERNAMES", ["contigencia1", "contigencia2"])
-}
+    for item in _split_env_list("MATAFUEGOS_USERNAMES", MATAFUEGOS_RENAMED_USERS)
+} | set(MATAFUEGOS_RENAMED_USERS)
 COMISARIO_USERNAMES = {
     item.lower()
     for item in _split_env_list("COMISARIO_USERNAMES", ["comisario"])
@@ -168,7 +172,11 @@ COMISARIO_USERNAMES = {
 def _normalize_main_role(username, role=None):
     clean_username = str(username or "").strip().lower()
     clean_role = str(role or "").strip().lower()
-    if clean_username in SUPERADMIN_USERNAMES or clean_role == "superadmin":
+    if clean_username in SUPERADMIN_USERNAMES:
+        return "superadmin"
+    if clean_username in MATAFUEGOS_RENAMED_USERS:
+        return "matafuegos"
+    if clean_role == "superadmin":
         return "superadmin"
     if clean_username in MATAFUEGOS_USERNAMES or clean_role == "matafuegos":
         return "matafuegos"
@@ -249,6 +257,9 @@ def _refresh_main_session_from_db():
     username = _main_username()
     if not username:
         return True
+    if str(username).strip().lower() in MATAFUEGOS_RENAMED_USERS.values():
+        _clear_auth_session()
+        return False
     now = time.time()
     last_checked = session.get("user_checked_at")
     try:
@@ -397,6 +408,8 @@ def _restricted_role_request_allowed(role):
         ("PUT", "/api/perfil/password"),
     }
     if (method, path) in self_service:
+        if method == "PUT" and path.startswith("/api/perfil") and role in {"matafuegos", "comisario"}:
+            return False
         return True
 
     if role == "matafuegos":
@@ -798,6 +811,8 @@ def api_login():
     password = data.get("password") or ""
     if not username or not password:
         return jsonify({"error": "missing_credentials"}), 400
+    if username.lower() in MATAFUEGOS_RENAMED_USERS.values():
+        return jsonify({"error": "invalid_credentials"}), 401
 
     allowed, retry_after = _login_rate_allowed(username)
     if not allowed:
@@ -820,6 +835,18 @@ def api_login():
             """, (username,))
             row = cur.fetchone()
             user = dict(row) if row else None
+            legacy_username = MATAFUEGOS_RENAMED_USERS.get(username.lower())
+            if not user and legacy_username:
+                cur.execute("""
+                    SELECT id, username, password,
+                           COALESCE(role, 'usuario') AS role,
+                           COALESCE(activo, TRUE) AS activo
+                    FROM usuarios
+                    WHERE LOWER(username) = LOWER(%s)
+                    LIMIT 1
+                """, (legacy_username,))
+                row = cur.fetchone()
+                user = dict(row) if row else None
         except psycopg2.errors.UndefinedColumn:
             conn.rollback()
             cur.execute("""
@@ -830,6 +857,16 @@ def api_login():
             """, (username,))
             row = cur.fetchone()
             user = dict(row) if row else None
+            legacy_username = MATAFUEGOS_RENAMED_USERS.get(username.lower())
+            if not user and legacy_username:
+                cur.execute("""
+                    SELECT id, username, password
+                    FROM usuarios
+                    WHERE LOWER(username) = LOWER(%s)
+                    LIMIT 1
+                """, (legacy_username,))
+                row = cur.fetchone()
+                user = dict(row) if row else None
             if user:
                 user["role"] = "usuario"
                 user["activo"] = True
@@ -873,6 +910,34 @@ def api_login():
         except Exception as e:
             print("🔴 Error migrando password:", e)
             # No bloqueamos el login aunque falle el update
+
+    if user["username"].strip().lower() != username.lower():
+        conn = None
+        cur = None
+        try:
+            conn, cur = get_conn_dict()
+            cur.execute("""
+                UPDATE usuarios
+                SET username = %s
+                WHERE id = %s AND LOWER(username) = LOWER(%s)
+                RETURNING username
+            """, (username.upper(), user["id"], user["username"]))
+            renamed = cur.fetchone()
+            if not renamed:
+                conn.rollback()
+                return jsonify({"error": "user_rename_conflict"}), 409
+            conn.commit()
+            user["username"] = renamed[0]
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print("Error renombrando usuario de matafuegos:", e)
+            return jsonify({"error": "user_rename_failed"}), 500
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
 
     session.permanent = True
     session["username"] = user["username"]
@@ -1049,6 +1114,8 @@ def obtener_perfil_usuario():
 @app.put("/api/perfil")
 @login_required_api
 def actualizar_perfil_usuario():
+    if _session_main_role() in {"matafuegos", "comisario"}:
+        return jsonify({"error": "forbidden"}), 403
     try:
         _ensure_perfil_usuario_columns()
         data = request.get_json(silent=True) or {}
@@ -1102,6 +1169,8 @@ def actualizar_perfil_usuario():
 @app.put("/api/perfil/password")
 @login_required_api
 def actualizar_password_perfil_usuario():
+    if _session_main_role() in {"matafuegos", "comisario"}:
+        return jsonify({"error": "forbidden"}), 403
     try:
         data = request.get_json(silent=True) or {}
         actual_password = data.get("password_actual") or ""
