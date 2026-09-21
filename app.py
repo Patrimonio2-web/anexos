@@ -5911,6 +5911,7 @@ def dashboard_data():
                 WITH bienes AS (
                     SELECT
                         m.rubro_id,
+                        cb.descripcion AS clase_bien,
                         LOWER(
                             COALESCE(cb.descripcion, '') || ' ' ||
                             COALESCE(m.descripcion, '')
@@ -5938,7 +5939,10 @@ def dashboard_data():
                         OR texto LIKE '%ventilador%'
                         OR texto LIKE '%calefactor%'
                     ) AS climatizacion,
-                    COUNT(*) FILTER (WHERE rubro_id = 432) AS vehiculos,
+                    COUNT(*) FILTER (WHERE
+                        rubro_id = 432
+                        AND UPPER(BTRIM(COALESCE(clase_bien, ''))) = 'VEHICULO UTILITARIO'
+                    ) AS vehiculos,
                     COUNT(*) FILTER (WHERE
                         texto LIKE '%matafuego%'
                         OR texto LIKE '%mata fuego%'
