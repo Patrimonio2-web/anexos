@@ -1896,7 +1896,14 @@ def agregar_anexo():
 @app.route('/api/anexos', methods=['GET'])
 def obtener_anexos():
     anexos = Anexo.query.all()
-    return jsonify([{'id': anexo.id, 'nombre': anexo.nombre} for anexo in anexos])
+    return jsonify([
+        {
+            'id': anexo.id,
+            'nombre': anexo.nombre,
+            'direccion': anexo.direccion,
+        }
+        for anexo in anexos
+    ])
 
 # --- SUBDEPENDENCIAS ---
 @app.route('/api/subdependencias', methods=['POST'])
