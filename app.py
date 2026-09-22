@@ -199,6 +199,14 @@ def _is_superadmin_session():
     return _session_main_role() == "superadmin"
 
 
+def _is_virtual_subdependencia_name(nombre):
+    return "virtual" in str(nombre or "").strip().casefold()
+
+
+def _hide_virtual_subdependencias_for_session():
+    return _session_main_role() == "comisario"
+
+
 LOGIN_ATTEMPTS = {}
 LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
 LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "900"))
@@ -1745,6 +1753,12 @@ def subdependencias_por_anexo(anexo_id):
 
         data = cur.fetchall()
         subdependencias = [{"id": row[0], "nombre": row[1]} for row in data]
+        if _hide_virtual_subdependencias_for_session():
+            subdependencias = [
+                sub
+                for sub in subdependencias
+                if not _is_virtual_subdependencia_name(sub["nombre"])
+            ]
         return jsonify(subdependencias)
 
     except Exception as e:
@@ -1920,6 +1934,12 @@ def agregar_subdependencia():
 @app.route('/api/anexos/<int:id_anexo>/subdependencias', methods=['GET'])
 def obtener_subdependencias(id_anexo):
     subdependencias = Subdependencia.query.filter_by(id_anexo=id_anexo).all()
+    if _hide_virtual_subdependencias_for_session():
+        subdependencias = [
+            sub
+            for sub in subdependencias
+            if not _is_virtual_subdependencia_name(sub.nombre)
+        ]
     return jsonify([{'id': sub.id, 'nombre': sub.nombre} for sub in subdependencias])
 
 
@@ -3166,6 +3186,10 @@ def ultimos_mobiliarios():
             else "NULL AS historial_movimientos"
         )
         ubicacion_id = request.args.get("ubicacion_id", type=int)
+        if ubicacion_id is not None and _hide_virtual_subdependencias_for_session():
+            subdependencia = db.session.get(Subdependencia, ubicacion_id)
+            if subdependencia and _is_virtual_subdependencia_name(subdependencia.nombre):
+                return jsonify({"error": "Subdependencia no encontrada"}), 404
         ubicacion_filter = "AND m.ubicacion_id = %s" if ubicacion_id is not None else ""
         params = (ubicacion_id,) if ubicacion_id is not None else ()
         query = f"""
@@ -4641,6 +4665,10 @@ def mob_to_dict(m):
 # --- Listar mobiliario por subdependencia ---
 @app.route('/api/mobiliario_por_subdependencia/<int:sub_id>', methods=['GET'])
 def mobiliario_por_subdependencia(sub_id):
+    if _hide_virtual_subdependencias_for_session():
+        subdependencia = db.session.get(Subdependencia, sub_id)
+        if subdependencia and _is_virtual_subdependencia_name(subdependencia.nombre):
+            return jsonify({"error": "Subdependencia no encontrada"}), 404
     _ensure_mobiliario_valor_column()
     _ensure_mobiliario_foto_2_column()
     items = Mobiliario.query.filter_by(ubicacion_id=sub_id)\
