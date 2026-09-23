@@ -382,6 +382,7 @@ PUBLIC_API_ENDPOINTS = {
     "api_logout_personal",
     "api_me_personal",
     "mobiliario_advertencia_por_id",
+    "directorio_publico_anexo",
     "inventario_publico_subdependencia",
 }
 IDLE_EXEMPT_ENDPOINTS = {
@@ -390,6 +391,7 @@ IDLE_EXEMPT_ENDPOINTS = {
     "api_login_personal",
     "api_logout_personal",
     "mobiliario_advertencia_por_id",
+    "directorio_publico_anexo",
     "inventario_publico_subdependencia",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -4357,6 +4359,70 @@ def ver_mobiliario():
     mobiliario_id = (request.args.get('id') or '').strip()
     query = f"?{urlencode({'id': mobiliario_id})}" if mobiliario_id else ""
     return redirect(f"{FRONTEND_PUBLIC_URL}/ver{query}", code=302)
+
+
+PUBLIC_RESIDENCIA_ANEXO_ID = 1000
+
+
+@app.route(
+    '/api/publico/anexos/<int:id_anexo>/subdependencias',
+    methods=['GET']
+)
+def directorio_publico_anexo(id_anexo):
+    if id_anexo != PUBLIC_RESIDENCIA_ANEXO_ID:
+        return jsonify({"error": "Anexo no encontrado"}), 404
+
+    try:
+        anexo = db.session.execute(text("""
+            SELECT id, nombre, direccion
+            FROM anexos
+            WHERE id = :id_anexo
+            LIMIT 1
+        """), {"id_anexo": id_anexo}).mappings().first()
+
+        if not anexo:
+            return jsonify({"error": "Anexo no encontrado"}), 404
+
+        rows = db.session.execute(text("""
+            SELECT
+                sd.id,
+                sd.nombre,
+                COUNT(m.id) FILTER (
+                    WHERE COALESCE(m.faltante, FALSE) = FALSE
+                ) AS total_bienes
+            FROM subdependencias sd
+            LEFT JOIN mobiliario m ON m.ubicacion_id = sd.id
+            WHERE sd.id_anexo = :id_anexo
+            GROUP BY sd.id, sd.nombre
+            ORDER BY sd.id ASC
+        """), {"id_anexo": id_anexo}).mappings().all()
+
+        subdependencias = [
+            {
+                "id": row["id"],
+                "nombre": row["nombre"],
+                "total_bienes": int(row["total_bienes"] or 0),
+            }
+            for row in rows
+        ]
+        response = jsonify({
+            "anexo": {
+                "id": anexo["id"],
+                "nombre": anexo["nombre"],
+                "direccion": anexo["direccion"],
+            },
+            "total_subdependencias": len(subdependencias),
+            "total_bienes": sum(item["total_bienes"] for item in subdependencias),
+            "subdependencias": subdependencias,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    except Exception as e:
+        db.session.rollback()
+        print("Error en directorio publico de anexo:", e)
+        return jsonify({"error": "No se pudo cargar el anexo"}), 500
 
 
 @app.route(
