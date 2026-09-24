@@ -4411,7 +4411,7 @@ PUBLIC_DIRECTORY_CONFIGS = {
         "subdependencia_ids": None,
     },
     "bloques-casa-central": {
-        "titulo": "Bloques - Casa Central",
+        "titulo": "Bloque - Casa Central",
         "descripcion": "Recepción, bloque privado y salón nuevo.",
         "id_anexo": 100,
         "direccion_publica": "Dalmacio Vélez 874",
