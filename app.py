@@ -6,7 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_compress import Compress
 
-from sqlalchemy import text, asc  # <- text y asc en una sola línea
+from sqlalchemy import text, asc, bindparam  # <- text y asc en una sola línea
 
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -104,6 +104,23 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 db = SQLAlchemy(app)
+
+
+@app.after_request
+def agregar_cabeceras_seguridad(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    if IS_PRODUCTION:
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 # Cloudinary configurado por variables de entorno.
 cloudinary.config(
@@ -383,6 +400,7 @@ PUBLIC_API_ENDPOINTS = {
     "api_me_personal",
     "mobiliario_advertencia_por_id",
     "directorio_publico_anexo",
+    "directorio_publico_configurado",
     "inventario_publico_subdependencia",
 }
 IDLE_EXEMPT_ENDPOINTS = {
@@ -392,6 +410,7 @@ IDLE_EXEMPT_ENDPOINTS = {
     "api_logout_personal",
     "mobiliario_advertencia_por_id",
     "directorio_publico_anexo",
+    "directorio_publico_configurado",
     "inventario_publico_subdependencia",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -811,7 +830,7 @@ def _password_coincide(stored, provided):
             return check_password_hash(stored, provided)
         except ValueError:
             return False
-    return (stored or "") == (provided or "")
+    return hmac.compare_digest(str(stored or ""), str(provided or ""))
 
 
 @app.post("/api/login")
@@ -949,6 +968,7 @@ def api_login():
             if conn:
                 conn.close()
 
+    _clear_auth_session()
     session.permanent = True
     session["username"] = user["username"]
     session["role"] = _normalize_main_role(user["username"], user.get("role"))
@@ -4361,18 +4381,73 @@ def ver_mobiliario():
     return redirect(f"{FRONTEND_PUBLIC_URL}/ver{query}", code=302)
 
 
-PUBLIC_RESIDENCIA_ANEXO_ID = 1000
+PUBLIC_DIRECTORY_CONFIGS = {
+    "residencia-oficial-2": {
+        "titulo": "Residencia Oficial Nº 2",
+        "descripcion": "Oficinas y espacios de la Residencia Oficial Nº 2.",
+        "id_anexo": 1000,
+        "direccion_publica": "Perito Moreno 899",
+        "subdependencia_ids": None,
+    },
+    "observatorio": {
+        "titulo": "Observatorio",
+        "descripcion": "Dependencias del Anexo X - Observatorio.",
+        "id_anexo": 1101,
+        "direccion_publica": "Lamadrid y Bazán y Bustos",
+        "subdependencia_ids": None,
+    },
+    "recinto": {
+        "titulo": "Recinto",
+        "descripcion": "Dependencias y espacios del Recinto legislativo.",
+        "id_anexo": 1200,
+        "direccion_publica": "Dalmacio Vélez 874",
+        "subdependencia_ids": None,
+    },
+    "centro-de-operaciones": {
+        "titulo": "Centro de Operaciones",
+        "descripcion": "Oficinas del Centro de Operaciones.",
+        "id_anexo": 400,
+        "direccion_publica": "Santa Fe 891",
+        "subdependencia_ids": None,
+    },
+    "bloques-casa-central": {
+        "titulo": "Bloques - Casa Central",
+        "descripcion": "Recepción, bloque privado y salón nuevo.",
+        "id_anexo": 100,
+        "direccion_publica": "Dalmacio Vélez 874",
+        "subdependencia_ids": [124, 1406, 125],
+    },
+    "vicepresidencia-primera": {
+        "titulo": "Vicepresidencia Primera",
+        "descripcion": "Recepción y despacho de Vicepresidencia Primera.",
+        "id_anexo": 100,
+        "direccion_publica": "Dalmacio Vélez 874",
+        "subdependencia_ids": [1404, 105],
+    },
+    "presidencia": {
+        "titulo": "Presidencia",
+        "descripcion": "Presidencia y Secretaría Privada de Presidencia.",
+        "id_anexo": 100,
+        "direccion_publica": "Dalmacio Vélez 874",
+        "subdependencia_ids": [119, 117],
+    },
+    "biblioteca-anexo-1": {
+        "titulo": "Biblioteca - Anexo I",
+        "descripcion": "Atención al público, Sala 20 de Octubre y subsuelo.",
+        "id_anexo": 200,
+        "direccion_publica": "Copiapó 110",
+        "subdependencia_ids": [222, 1400, 1401],
+    },
+}
 
 
-@app.route(
-    '/api/publico/anexos/<int:id_anexo>/subdependencias',
-    methods=['GET']
-)
-def directorio_publico_anexo(id_anexo):
-    if id_anexo != PUBLIC_RESIDENCIA_ANEXO_ID:
-        return jsonify({"error": "Anexo no encontrado"}), 404
+def _respuesta_directorio_publico(slug):
+    config = PUBLIC_DIRECTORY_CONFIGS.get(slug)
+    if not config:
+        return jsonify({"error": "Directorio no encontrado"}), 404
 
     try:
+        id_anexo = config["id_anexo"]
         anexo = db.session.execute(text("""
             SELECT id, nombre, direccion
             FROM anexos
@@ -4383,7 +4458,7 @@ def directorio_publico_anexo(id_anexo):
         if not anexo:
             return jsonify({"error": "Anexo no encontrado"}), 404
 
-        rows = db.session.execute(text("""
+        sql = """
             SELECT
                 sd.id,
                 sd.nombre,
@@ -4393,9 +4468,27 @@ def directorio_publico_anexo(id_anexo):
             FROM subdependencias sd
             LEFT JOIN mobiliario m ON m.ubicacion_id = sd.id
             WHERE sd.id_anexo = :id_anexo
-            GROUP BY sd.id, sd.nombre
-            ORDER BY sd.id ASC
-        """), {"id_anexo": id_anexo}).mappings().all()
+        """
+        params = {"id_anexo": id_anexo}
+        subdependencia_ids = config["subdependencia_ids"]
+        if subdependencia_ids:
+            sql += " AND sd.id IN :subdependencia_ids"
+            params["subdependencia_ids"] = subdependencia_ids
+        sql += " GROUP BY sd.id, sd.nombre ORDER BY sd.id ASC"
+
+        statement = text(sql)
+        if subdependencia_ids:
+            statement = statement.bindparams(
+                bindparam("subdependencia_ids", expanding=True)
+            )
+        rows = db.session.execute(statement, params).mappings().all()
+
+        if subdependencia_ids:
+            order_by_id = {
+                subdependencia_id: index
+                for index, subdependencia_id in enumerate(subdependencia_ids)
+            }
+            rows = sorted(rows, key=lambda row: order_by_id.get(row["id"], 9999))
 
         subdependencias = [
             {
@@ -4406,10 +4499,15 @@ def directorio_publico_anexo(id_anexo):
             for row in rows
         ]
         response = jsonify({
+            "directorio": {
+                "slug": slug,
+                "titulo": config["titulo"],
+                "descripcion": config["descripcion"],
+            },
             "anexo": {
                 "id": anexo["id"],
                 "nombre": anexo["nombre"],
-                "direccion": anexo["direccion"],
+                "direccion": config["direccion_publica"],
             },
             "total_subdependencias": len(subdependencias),
             "total_bienes": sum(item["total_bienes"] for item in subdependencias),
@@ -4421,8 +4519,26 @@ def directorio_publico_anexo(id_anexo):
 
     except Exception as e:
         db.session.rollback()
-        print("Error en directorio publico de anexo:", e)
-        return jsonify({"error": "No se pudo cargar el anexo"}), 500
+        print("Error en directorio publico:", e)
+        return jsonify({"error": "No se pudo cargar el directorio"}), 500
+
+
+@app.route(
+    '/api/publico/anexos/<int:id_anexo>/subdependencias',
+    methods=['GET']
+)
+def directorio_publico_anexo(id_anexo):
+    if id_anexo != 1000:
+        return jsonify({"error": "Anexo no encontrado"}), 404
+    return _respuesta_directorio_publico("residencia-oficial-2")
+
+
+@app.route(
+    '/api/publico/directorios/<slug>',
+    methods=['GET']
+)
+def directorio_publico_configurado(slug):
+    return _respuesta_directorio_publico(str(slug or "").strip().lower())
 
 
 @app.route(
@@ -6477,6 +6593,7 @@ def api_login_personal():
     # --------------------------------------------------
     # 3) Crear sesión
     # --------------------------------------------------
+    _clear_auth_session()
     session.permanent = True
     session["username_personal"] = user["username"]
     session["role_personal"] = user.get("role", "personal")
