@@ -69,6 +69,7 @@ class MatafuegosUserRenameTests(unittest.TestCase):
             patch.object(backend, "_login_rate_allowed", return_value=(True, 0)),
             patch.object(backend, "_record_login_failure"),
             patch.object(backend, "_clear_login_failures"),
+            patch.object(backend, "_ensure_password_change_required_column"),
         ]
         for item in self.patches:
             item.start()
@@ -81,13 +82,21 @@ class MatafuegosUserRenameTests(unittest.TestCase):
             original_hash = self.users[index - 1]["password"]
             response = client.post("/api/login", json={"username": username, "password": self.password})
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.get_json(), {"username": username, "role": "matafuegos"})
+            self.assertEqual(response.get_json(), {
+                "username": username,
+                "role": "matafuegos",
+                "password_change_required": True,
+            })
             self.assertEqual(self.users[index - 1]["username"], username)
             self.assertEqual(self.users[index - 1]["password"], original_hash)
             self.assertEqual(self.users[index - 1]["id"], index)
             repeated = client.post("/api/login", json={"username": username, "password": self.password})
             self.assertEqual(repeated.status_code, 200)
-            self.assertEqual(repeated.get_json(), {"username": username, "role": "matafuegos"})
+            self.assertEqual(repeated.get_json(), {
+                "username": username,
+                "role": "matafuegos",
+                "password_change_required": True,
+            })
             self.assertEqual(
                 client.post("/api/login", json={"username": f"CONTIGENCIA{index}", "password": self.password}).status_code,
                 401,

@@ -6,7 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_compress import Compress
 
-from sqlalchemy import text, asc, bindparam  # <- text y asc en una sola línea
+from sqlalchemy import text, asc, bindparam, inspect  # <- text y asc en una sola línea
 
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -278,6 +278,19 @@ def _session_has_auth():
     return bool(_main_username() or _personal_username())
 
 
+def _ensure_password_change_required_column():
+    columns = {column["name"] for column in inspect(db.engine).get_columns("usuarios")}
+    if "password_change_required" in columns:
+        return
+
+    default_value = "1" if db.engine.dialect.name == "sqlite" else "TRUE"
+    db.session.execute(text(
+        "ALTER TABLE usuarios ADD COLUMN password_change_required "
+        f"BOOLEAN NOT NULL DEFAULT {default_value}"
+    ))
+    db.session.commit()
+
+
 def _refresh_main_session_from_db():
     username = _main_username()
     if not username:
@@ -293,8 +306,12 @@ def _refresh_main_session_from_db():
     except (TypeError, ValueError):
         pass
     try:
+        _ensure_password_change_required_column()
         row = db.session.execute(text("""
-            SELECT username, COALESCE(role, 'usuario') AS role, COALESCE(activo, TRUE) AS activo
+            SELECT username,
+                   COALESCE(role, 'usuario') AS role,
+                   COALESCE(activo, TRUE) AS activo,
+                   COALESCE(password_change_required, TRUE) AS password_change_required
             FROM usuarios
             WHERE username = :username
             LIMIT 1
@@ -304,6 +321,7 @@ def _refresh_main_session_from_db():
             return False
         session["username"] = row["username"]
         session["role"] = _normalize_main_role(row["username"], row["role"])
+        session["password_change_required"] = bool(row["password_change_required"])
         session["user_checked_at"] = now
         return True
     except Exception:
@@ -320,6 +338,7 @@ def _clear_auth_session():
         "csrf_token",
         "last_activity",
         "user_checked_at",
+        "password_change_required",
     ):
         session.pop(key, None)
 
@@ -437,6 +456,8 @@ def _restricted_role_request_allowed(role):
         ("PUT", "/api/perfil/password"),
     }
     if (method, path) in self_service:
+        if method == "PUT" and path == "/api/perfil/password" and session.get("password_change_required"):
+            return True
         if method == "PUT" and path.startswith("/api/perfil") and role in {"matafuegos", "comisario"}:
             return False
         return True
@@ -495,6 +516,16 @@ def proteger_api():
 
     if not _session_has_auth():
         return jsonify({"error": "unauthorized"}), 401
+
+    if _main_username() and session.get("password_change_required"):
+        allowed_during_password_change = {
+            "api_me",
+            "api_logout",
+            "api_csrf",
+            "actualizar_password_perfil_usuario",
+        }
+        if request.endpoint not in allowed_during_password_change:
+            return jsonify({"error": "password_change_required"}), 403
 
     role = _session_main_role() if _main_username() else None
     if role and not _restricted_role_request_allowed(role):
@@ -611,6 +642,7 @@ class Usuario(db.Model):
     apellido = db.Column(db.String(100))
     role = db.Column(db.String(20), nullable=False, default='usuario')
     activo = db.Column(db.Boolean, nullable=False, default=True)
+    password_change_required = db.Column(db.Boolean, nullable=False, default=True)
     fecha_creacion = db.Column(db.DateTime, server_default=db.func.now())
 
 class Subdependencia(db.Model):
@@ -833,6 +865,19 @@ def _password_coincide(stored, provided):
     return hmac.compare_digest(str(stored or ""), str(provided or ""))
 
 
+def _password_policy_error(value):
+    password = str(value or "")
+    if len(password) < 8:
+        return "La contrasena debe tener al menos 8 caracteres"
+    if not any(char.isalpha() for char in password):
+        return "La contrasena debe incluir al menos una letra"
+    if not any(char.isdigit() for char in password):
+        return "La contrasena debe incluir al menos un numero"
+    if not any(not char.isalnum() for char in password):
+        return "La contrasena debe incluir al menos un caracter especial"
+    return None
+
+
 @app.post("/api/login")
 def api_login():
     data = request.get_json() or {}
@@ -851,13 +896,15 @@ def api_login():
         }), 429
 
     try:
+        _ensure_password_change_required_column()
         conn, cur = get_conn_dict()
         try:
             # Intento completo (si faltan columnas role/activo, hacemos fallback)
             cur.execute("""
                 SELECT id, username, password,
                        COALESCE(role, 'usuario')  AS role,
-                       COALESCE(activo, TRUE)     AS activo
+                       COALESCE(activo, TRUE)     AS activo,
+                       COALESCE(password_change_required, TRUE) AS password_change_required
                 FROM usuarios
                 WHERE LOWER(username) = LOWER(%s)
                 LIMIT 1
@@ -869,7 +916,8 @@ def api_login():
                 cur.execute("""
                     SELECT id, username, password,
                            COALESCE(role, 'usuario') AS role,
-                           COALESCE(activo, TRUE) AS activo
+                           COALESCE(activo, TRUE) AS activo,
+                           COALESCE(password_change_required, TRUE) AS password_change_required
                     FROM usuarios
                     WHERE LOWER(username) = LOWER(%s)
                     LIMIT 1
@@ -899,6 +947,7 @@ def api_login():
             if user:
                 user["role"] = "usuario"
                 user["activo"] = True
+                user["password_change_required"] = True
         finally:
             cur.close(); conn.close()
     except Exception as e:
@@ -969,21 +1018,30 @@ def api_login():
                 conn.close()
 
     _clear_auth_session()
-    session.permanent = True
+    session.permanent = False
     session["username"] = user["username"]
     session["role"] = _normalize_main_role(user["username"], user.get("role"))
+    session["password_change_required"] = bool(user.get("password_change_required", True))
     session["csrf_token"] = secrets.token_urlsafe(32)
     session["user_checked_at"] = time.time()
     _touch_session_activity()
     _clear_login_failures(username)
-    return jsonify({"username": session["username"], "role": session["role"]}), 200
+    return jsonify({
+        "username": session["username"],
+        "role": session["role"],
+        "password_change_required": session["password_change_required"],
+    }), 200
 
 @app.get("/api/me")
 @login_required_api
 def api_me():
     role = _session_main_role()
     session["role"] = role
-    return jsonify({"username": session.get("username"), "role": role}), 200
+    return jsonify({
+        "username": session.get("username"),
+        "role": role,
+        "password_change_required": bool(session.get("password_change_required")),
+    }), 200
 
 
 @app.get("/api/csrf")
@@ -1199,9 +1257,11 @@ def actualizar_perfil_usuario():
 @app.put("/api/perfil/password")
 @login_required_api
 def actualizar_password_perfil_usuario():
-    if _session_main_role() in {"matafuegos", "comisario"}:
+    forced_change = bool(session.get("password_change_required"))
+    if _session_main_role() in {"matafuegos", "comisario"} and not forced_change:
         return jsonify({"error": "forbidden"}), 403
     try:
+        _ensure_password_change_required_column()
         data = request.get_json(silent=True) or {}
         actual_password = data.get("password_actual") or ""
         nueva_password = data.get("password_nueva") or ""
@@ -1210,8 +1270,9 @@ def actualizar_password_perfil_usuario():
             return jsonify({"error": "Completa todos los campos de contrasena"}), 400
         if nueva_password != confirmar_password:
             return jsonify({"error": "La confirmacion de contrasena no coincide"}), 400
-        if len(nueva_password) < 6:
-            return jsonify({"error": "La nueva contrasena debe tener al menos 6 caracteres"}), 400
+        policy_error = _password_policy_error(nueva_password)
+        if policy_error:
+            return jsonify({"error": policy_error}), 400
 
         row = db.session.execute(text("""
             SELECT id, password
@@ -1223,16 +1284,21 @@ def actualizar_password_perfil_usuario():
             return jsonify({"error": "Usuario no encontrado"}), 404
         if not _password_coincide(row["password"], actual_password):
             return jsonify({"error": "La contrasena actual es incorrecta"}), 400
+        if _password_coincide(row["password"], nueva_password):
+            return jsonify({"error": "La nueva contrasena debe ser distinta de la actual"}), 400
 
         db.session.execute(text("""
             UPDATE usuarios
-            SET password = :password
+            SET password = :password,
+                password_change_required = FALSE
             WHERE id = :id
         """), {
             "id": row["id"],
             "password": generate_password_hash(nueva_password),
         })
         db.session.commit()
+        session["password_change_required"] = False
+        session["user_checked_at"] = time.time()
         return jsonify({"mensaje": "Contrasena actualizada"}), 200
     except Exception as e:
         db.session.rollback()
@@ -1249,6 +1315,7 @@ def actualizar_password_perfil_usuario():
 
 def _ensure_admin_usuarios_columns():
     _ensure_perfil_usuario_columns()
+    _ensure_password_change_required_column()
     db.session.execute(text("""
         ALTER TABLE IF EXISTS usuarios
         ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'usuario'
@@ -1310,6 +1377,7 @@ def _admin_usuario_to_dict(row):
         "apellido": row["apellido"] or "",
         "role": role,
         "activo": _admin_bool(row["activo"]),
+        "password_change_required": _admin_bool(row["password_change_required"]),
         "fecha_creacion": _admin_fecha_iso(row["fecha_creacion"]),
         "protegido": str(username or "").strip().lower() in SUPERADMIN_USERNAMES,
     }
@@ -1324,6 +1392,7 @@ def _admin_usuario_por_id(id_usuario):
             apellido,
             COALESCE(role, 'usuario') AS role,
             COALESCE(activo, TRUE) AS activo,
+            COALESCE(password_change_required, TRUE) AS password_change_required,
             fecha_creacion
         FROM usuarios
         WHERE id = :id
@@ -1354,6 +1423,7 @@ def admin_listar_usuarios():
                 apellido,
                 COALESCE(role, 'usuario') AS role,
                 COALESCE(activo, TRUE) AS activo,
+                COALESCE(password_change_required, TRUE) AS password_change_required,
                 fecha_creacion
             FROM usuarios
             ORDER BY LOWER(username) ASC
@@ -1374,8 +1444,9 @@ def admin_crear_usuario():
         nombre = _admin_texto(data, "nombre", 100)
         apellido = _admin_texto(data, "apellido", 100)
         password = str(data.get("password") or "")
-        if len(password) < 6:
-            return jsonify({"error": "La contrasena debe tener al menos 6 caracteres"}), 400
+        policy_error = _password_policy_error(password)
+        if policy_error:
+            return jsonify({"error": policy_error}), 400
         role = _admin_role_para_guardar(username, data.get("role"))
         activo = _admin_bool(data.get("activo"), True)
         if role == "superadmin" and not activo:
@@ -1391,9 +1462,9 @@ def admin_crear_usuario():
             return jsonify({"error": "Ese usuario ya existe"}), 409
 
         row = db.session.execute(text("""
-            INSERT INTO usuarios (username, password, nombre, apellido, role, activo)
-            VALUES (:username, :password, :nombre, :apellido, :role, :activo)
-            RETURNING id, username, nombre, apellido, role, activo, fecha_creacion
+            INSERT INTO usuarios (username, password, nombre, apellido, role, activo, password_change_required)
+            VALUES (:username, :password, :nombre, :apellido, :role, :activo, TRUE)
+            RETURNING id, username, nombre, apellido, role, activo, password_change_required, fecha_creacion
         """), {
             "username": username,
             "password": generate_password_hash(password),
@@ -1457,7 +1528,7 @@ def admin_actualizar_usuario(id_usuario):
                 role = :role,
                 activo = :activo
             WHERE id = :id
-            RETURNING id, username, nombre, apellido, role, activo, fecha_creacion
+            RETURNING id, username, nombre, apellido, role, activo, password_change_required, fecha_creacion
         """), {
             "id": id_usuario,
             "username": username,
@@ -1489,8 +1560,9 @@ def admin_resetear_password_usuario(id_usuario):
         _ensure_admin_usuarios_columns()
         data = request.get_json(silent=True) or {}
         password = str(data.get("password") or "")
-        if len(password) < 6:
-            return jsonify({"error": "La contrasena debe tener al menos 6 caracteres"}), 400
+        policy_error = _password_policy_error(password)
+        if policy_error:
+            return jsonify({"error": policy_error}), 400
 
         actual = _admin_usuario_por_id(id_usuario)
         if not actual:
@@ -1498,13 +1570,17 @@ def admin_resetear_password_usuario(id_usuario):
 
         db.session.execute(text("""
             UPDATE usuarios
-            SET password = :password
+            SET password = :password,
+                password_change_required = TRUE
             WHERE id = :id
         """), {
             "id": id_usuario,
             "password": generate_password_hash(password),
         })
         db.session.commit()
+        if _admin_usuario_actual_id() == id_usuario:
+            session["password_change_required"] = True
+            session["user_checked_at"] = time.time()
         return jsonify({"mensaje": "Contrasena actualizada"}), 200
     except Exception as e:
         db.session.rollback()
