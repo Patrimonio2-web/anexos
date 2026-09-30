@@ -21,7 +21,7 @@ import psycopg2, psycopg2.extras
 import qrcode
 import pandas as pd
 from dotenv import load_dotenv
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from functools import wraps
 from PIL import Image, ImageDraw, ImageFont
@@ -184,6 +184,13 @@ COMISARIO_USERNAMES = {
     item.lower()
     for item in _split_env_list("COMISARIO_USERNAMES", ["comisario"])
 }
+CONSULTAS_PUBLICAS_USERNAMES = {
+    item.lower()
+    for item in _split_env_list(
+        "CONSULTAS_PUBLICAS_USERNAMES",
+        ["mauri", "luciano", "nahun"],
+    )
+}
 
 
 def _normalize_main_role(username, role=None):
@@ -216,6 +223,11 @@ def _is_superadmin_session():
     return _session_main_role() == "superadmin"
 
 
+def _can_manage_public_consultations():
+    username = str(_main_username() or "").strip().lower()
+    return _is_superadmin_session() or username in CONSULTAS_PUBLICAS_USERNAMES
+
+
 def _is_virtual_subdependencia_name(nombre):
     return "virtual" in str(nombre or "").strip().casefold()
 
@@ -225,11 +237,16 @@ def _hide_virtual_subdependencias_for_session():
 
 
 LOGIN_ATTEMPTS = {}
+PUBLIC_CONSULTATION_ATTEMPTS = {}
 LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
 LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "900"))
 IDLE_SESSION_TIMEOUT_SECONDS = int(os.getenv("IDLE_SESSION_TIMEOUT_SECONDS", "600"))
 PRESENCE_ONLINE_SECONDS = int(os.getenv("PRESENCE_ONLINE_SECONDS", "180"))
 SESSION_USER_REFRESH_SECONDS = int(os.getenv("SESSION_USER_REFRESH_SECONDS", "30"))
+PUBLIC_CONSULTATION_RATE_LIMIT = int(os.getenv("PUBLIC_CONSULTATION_RATE_LIMIT", "5"))
+PUBLIC_CONSULTATION_RATE_WINDOW_SECONDS = int(
+    os.getenv("PUBLIC_CONSULTATION_RATE_WINDOW_SECONDS", "600")
+)
 
 
 def _login_rate_key(username):
@@ -258,6 +275,25 @@ def _record_login_failure(username):
 
 def _clear_login_failures(username):
     LOGIN_ATTEMPTS.pop(_login_rate_key(username), None)
+
+
+def _public_consultation_rate_allowed():
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+    now = time.time()
+    attempts = [
+        timestamp
+        for timestamp in PUBLIC_CONSULTATION_ATTEMPTS.get(ip, [])
+        if now - timestamp < PUBLIC_CONSULTATION_RATE_WINDOW_SECONDS
+    ]
+    PUBLIC_CONSULTATION_ATTEMPTS[ip] = attempts
+    if len(attempts) >= PUBLIC_CONSULTATION_RATE_LIMIT:
+        retry_after = max(
+            1,
+            int(PUBLIC_CONSULTATION_RATE_WINDOW_SECONDS - (now - attempts[0])),
+        )
+        return False, retry_after
+    attempts.append(now)
+    return True, 0
 
 
 def _ensure_csrf_token():
@@ -390,6 +426,17 @@ def superadmin_required_api(f):
     return wrapped
 
 
+def public_consultations_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not _main_username():
+            return jsonify({"error": "unauthorized"}), 401
+        if not _can_manage_public_consultations():
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
 def hernan_required_api(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -421,6 +468,7 @@ PUBLIC_API_ENDPOINTS = {
     "directorio_publico_anexo",
     "directorio_publico_configurado",
     "inventario_publico_subdependencia",
+    "crear_consulta_publica",
 }
 IDLE_EXEMPT_ENDPOINTS = {
     "api_login",
@@ -431,6 +479,7 @@ IDLE_EXEMPT_ENDPOINTS = {
     "directorio_publico_anexo",
     "directorio_publico_configurado",
     "inventario_publico_subdependencia",
+    "crear_consulta_publica",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_EXEMPT_ENDPOINTS = PUBLIC_API_ENDPOINTS
@@ -1048,6 +1097,274 @@ def api_me():
 @login_required_api
 def api_csrf():
     return jsonify({"csrf_token": _ensure_csrf_token()}), 200
+
+
+# =============================================================================
+# CONSULTAS ENVIADAS DESDE EL ASISTENTE PUBLICO
+# =============================================================================
+
+PUBLIC_CONSULTATION_STATES = {"pendiente", "en_revision", "resuelta"}
+
+
+def _ensure_public_consultations_table():
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS consultas_publicas (
+            id BIGSERIAL PRIMARY KEY,
+            nombre_apellido VARCHAR(120) NOT NULL,
+            anexo VARCHAR(160) NOT NULL,
+            oficina VARCHAR(160) NOT NULL,
+            consulta TEXT NOT NULL,
+            contexto TEXT,
+            pagina_origen VARCHAR(500),
+            estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+            nota_interna TEXT,
+            atendido_por VARCHAR(100),
+            fecha_creacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.session.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_consultas_publicas_estado_fecha
+        ON consultas_publicas (estado, fecha_creacion DESC)
+    """))
+    db.session.commit()
+
+
+def _public_consultation_text(data, key, max_length, required=True):
+    value = str(data.get(key) or "").strip()
+    if required and not value:
+        raise ValueError(f"{key} es obligatorio")
+    if len(value) > max_length:
+        raise ValueError(f"{key} supera el maximo de {max_length} caracteres")
+    return value or None
+
+
+def _public_consultation_iso(value):
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _trusted_public_page_url(value):
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("pagina_origen no es valida")
+    origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    trusted_origins = {item.rstrip("/") for item in FRONTEND_ORIGINS}
+    if origin not in trusted_origins:
+        raise ValueError("pagina_origen no pertenece al sistema")
+    return value
+
+
+def _public_consultation_to_dict(row):
+    context = {}
+    try:
+        context = json.loads(row["contexto"] or "{}")
+    except (TypeError, ValueError):
+        context = {}
+    return {
+        "id": row["id"],
+        "nombre_apellido": row["nombre_apellido"],
+        "anexo": row["anexo"],
+        "oficina": row["oficina"],
+        "consulta": row["consulta"],
+        "contexto": context,
+        "pagina_origen": row["pagina_origen"],
+        "estado": row["estado"],
+        "nota_interna": row["nota_interna"] or "",
+        "atendido_por": row["atendido_por"],
+        "fecha_creacion": _public_consultation_iso(row["fecha_creacion"]),
+        "fecha_actualizacion": _public_consultation_iso(row["fecha_actualizacion"]),
+    }
+
+
+@app.post("/api/consultas-publicas")
+def crear_consulta_publica():
+    data = request.get_json(silent=True) or {}
+    if str(data.get("website") or "").strip():
+        return jsonify({"mensaje": "Consulta recibida"}), 201
+
+    allowed, retry_after = _public_consultation_rate_allowed()
+    if not allowed:
+        return jsonify({
+            "error": "Demasiados mensajes enviados. Intenta nuevamente mas tarde.",
+            "retry_after": retry_after,
+        }), 429
+
+    try:
+        nombre_apellido = _public_consultation_text(data, "nombre_apellido", 120)
+        anexo = _public_consultation_text(data, "anexo", 160)
+        oficina = _public_consultation_text(data, "oficina", 160)
+        consulta = _public_consultation_text(data, "consulta", 2000)
+        if len(consulta) < 10:
+            return jsonify({"error": "La consulta debe tener al menos 10 caracteres"}), 400
+        pagina_origen = _trusted_public_page_url(
+            _public_consultation_text(data, "pagina_origen", 500, required=False)
+        )
+
+        raw_context = data.get("contexto") if isinstance(data.get("contexto"), dict) else {}
+        context = {
+            key: str(raw_context.get(key) or "")[:200]
+            for key in ("kind", "itemId", "estado", "anexo", "subdependencia", "total")
+            if raw_context.get(key) not in (None, "")
+        }
+
+        _ensure_public_consultations_table()
+        row = db.session.execute(text("""
+            INSERT INTO consultas_publicas (
+                nombre_apellido,
+                anexo,
+                oficina,
+                consulta,
+                contexto,
+                pagina_origen
+            )
+            VALUES (
+                :nombre_apellido,
+                :anexo,
+                :oficina,
+                :consulta,
+                :contexto,
+                :pagina_origen
+            )
+            RETURNING id, fecha_creacion
+        """), {
+            "nombre_apellido": nombre_apellido,
+            "anexo": anexo,
+            "oficina": oficina,
+            "consulta": consulta,
+            "contexto": json.dumps(context, ensure_ascii=False),
+            "pagina_origen": pagina_origen,
+        }).mappings().first()
+        db.session.commit()
+        return jsonify({
+            "id": row["id"],
+            "mensaje": "Tu mensaje fue enviado a la Direccion de Patrimonio",
+            "fecha_creacion": _public_consultation_iso(row["fecha_creacion"]),
+        }), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        print("Error creando consulta publica:", error)
+        return jsonify({"error": "No se pudo enviar la consulta"}), 500
+
+
+@app.get("/api/consultas-publicas")
+@public_consultations_required_api
+def listar_consultas_publicas():
+    try:
+        _ensure_public_consultations_table()
+        state = str(request.args.get("estado") or "").strip().lower()
+        query = str(request.args.get("q") or "").strip().lower()[:120]
+        limit = min(max(int(request.args.get("limit", 100)), 1), 200)
+        offset = max(int(request.args.get("offset", 0)), 0)
+        conditions = ["1 = 1"]
+        params = {"limit": limit, "offset": offset}
+        if state in PUBLIC_CONSULTATION_STATES:
+            conditions.append("estado = :estado")
+            params["estado"] = state
+        if query:
+            conditions.append("""
+                LOWER(
+                    COALESCE(nombre_apellido, '') || ' ' ||
+                    COALESCE(anexo, '') || ' ' ||
+                    COALESCE(oficina, '') || ' ' ||
+                    COALESCE(consulta, '')
+                ) LIKE :query
+            """)
+            params["query"] = f"%{query}%"
+        where_sql = " AND ".join(conditions)
+        rows = db.session.execute(text(f"""
+            SELECT *
+            FROM consultas_publicas
+            WHERE {where_sql}
+            ORDER BY
+                CASE estado
+                    WHEN 'pendiente' THEN 1
+                    WHEN 'en_revision' THEN 2
+                    ELSE 3
+                END,
+                fecha_creacion DESC
+            LIMIT :limit OFFSET :offset
+        """), params).mappings().all()
+        summary_rows = db.session.execute(text("""
+            SELECT estado, COUNT(*) AS total
+            FROM consultas_publicas
+            GROUP BY estado
+        """)).mappings().all()
+        summary = {"pendiente": 0, "en_revision": 0, "resuelta": 0}
+        for summary_row in summary_rows:
+            if summary_row["estado"] in summary:
+                summary[summary_row["estado"]] = int(summary_row["total"])
+        return jsonify({
+            "consultas": [_public_consultation_to_dict(row) for row in rows],
+            "resumen": {**summary, "total": sum(summary.values())},
+        }), 200
+    except (TypeError, ValueError):
+        return jsonify({"error": "Parametros invalidos"}), 400
+    except Exception as error:
+        db.session.rollback()
+        print("Error listando consultas publicas:", error)
+        return jsonify({"error": "No se pudieron cargar las consultas"}), 500
+
+
+@app.get("/api/consultas-publicas/notificaciones")
+@public_consultations_required_api
+def notificaciones_consultas_publicas():
+    try:
+        _ensure_public_consultations_table()
+        total = db.session.execute(text("""
+            SELECT COUNT(*)
+            FROM consultas_publicas
+            WHERE estado = 'pendiente'
+        """)).scalar() or 0
+        return jsonify({"pendientes": int(total)}), 200
+    except Exception as error:
+        db.session.rollback()
+        print("Error cargando notificaciones de consultas publicas:", error)
+        return jsonify({"error": "No se pudieron cargar las notificaciones"}), 500
+
+
+@app.patch("/api/consultas-publicas/<int:consulta_id>")
+@public_consultations_required_api
+def actualizar_consulta_publica(consulta_id):
+    try:
+        _ensure_public_consultations_table()
+        data = request.get_json(silent=True) or {}
+        state = str(data.get("estado") or "").strip().lower()
+        if state not in PUBLIC_CONSULTATION_STATES:
+            return jsonify({"error": "Estado invalido"}), 400
+        note = _public_consultation_text(data, "nota_interna", 2000, required=False)
+        row = db.session.execute(text("""
+            UPDATE consultas_publicas
+            SET estado = :estado,
+                nota_interna = :nota_interna,
+                atendido_por = :atendido_por,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = :id
+            RETURNING *
+        """), {
+            "id": consulta_id,
+            "estado": state,
+            "nota_interna": note,
+            "atendido_por": _main_username(),
+        }).mappings().first()
+        if not row:
+            db.session.rollback()
+            return jsonify({"error": "Consulta no encontrada"}), 404
+        db.session.commit()
+        return jsonify(_public_consultation_to_dict(row)), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        print("Error actualizando consulta publica:", error)
+        return jsonify({"error": "No se pudo actualizar la consulta"}), 500
 
 
 # =============================================================================
