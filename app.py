@@ -1948,7 +1948,11 @@ def admin_resetear_password_usuario(id_usuario):
         if _admin_usuario_actual_id() == id_usuario:
             session["password_change_required"] = True
             session["user_checked_at"] = time.time()
-        return jsonify({"mensaje": "Contrasena actualizada"}), 200
+        return jsonify({
+            "mensaje": "Contrasena provisoria actualizada",
+            "username": actual["username"],
+            "password_change_required": True,
+        }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
