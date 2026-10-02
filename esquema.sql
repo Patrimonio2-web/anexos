@@ -98,6 +98,24 @@ ALTER TABLE IF EXISTS public.mobiliario
 ALTER TABLE IF EXISTS public.mobiliario
     ADD COLUMN IF NOT EXISTS vehiculo text;
 
+CREATE TABLE IF NOT EXISTS public.reparaciones_mobiliario (
+    id bigserial PRIMARY KEY,
+    mobiliario_id character varying(50) NOT NULL REFERENCES public.mobiliario(id) ON DELETE CASCADE,
+    reparado_por character varying(160) NOT NULL,
+    trabajo_realizado text NOT NULL,
+    fecha_salida date NOT NULL,
+    fecha_retorno date,
+    observaciones text,
+    estado character varying(20) NOT NULL DEFAULT 'en_reparacion',
+    creado_por character varying(100),
+    finalizado_por character varying(100),
+    fecha_creacion timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_reparaciones_mobiliario_bien_fecha
+    ON public.reparaciones_mobiliario (mobiliario_id, fecha_salida DESC, id DESC);
+
 --
 -- Name: movimientos_altas; Type: TABLE; Schema: public; Owner: patrimonio_ppfk_user
 --

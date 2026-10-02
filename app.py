@@ -805,6 +805,7 @@ class Mobiliario(db.Model):
 
 _mobiliario_valor_column_ready = False
 _mobiliario_foto_2_column_ready = False
+_reparaciones_mobiliario_table_ready = False
 
 
 def _ensure_mobiliario_valor_column():
@@ -845,6 +846,55 @@ def _ensure_mobiliario_foto_2_column():
         """))
     db.session.commit()
     _mobiliario_foto_2_column_ready = True
+
+
+def _ensure_reparaciones_mobiliario_table():
+    global _reparaciones_mobiliario_table_ready
+    if _reparaciones_mobiliario_table_ready:
+        return
+
+    if db.engine.dialect.name == "sqlite":
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS reparaciones_mobiliario (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mobiliario_id VARCHAR(50) NOT NULL,
+                reparado_por VARCHAR(160) NOT NULL,
+                trabajo_realizado TEXT NOT NULL,
+                fecha_salida DATE NOT NULL,
+                fecha_retorno DATE,
+                observaciones TEXT,
+                estado VARCHAR(20) NOT NULL DEFAULT 'en_reparacion',
+                creado_por VARCHAR(100),
+                finalizado_por VARCHAR(100),
+                fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (mobiliario_id) REFERENCES mobiliario(id) ON DELETE CASCADE
+            )
+        """))
+    else:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS reparaciones_mobiliario (
+                id BIGSERIAL PRIMARY KEY,
+                mobiliario_id VARCHAR(50) NOT NULL REFERENCES mobiliario(id) ON DELETE CASCADE,
+                reparado_por VARCHAR(160) NOT NULL,
+                trabajo_realizado TEXT NOT NULL,
+                fecha_salida DATE NOT NULL,
+                fecha_retorno DATE,
+                observaciones TEXT,
+                estado VARCHAR(20) NOT NULL DEFAULT 'en_reparacion',
+                creado_por VARCHAR(100),
+                finalizado_por VARCHAR(100),
+                fecha_creacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+    db.session.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_reparaciones_mobiliario_bien_fecha
+        ON reparaciones_mobiliario (mobiliario_id, fecha_salida DESC, id DESC)
+    """))
+    db.session.commit()
+    _reparaciones_mobiliario_table_ready = True
 
 
 def _parse_mobiliario_valor(value):
@@ -4223,6 +4273,263 @@ def actualizar_foto_mobiliario(id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
+
+# =============================================================================
+# HISTORIAL ESPECIFICO DE REPARACIONES
+# =============================================================================
+
+def _reparacion_text(data, key, max_length, required=True):
+    value = str(data.get(key) or "").strip()
+    if required and not value:
+        raise ValueError(f"{key} es obligatorio")
+    if len(value) > max_length:
+        raise ValueError(f"{key} supera el maximo de {max_length} caracteres")
+    return value or None
+
+
+def _reparacion_date(data, key, required=False):
+    value = str(data.get(key) or "").strip()
+    if not value:
+        if required:
+            raise ValueError(f"{key} es obligatorio")
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise ValueError(f"{key} debe tener formato AAAA-MM-DD") from error
+
+
+def _reparacion_to_dict(row):
+    return {
+        "id": int(row["id"]),
+        "mobiliario_id": str(row["mobiliario_id"]),
+        "reparado_por": row["reparado_por"],
+        "trabajo_realizado": row["trabajo_realizado"],
+        "fecha_salida": _fecha_iso(row["fecha_salida"]),
+        "fecha_retorno": _fecha_iso(row["fecha_retorno"]),
+        "observaciones": row["observaciones"] or "",
+        "estado": row["estado"],
+        "creado_por": row["creado_por"],
+        "finalizado_por": row["finalizado_por"],
+        "fecha_creacion": _fecha_iso(row["fecha_creacion"]),
+        "fecha_actualizacion": _fecha_iso(row["fecha_actualizacion"]),
+    }
+
+
+@app.get("/api/mobiliario/<string:id>/reparaciones")
+@login_required_api
+def listar_reparaciones_mobiliario(id):
+    try:
+        _ensure_reparaciones_mobiliario_table()
+        mobiliario = db.session.get(Mobiliario, id)
+        if not mobiliario:
+            return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+        rows = db.session.execute(text("""
+            SELECT * FROM reparaciones_mobiliario
+            WHERE mobiliario_id = :mobiliario_id
+            ORDER BY fecha_salida DESC, id DESC
+        """), {"mobiliario_id": id}).mappings().all()
+        return jsonify({
+            "mobiliario_id": id,
+            "para_reparacion": bool(mobiliario.para_reparacion),
+            "reparaciones": [_reparacion_to_dict(row) for row in rows],
+        }), 200
+    except Exception as error:
+        db.session.rollback()
+        print("Error listando reparaciones de mobiliario:", error)
+        return jsonify({"error": "No se pudo cargar el historial de reparaciones"}), 500
+
+
+@app.post("/api/mobiliario/<string:id>/reparaciones")
+@admin_required_api
+def crear_reparacion_mobiliario(id):
+    try:
+        _ensure_reparaciones_mobiliario_table()
+        mobiliario = db.session.get(Mobiliario, id)
+        if not mobiliario:
+            return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+        data = request.get_json(silent=True) or {}
+        reparado_por = _reparacion_text(data, "reparado_por", 160)
+        trabajo_realizado = _reparacion_text(data, "trabajo_realizado", 2000)
+        observaciones = _reparacion_text(data, "observaciones", 2000, required=False)
+        fecha_salida = _reparacion_date(data, "fecha_salida", required=True)
+        fecha_retorno = _reparacion_date(data, "fecha_retorno")
+        if fecha_retorno and fecha_retorno < fecha_salida:
+            return jsonify({"error": "La fecha de regreso no puede ser anterior a la salida"}), 400
+
+        abierta = db.session.execute(text("""
+            SELECT id FROM reparaciones_mobiliario
+            WHERE mobiliario_id = :mobiliario_id AND estado = 'en_reparacion'
+            LIMIT 1
+        """), {"mobiliario_id": id}).scalar()
+        if abierta:
+            return jsonify({"error": "El bien ya tiene una reparacion en curso"}), 409
+
+        estado = "finalizada" if fecha_retorno else "en_reparacion"
+        username = _main_username()
+        before = model_to_dict(mobiliario)
+        row = db.session.execute(text("""
+            INSERT INTO reparaciones_mobiliario (
+                mobiliario_id, reparado_por, trabajo_realizado, fecha_salida,
+                fecha_retorno, observaciones, estado, creado_por, finalizado_por
+            ) VALUES (
+                :mobiliario_id, :reparado_por, :trabajo_realizado, :fecha_salida,
+                :fecha_retorno, :observaciones, :estado, :creado_por, :finalizado_por
+            ) RETURNING *
+        """), {
+            "mobiliario_id": id,
+            "reparado_por": reparado_por,
+            "trabajo_realizado": trabajo_realizado,
+            "fecha_salida": fecha_salida,
+            "fecha_retorno": fecha_retorno,
+            "observaciones": observaciones,
+            "estado": estado,
+            "creado_por": username,
+            "finalizado_por": username if estado == "finalizada" else None,
+        }).mappings().first()
+
+        mobiliario.para_reparacion = estado == "en_reparacion"
+        mobiliario.fecha_actualizacion = datetime.utcnow()
+        registrar_auditoria(
+            accion="UPDATE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=before,
+            after=model_to_dict(mobiliario),
+            descripcion="Registro en historial de reparaciones",
+        )
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Reparacion registrada correctamente",
+            "para_reparacion": bool(mobiliario.para_reparacion),
+            "reparacion": _reparacion_to_dict(row),
+        }), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        print("Error creando reparacion de mobiliario:", error)
+        return jsonify({"error": "No se pudo registrar la reparacion"}), 500
+
+
+@app.patch("/api/mobiliario/<string:id>/reparaciones/<int:reparacion_id>")
+@admin_required_api
+def finalizar_reparacion_mobiliario(id, reparacion_id):
+    try:
+        _ensure_reparaciones_mobiliario_table()
+        mobiliario = db.session.get(Mobiliario, id)
+        if not mobiliario:
+            return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+        current = db.session.execute(text("""
+            SELECT * FROM reparaciones_mobiliario
+            WHERE id = :reparacion_id AND mobiliario_id = :mobiliario_id
+        """), {"reparacion_id": reparacion_id, "mobiliario_id": id}).mappings().first()
+        if not current:
+            return jsonify({"error": "Reparacion no encontrada"}), 404
+        if current["estado"] == "finalizada":
+            return jsonify({"error": "La reparacion ya esta finalizada"}), 409
+
+        data = request.get_json(silent=True) or {}
+        reparado_por = _reparacion_text(data, "reparado_por", 160)
+        trabajo_realizado = _reparacion_text(data, "trabajo_realizado", 2000)
+        observaciones = _reparacion_text(data, "observaciones", 2000, required=False)
+        fecha_salida = _reparacion_date(data, "fecha_salida", required=True)
+        fecha_retorno = _reparacion_date(data, "fecha_retorno", required=True)
+        if fecha_retorno < fecha_salida:
+            return jsonify({"error": "La fecha de regreso no puede ser anterior a la salida"}), 400
+
+        before = model_to_dict(mobiliario)
+        row = db.session.execute(text("""
+            UPDATE reparaciones_mobiliario
+            SET reparado_por = :reparado_por,
+                trabajo_realizado = :trabajo_realizado,
+                fecha_salida = :fecha_salida,
+                fecha_retorno = :fecha_retorno,
+                observaciones = :observaciones,
+                estado = 'finalizada',
+                finalizado_por = :finalizado_por,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = :reparacion_id AND mobiliario_id = :mobiliario_id
+            RETURNING *
+        """), {
+            "reparacion_id": reparacion_id,
+            "mobiliario_id": id,
+            "reparado_por": reparado_por,
+            "trabajo_realizado": trabajo_realizado,
+            "fecha_salida": fecha_salida,
+            "fecha_retorno": fecha_retorno,
+            "observaciones": observaciones,
+            "finalizado_por": _main_username(),
+        }).mappings().first()
+
+        otras_abiertas = db.session.execute(text("""
+            SELECT COUNT(*) FROM reparaciones_mobiliario
+            WHERE mobiliario_id = :mobiliario_id AND estado = 'en_reparacion'
+        """), {"mobiliario_id": id}).scalar() or 0
+        mobiliario.para_reparacion = bool(otras_abiertas)
+        mobiliario.fecha_actualizacion = datetime.utcnow()
+        registrar_auditoria(
+            accion="UPDATE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=before,
+            after=model_to_dict(mobiliario),
+            descripcion="Finalizacion de reparacion",
+        )
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Reparacion finalizada correctamente",
+            "para_reparacion": bool(mobiliario.para_reparacion),
+            "reparacion": _reparacion_to_dict(row),
+        }), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        print("Error finalizando reparacion de mobiliario:", error)
+        return jsonify({"error": "No se pudo finalizar la reparacion"}), 500
+
+
+@app.patch("/api/mobiliario/<string:id>/reparacion/marca")
+@admin_required_api
+def quitar_marca_reparacion_mobiliario(id):
+    try:
+        _ensure_reparaciones_mobiliario_table()
+        mobiliario = db.session.get(Mobiliario, id)
+        if not mobiliario:
+            return jsonify({"error": "Mobiliario no encontrado"}), 404
+
+        abierta = db.session.execute(text("""
+            SELECT id FROM reparaciones_mobiliario
+            WHERE mobiliario_id = :mobiliario_id AND estado = 'en_reparacion'
+            LIMIT 1
+        """), {"mobiliario_id": id}).scalar()
+        if abierta:
+            return jsonify({"error": "Primero debes finalizar la reparacion en curso"}), 409
+
+        before = model_to_dict(mobiliario)
+        mobiliario.para_reparacion = False
+        mobiliario.fecha_actualizacion = datetime.utcnow()
+        registrar_auditoria(
+            accion="UPDATE",
+            tabla="mobiliario",
+            id_registro=id,
+            before=before,
+            after=model_to_dict(mobiliario),
+            descripcion="Se quito la marca de reparacion sin historial abierto",
+        )
+        db.session.commit()
+        return jsonify({"mensaje": "Marca de reparacion quitada", "para_reparacion": False}), 200
+    except Exception as error:
+        db.session.rollback()
+        print("Error quitando marca de reparacion:", error)
+        return jsonify({"error": "No se pudo quitar la marca de reparacion"}), 500
 
 
 # ====== API para registrar un nuevo mobiliario ---------------------------------
