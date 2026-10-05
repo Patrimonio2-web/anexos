@@ -14,7 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-import os, tempfile, io, json, hmac, secrets, time, re
+import os, tempfile, io, json, hmac, secrets, time, re, unicodedata
 import pytz
 import cloudinary, cloudinary.uploader
 import psycopg2, psycopg2.extras
@@ -701,6 +701,23 @@ class Subdependencia(db.Model):
     nombre = db.Column(db.String(255), nullable=False)
     piso = db.Column(db.Integer)  # 👈 este campo está en tu base (PDF), podés incluirlo si lo necesitás
 
+
+class Diputado(db.Model):
+    __tablename__ = 'diputados'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(160), unique=True, nullable=False)
+    departamento = db.Column(db.String(120), nullable=False)
+    partido = db.Column(db.String(200), nullable=False)
+    bloque = db.Column(db.String(160))
+    mandato = db.Column(db.String(20), nullable=False)
+    foto_url = db.Column(db.Text)
+    ubicacion_id = db.Column(db.Integer, db.ForeignKey('subdependencias.id', ondelete='SET NULL'))
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    fecha_creacion = db.Column(db.DateTime, server_default=db.func.now())
+    fecha_actualizacion = db.Column(db.DateTime, server_default=db.func.now(), onupdate=datetime.utcnow)
+
+    ubicacion = db.relationship('Subdependencia', lazy=True)
+
 class Auditoria(db.Model):
     __tablename__ = 'auditoria'
 
@@ -806,6 +823,7 @@ class Mobiliario(db.Model):
 _mobiliario_valor_column_ready = False
 _mobiliario_foto_2_column_ready = False
 _reparaciones_mobiliario_table_ready = False
+_diputados_table_ready = False
 
 
 def _ensure_mobiliario_valor_column():
@@ -895,6 +913,50 @@ def _ensure_reparaciones_mobiliario_table():
     """))
     db.session.commit()
     _reparaciones_mobiliario_table_ready = True
+
+
+def _ensure_diputados_table():
+    global _diputados_table_ready
+    if _diputados_table_ready:
+        return
+
+    if db.engine.dialect.name == "sqlite":
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS diputados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre VARCHAR(160) NOT NULL UNIQUE,
+                departamento VARCHAR(120) NOT NULL,
+                partido VARCHAR(200) NOT NULL,
+                bloque VARCHAR(160),
+                mandato VARCHAR(20) NOT NULL,
+                foto_url TEXT,
+                ubicacion_id INTEGER REFERENCES subdependencias(id) ON DELETE SET NULL,
+                activo BOOLEAN NOT NULL DEFAULT 1,
+                fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+    else:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS diputados (
+                id BIGSERIAL PRIMARY KEY,
+                nombre VARCHAR(160) NOT NULL UNIQUE,
+                departamento VARCHAR(120) NOT NULL,
+                partido VARCHAR(200) NOT NULL,
+                bloque VARCHAR(160),
+                mandato VARCHAR(20) NOT NULL,
+                foto_url TEXT,
+                ubicacion_id INTEGER REFERENCES subdependencias(id) ON DELETE SET NULL,
+                activo BOOLEAN NOT NULL DEFAULT TRUE,
+                fecha_creacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_diputados_ubicacion ON diputados (ubicacion_id)"))
+    db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_diputados_activo ON diputados (activo)"))
+    db.session.commit()
+    _diputados_table_ready = True
 
 
 def _parse_mobiliario_valor(value):
@@ -2410,6 +2472,219 @@ def obtener_subdependencias(id_anexo):
             if not _is_virtual_subdependencia_name(sub.nombre)
         ]
     return jsonify([{'id': sub.id, 'nombre': sub.nombre} for sub in subdependencias])
+
+
+# ===================== DIPUTADOS =====================
+# La oficina se guarda como FK a subdependencias. El anexo, la dirección y el
+# nombre de la oficina siempre se derivan de esa relación para evitar duplicados.
+def _diputado_text(value, max_length, required=False):
+    clean = str(value or "").strip()
+    if required and not clean:
+        raise ValueError("Hay campos obligatorios sin completar")
+    if len(clean) > max_length:
+        raise ValueError("Uno de los textos supera la longitud permitida")
+    return clean or None
+
+
+def _diputado_location(value):
+    if value in (None, ""):
+        return None
+    try:
+        location_id = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("La subdependencia seleccionada no es válida")
+    if not db.session.get(Subdependencia, location_id):
+        raise ValueError("La subdependencia seleccionada no existe")
+    return location_id
+
+
+def _diputado_payload(data, partial=False):
+    fields = {}
+    definitions = {
+        "nombre": (160, True),
+        "departamento": (120, True),
+        "partido": (200, True),
+        "bloque": (160, False),
+        "mandato": (20, True),
+        "foto_url": (2000, False),
+    }
+    for field, (max_length, required) in definitions.items():
+        source_field = "foto" if field == "foto_url" and "foto_url" not in data else field
+        if partial and source_field not in data:
+            continue
+        fields[field] = _diputado_text(data.get(source_field), max_length, required)
+
+    if "mandato" in fields and not re.fullmatch(r"\d{4}\s*-\s*\d{4}", fields["mandato"] or ""):
+        raise ValueError("El mandato debe tener el formato 2023 - 2027")
+    if not partial or "ubicacion_id" in data:
+        fields["ubicacion_id"] = _diputado_location(data.get("ubicacion_id"))
+    if not partial or "activo" in data:
+        fields["activo"] = bool(data.get("activo", True))
+    return fields
+
+
+def _diputado_json(diputado):
+    ubicacion = diputado.ubicacion
+    anexo = db.session.get(Anexo, ubicacion.id_anexo) if ubicacion else None
+    return {
+        "id": diputado.id,
+        "nombre": diputado.nombre,
+        "departamento": diputado.departamento,
+        "partido": diputado.partido,
+        "bloque": diputado.bloque,
+        "mandato": diputado.mandato,
+        "foto": diputado.foto_url,
+        "foto_url": diputado.foto_url,
+        "ubicacion_id": diputado.ubicacion_id,
+        "subdependencia": ubicacion.nombre if ubicacion else None,
+        "anexo_id": anexo.id if anexo else None,
+        "anexo": anexo.nombre if anexo else None,
+        "direccion": anexo.direccion if anexo else None,
+        "activo": bool(diputado.activo),
+        "fecha_creacion": diputado.fecha_creacion.isoformat() if diputado.fecha_creacion else None,
+        "fecha_actualizacion": diputado.fecha_actualizacion.isoformat() if diputado.fecha_actualizacion else None,
+    }
+
+
+def _normalizar_busqueda_diputado(value):
+    normalized = unicodedata.normalize("NFD", str(value or ""))
+    return " ".join(
+        re.sub(r"[^a-z0-9 ]+", " ", normalized.encode("ascii", "ignore").decode().lower()).split()
+    )
+
+
+def _inferir_ubicacion_diputado(nombre, subdependencias):
+    known_ids = {
+        "carla noelia aliendro": 302,
+        "raul eduardo cabral": 303,
+        "sofia lorena laso": 310,
+        "mario claudio ruiz": 105,
+        "claudia cecilia lopez": 616,
+    }
+    normalized_name = _normalizar_busqueda_diputado(nombre)
+    known = known_ids.get(normalized_name)
+    if known and any(sub.id == known for sub in subdependencias):
+        return known
+
+    name_tokens = {token for token in normalized_name.split() if len(token) > 2}
+    best = (0, None)
+    for sub in subdependencias:
+        normalized_sub = _normalizar_busqueda_diputado(sub.nombre)
+        if "diputad" not in normalized_sub:
+            continue
+        score = len(name_tokens.intersection(normalized_sub.split()))
+        if normalized_name and normalized_name in normalized_sub:
+            score += len(name_tokens) + 2
+        if score > best[0]:
+            best = (score, sub.id)
+    threshold = max(2, (len(name_tokens) + 1) // 2)
+    return best[1] if best[0] >= threshold else None
+
+
+@app.route('/api/diputados', methods=['GET'])
+@login_required_api
+def listar_diputados():
+    try:
+        _ensure_diputados_table()
+        incluir_inactivos = request.args.get("incluir_inactivos") == "1"
+        if incluir_inactivos and _session_main_role() not in {"admin", "superadmin"}:
+            return jsonify({"error": "forbidden"}), 403
+        query = Diputado.query
+        if not incluir_inactivos:
+            query = query.filter(Diputado.activo.is_(True))
+        diputados = query.order_by(Diputado.nombre.asc()).all()
+        return jsonify([_diputado_json(diputado) for diputado in diputados])
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 500
+
+
+@app.route('/api/diputados', methods=['POST'])
+@admin_required_api
+def crear_diputado():
+    try:
+        _ensure_diputados_table()
+        fields = _diputado_payload(request.get_json(silent=True) or {})
+        diputado = Diputado(**fields)
+        db.session.add(diputado)
+        db.session.commit()
+        return jsonify(_diputado_json(diputado)), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Ya existe un diputado con ese nombre"}), 409
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 500
+
+
+@app.route('/api/diputados/<int:id_diputado>', methods=['PATCH'])
+@admin_required_api
+def actualizar_diputado(id_diputado):
+    try:
+        _ensure_diputados_table()
+        diputado = db.session.get(Diputado, id_diputado)
+        if not diputado:
+            return jsonify({"error": "Diputado no encontrado"}), 404
+        fields = _diputado_payload(request.get_json(silent=True) or {}, partial=True)
+        if not fields:
+            return jsonify({"error": "No hay cambios para guardar"}), 400
+        for field, value in fields.items():
+            setattr(diputado, field, value)
+        diputado.fecha_actualizacion = datetime.utcnow()
+        db.session.commit()
+        return jsonify(_diputado_json(diputado))
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Ya existe un diputado con ese nombre"}), 409
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 500
+
+
+@app.route('/api/diputados/importar', methods=['POST'])
+@admin_required_api
+def importar_diputados():
+    try:
+        _ensure_diputados_table()
+        data = request.get_json(silent=True) or {}
+        rows = data.get("diputados") if isinstance(data, dict) else None
+        if not isinstance(rows, list) or not rows or len(rows) > 100:
+            return jsonify({"error": "La lista de diputados no es válida"}), 400
+
+        subdependencias = Subdependencia.query.all()
+        existentes = {
+            _normalizar_busqueda_diputado(nombre)
+            for (nombre,) in db.session.query(Diputado.nombre).all()
+        }
+        creados = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            normalized_name = _normalizar_busqueda_diputado(row.get("nombre"))
+            if not normalized_name or normalized_name in existentes:
+                continue
+            payload = dict(row)
+            if payload.get("ubicacion_id") in (None, ""):
+                payload["ubicacion_id"] = _inferir_ubicacion_diputado(payload.get("nombre"), subdependencias)
+            fields = _diputado_payload(payload)
+            db.session.add(Diputado(**fields))
+            existentes.add(normalized_name)
+            creados += 1
+        db.session.commit()
+        diputados = Diputado.query.filter(Diputado.activo.is_(True)).order_by(Diputado.nombre.asc()).all()
+        return jsonify({"creados": creados, "diputados": [_diputado_json(item) for item in diputados]})
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 500
 
 
         

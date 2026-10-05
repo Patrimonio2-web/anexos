@@ -544,3 +544,22 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres GRANT SELECT,INSERT,REFERENCES,DELETE
 -- PostgreSQL database dump complete
 --
 
+-- Datos administrables de diputados. La oficina referencia a subdependencias;
+-- el anexo y su dirección se obtienen siempre mediante esa relación.
+CREATE TABLE IF NOT EXISTS public.diputados (
+    id BIGSERIAL PRIMARY KEY,
+    nombre VARCHAR(160) NOT NULL UNIQUE,
+    departamento VARCHAR(120) NOT NULL,
+    partido VARCHAR(200) NOT NULL,
+    bloque VARCHAR(160),
+    mandato VARCHAR(20) NOT NULL,
+    foto_url TEXT,
+    ubicacion_id INTEGER REFERENCES public.subdependencias(id) ON DELETE SET NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    fecha_creacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_diputados_ubicacion ON public.diputados (ubicacion_id);
+CREATE INDEX IF NOT EXISTS idx_diputados_activo ON public.diputados (activo);
+
