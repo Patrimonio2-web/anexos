@@ -191,6 +191,15 @@ CONSULTAS_PUBLICAS_USERNAMES = {
         ["mauri", "luciano", "nahun"],
     )
 }
+IMPERSONATION_TARGET_USERNAMES = {
+    "comisario",
+    "contingencia1",
+    "contingencia2",
+    "contigencia1",
+    "contigencia2",
+    "dante",
+    "vicegobernacion",
+}
 
 
 def _normalize_main_role(username, role=None):
@@ -357,7 +366,9 @@ def _refresh_main_session_from_db():
             return False
         session["username"] = row["username"]
         session["role"] = _normalize_main_role(row["username"], row["role"])
-        session["password_change_required"] = bool(row["password_change_required"])
+        session["password_change_required"] = (
+            False if session.get("impersonator_username") else bool(row["password_change_required"])
+        )
         session["user_checked_at"] = now
         return True
     except Exception:
@@ -375,6 +386,8 @@ def _clear_auth_session():
         "last_activity",
         "user_checked_at",
         "password_change_required",
+        "impersonator_username",
+        "impersonator_role",
     ):
         session.pop(key, None)
 
@@ -503,6 +516,7 @@ def _restricted_role_request_allowed(role):
         ("POST", "/api/presencia/ping"),
         ("PUT", "/api/perfil"),
         ("PUT", "/api/perfil/password"),
+        ("POST", "/api/impersonacion/finalizar"),
     }
     if (method, path) in self_service:
         if method == "PUT" and path == "/api/perfil/password" and session.get("password_change_required"):
@@ -565,6 +579,13 @@ def proteger_api():
 
     if not _session_has_auth():
         return jsonify({"error": "unauthorized"}), 401
+
+    if (
+        session.get("impersonator_username")
+        and request.method in UNSAFE_METHODS
+        and request.endpoint not in {"finalizar_impersonacion", "api_logout"}
+    ):
+        return jsonify({"error": "impersonation_read_only"}), 403
 
     if _main_username() and session.get("password_change_required"):
         allowed_during_password_change = {
@@ -1202,6 +1223,98 @@ def api_me():
         "username": session.get("username"),
         "role": role,
         "password_change_required": bool(session.get("password_change_required")),
+        "impersonating": bool(session.get("impersonator_username")),
+        "impersonator_username": session.get("impersonator_username"),
+    }), 200
+
+
+@app.get("/api/impersonacion/usuarios")
+@superadmin_required_api
+def listar_usuarios_impersonables():
+    if str(_main_username() or "").strip().lower() not in SUPERADMIN_USERNAMES:
+        return jsonify({"error": "forbidden"}), 403
+    rows = db.session.execute(text("""
+        SELECT id, username, COALESCE(nombre, '') AS nombre,
+               COALESCE(apellido, '') AS apellido,
+               COALESCE(role, 'usuario') AS role,
+               COALESCE(activo, TRUE) AS activo
+        FROM usuarios
+        WHERE LOWER(username) IN :usernames
+        ORDER BY LOWER(username)
+    """).bindparams(bindparam("usernames", expanding=True)), {
+        "usernames": sorted(IMPERSONATION_TARGET_USERNAMES),
+    }).mappings().all()
+    return jsonify([{
+        **dict(row),
+        "role": _normalize_main_role(row["username"], row["role"]),
+    } for row in rows]), 200
+
+
+@app.post("/api/impersonacion/iniciar")
+@superadmin_required_api
+def iniciar_impersonacion():
+    if str(_main_username() or "").strip().lower() not in SUPERADMIN_USERNAMES:
+        return jsonify({"error": "forbidden"}), 403
+    if session.get("impersonator_username"):
+        return jsonify({"error": "Ya existe una vista temporal activa"}), 409
+    data = request.get_json(silent=True) or {}
+    target = str(data.get("username") or "").strip()
+    if target.lower() not in IMPERSONATION_TARGET_USERNAMES:
+        return jsonify({"error": "Usuario no autorizado para vista temporal"}), 403
+    row = db.session.execute(text("""
+        SELECT username, COALESCE(role, 'usuario') AS role, COALESCE(activo, TRUE) AS activo
+        FROM usuarios WHERE LOWER(username) = LOWER(:username) LIMIT 1
+    """), {"username": target}).mappings().first()
+    if not row:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+    if not row["activo"]:
+        return jsonify({"error": "El usuario está inactivo"}), 409
+
+    original_username = session.get("username")
+    session["impersonator_username"] = original_username
+    session["impersonator_role"] = "superadmin"
+    session["username"] = row["username"]
+    session["role"] = _normalize_main_role(row["username"], row["role"])
+    session["password_change_required"] = False
+    session["user_checked_at"] = time.time()
+    _touch_session_activity()
+    return jsonify({
+        "username": session["username"],
+        "role": session["role"],
+        "password_change_required": False,
+        "impersonating": True,
+        "impersonator_username": original_username,
+    }), 200
+
+
+@app.post("/api/impersonacion/finalizar")
+@login_required_api
+def finalizar_impersonacion():
+    original_username = str(session.get("impersonator_username") or "").strip()
+    if not original_username or original_username.lower() not in SUPERADMIN_USERNAMES:
+        return jsonify({"error": "No hay una vista temporal activa"}), 409
+    row = db.session.execute(text("""
+        SELECT username, COALESCE(role, 'usuario') AS role,
+               COALESCE(activo, TRUE) AS activo,
+               COALESCE(password_change_required, FALSE) AS password_change_required
+        FROM usuarios WHERE LOWER(username) = LOWER(:username) LIMIT 1
+    """), {"username": original_username}).mappings().first()
+    if not row or not row["activo"] or _normalize_main_role(row["username"], row["role"]) != "superadmin":
+        _clear_auth_session()
+        return jsonify({"error": "No se pudo restaurar la sesión administrativa"}), 401
+    session.pop("impersonator_username", None)
+    session.pop("impersonator_role", None)
+    session["username"] = row["username"]
+    session["role"] = "superadmin"
+    session["password_change_required"] = bool(row["password_change_required"])
+    session["user_checked_at"] = time.time()
+    _touch_session_activity()
+    return jsonify({
+        "username": session["username"],
+        "role": "superadmin",
+        "password_change_required": session["password_change_required"],
+        "impersonating": False,
+        "impersonator_username": None,
     }), 200
 
 
@@ -1604,6 +1717,8 @@ def _perfil_usuario_to_dict(row):
         "nombre": row["nombre"] or "",
         "apellido": row["apellido"] or "",
         "role": role,
+        "impersonating": bool(session.get("impersonator_username")),
+        "impersonator_username": session.get("impersonator_username"),
     }
 
 
@@ -4066,6 +4181,9 @@ def buscar_mobiliario_avanzado():
         _ensure_mobiliario_valor_column()
         _ensure_mobiliario_foto_2_column()
         q = (request.args.get("q") or "").strip()
+        search_field = (request.args.get("search_field") or "todo").strip().lower()
+        if search_field not in {"descripcion", "id", "todo"}:
+            search_field = "descripcion"
         anexo_id = request.args.get("anexo_id", type=int)
         subdependencia_id = request.args.get("subdependencia_id", type=int)
         rubro_id = request.args.get("rubro_id", type=int)
@@ -4143,20 +4261,33 @@ def buscar_mobiliario_avanzado():
             params["q_prefix"] = f"{q_lower}%"
             params["q_exact"] = q_lower
 
-            conds = [
-                "LOWER(COALESCE(m.descripcion,'')) LIKE :q_like",
-                "LOWER(COALESCE(r.nombre,'')) LIKE :q_like",
-                "LOWER(COALESCE(cb.descripcion,'')) LIKE :q_like",
-                "LOWER(COALESCE(sd.nombre,'')) LIKE :q_like",
-                "LOWER(COALESCE(a.nombre,'')) LIKE :q_like",
-                "LOWER(COALESCE(m.vehiculo,'')) LIKE :q_like",
-            ]
+            searchable_columns = ["LOWER(COALESCE(m.descripcion,''))"]
+            if search_field == "todo":
+                searchable_columns.extend([
+                    "LOWER(COALESCE(r.nombre,''))",
+                    "LOWER(COALESCE(cb.descripcion,''))",
+                    "LOWER(COALESCE(sd.nombre,''))",
+                    "LOWER(COALESCE(a.nombre,''))",
+                    "LOWER(COALESCE(m.vehiculo,''))",
+                ])
 
-            if q.isdigit():
-                params["q_id"] = q
-                conds.append("m.id = :q_id")
-
-            where.append("(" + " OR ".join(conds) + ")")
+            if search_field == "id":
+                if q.isdigit():
+                    params["q_id"] = q
+                    where.append("m.id = :q_id")
+                else:
+                    where.append("1 = 0")
+            else:
+                token_conditions = []
+                for index, token in enumerate([part for part in re.split(r"\s+", q_lower) if part][:10]):
+                    key = f"q_token_{index}"
+                    params[key] = f"%{token}%"
+                    token_conditions.append("(" + " OR ".join(f"{column} LIKE :{key}" for column in searchable_columns) + ")")
+                if search_field == "todo" and q.isdigit():
+                    params["q_id"] = q
+                    where.append("(m.id = :q_id OR (" + " AND ".join(token_conditions) + "))")
+                elif token_conditions:
+                    where.append("(" + " AND ".join(token_conditions) + ")")
 
             # ---- ranking inteligente ----
             # menor valor = mayor prioridad
@@ -4172,7 +4303,7 @@ def buscar_mobiliario_avanzado():
             # 10) anexo contiene
             rank_cases = []
 
-            if q.isdigit():
+            if q.isdigit() and search_field != "descripcion":
                 rank_cases.append("WHEN m.id = :q_id THEN 1")
 
             rank_cases.extend([
@@ -4275,6 +4406,7 @@ def buscar_mobiliario_avanzado():
                 "pages": int((total + per_page - 1) // per_page) if per_page else 1,
                 "order_by": order_by,
                 "order_dir": order_dir,
+                "search_field": search_field,
             }
         }), 200
 
