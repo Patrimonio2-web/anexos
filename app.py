@@ -450,6 +450,18 @@ def public_consultations_required_api(f):
     return wrapped
 
 
+def compras_bienes_required_api(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not _main_username():
+            return jsonify({"error": "unauthorized"}), 401
+        username = str(_main_username() or "").strip().lower()
+        if _session_main_role() not in {"admin", "superadmin"} and username != "dante":
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
 def hernan_required_api(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -524,6 +536,16 @@ def _restricted_role_request_allowed(role):
         if method == "PUT" and path.startswith("/api/perfil") and role in {"matafuegos", "comisario"}:
             return False
         return True
+
+    if str(_main_username() or "").strip().lower() == "dante" and path.startswith("/api/compras-bienes"):
+        if method == "GET":
+            return True
+        if method == "POST" and (
+            re.fullmatch(r"/api/compras-bienes/reportes/\d+/mensajes", path)
+            or re.fullmatch(r"/api/compras-bienes/reportes/\d+/leer", path)
+        ):
+            return True
+        return False
 
     if role == "matafuegos":
         if method == "GET" and (
@@ -1590,6 +1612,316 @@ def actualizar_consulta_publica(consulta_id):
         db.session.rollback()
         print("Error actualizando consulta publica:", error)
         return jsonify({"error": "No se pudo actualizar la consulta"}), 500
+
+
+# =============================================================================
+# REPORTES MENSUALES DE COMPRAS DE BIENES DE USO
+# =============================================================================
+
+def _ensure_compras_bienes_tables():
+    id_sql = "INTEGER PRIMARY KEY AUTOINCREMENT" if db.engine.dialect.name == "sqlite" else "BIGSERIAL PRIMARY KEY"
+    db.session.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS compras_bienes_reportes (
+            id {id_sql},
+            anio INTEGER NOT NULL,
+            mes INTEGER NOT NULL,
+            observaciones TEXT,
+            creado_por VARCHAR(80) NOT NULL,
+            visto_por_dante_at TIMESTAMP,
+            fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(anio, mes)
+        )
+    """))
+    db.session.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS compras_bienes_items (
+            id {id_sql},
+            reporte_id BIGINT NOT NULL,
+            orden INTEGER NOT NULL,
+            posible_ubicacion VARCHAR(250) NOT NULL,
+            cantidad INTEGER NOT NULL,
+            descripcion_factura TEXT NOT NULL,
+            fecha_compra DATE NOT NULL,
+            estado_relevamiento TEXT NOT NULL,
+            FOREIGN KEY(reporte_id) REFERENCES compras_bienes_reportes(id) ON DELETE CASCADE
+        )
+    """))
+    db.session.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS compras_bienes_mensajes (
+            id {id_sql},
+            reporte_id BIGINT NOT NULL,
+            autor VARCHAR(80) NOT NULL,
+            contenido TEXT NOT NULL,
+            fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(reporte_id) REFERENCES compras_bienes_reportes(id) ON DELETE CASCADE
+        )
+    """))
+    db.session.execute(text("""
+        CREATE TABLE IF NOT EXISTS compras_bienes_lecturas (
+            reporte_id BIGINT NOT NULL,
+            username VARCHAR(80) NOT NULL,
+            ultima_lectura TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(reporte_id, username),
+            FOREIGN KEY(reporte_id) REFERENCES compras_bienes_reportes(id) ON DELETE CASCADE
+        )
+    """))
+    db.session.commit()
+
+
+def _compras_admin():
+    return _session_main_role() in {"admin", "superadmin"}
+
+
+def _compras_text(data, key, limit, required=True):
+    value = str(data.get(key) or "").strip()
+    if required and not value:
+        raise ValueError(f"{key} es obligatorio")
+    if len(value) > limit:
+        raise ValueError(f"{key} supera el máximo permitido")
+    return value or None
+
+
+def _compras_payload(data):
+    try:
+        anio = int(data.get("anio"))
+        mes = int(data.get("mes"))
+    except (TypeError, ValueError):
+        raise ValueError("Año y mes inválidos")
+    if anio < 2000 or anio > 2100 or mes < 1 or mes > 12:
+        raise ValueError("Año o mes fuera de rango")
+    raw_items = data.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise ValueError("Agregá al menos un bien al reporte")
+    if len(raw_items) > 200:
+        raise ValueError("El reporte supera el máximo de 200 bienes")
+    items = []
+    for raw in raw_items:
+        try:
+            cantidad = int(raw.get("cantidad"))
+        except (TypeError, ValueError):
+            raise ValueError("La cantidad debe ser un número entero")
+        if cantidad < 1 or cantidad > 100000:
+            raise ValueError("La cantidad debe ser mayor a cero")
+        fecha = str(raw.get("fecha_compra") or "").strip()
+        try:
+            datetime.strptime(fecha, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("La fecha de compra es inválida")
+        items.append({
+            "posible_ubicacion": _compras_text(raw, "posible_ubicacion", 250),
+            "cantidad": cantidad,
+            "descripcion_factura": _compras_text(raw, "descripcion_factura", 2000),
+            "fecha_compra": fecha,
+            "estado_relevamiento": _compras_text(raw, "estado_relevamiento", 1000),
+        })
+    return anio, mes, _compras_text(data, "observaciones", 5000, required=False), items
+
+
+def _compras_report_dict(row):
+    return {
+        "id": row["id"],
+        "anio": row["anio"],
+        "mes": row["mes"],
+        "observaciones": row.get("observaciones") or "",
+        "creado_por": row["creado_por"],
+        "visto_por_dante_at": _public_consultation_iso(row.get("visto_por_dante_at")),
+        "fecha_creacion": _public_consultation_iso(row.get("fecha_creacion")),
+        "fecha_actualizacion": _public_consultation_iso(row.get("fecha_actualizacion")),
+        "total_items": int(row.get("total_items") or 0),
+        "total_unidades": int(row.get("total_unidades") or 0),
+        "mensajes_count": int(row.get("mensajes_count") or 0),
+    }
+
+
+def _compras_report_row(reporte_id):
+    return db.session.execute(text("""
+        SELECT r.*,
+               (SELECT COUNT(*) FROM compras_bienes_items i WHERE i.reporte_id = r.id) AS total_items,
+               (SELECT COALESCE(SUM(i.cantidad), 0) FROM compras_bienes_items i WHERE i.reporte_id = r.id) AS total_unidades,
+               (SELECT COUNT(*) FROM compras_bienes_mensajes m WHERE m.reporte_id = r.id) AS mensajes_count
+        FROM compras_bienes_reportes r WHERE r.id = :id
+    """), {"id": reporte_id}).mappings().first()
+
+
+def _insert_compras_items(reporte_id, items):
+    for index, item in enumerate(items, start=1):
+        db.session.execute(text("""
+            INSERT INTO compras_bienes_items (
+                reporte_id, orden, posible_ubicacion, cantidad,
+                descripcion_factura, fecha_compra, estado_relevamiento
+            ) VALUES (
+                :reporte_id, :orden, :posible_ubicacion, :cantidad,
+                :descripcion_factura, :fecha_compra, :estado_relevamiento
+            )
+        """), {"reporte_id": reporte_id, "orden": index, **item})
+
+
+@app.get("/api/compras-bienes/reportes")
+@compras_bienes_required_api
+def listar_compras_bienes_reportes():
+    _ensure_compras_bienes_tables()
+    rows = db.session.execute(text("""
+        SELECT r.*,
+               (SELECT COUNT(*) FROM compras_bienes_items i WHERE i.reporte_id = r.id) AS total_items,
+               (SELECT COALESCE(SUM(i.cantidad), 0) FROM compras_bienes_items i WHERE i.reporte_id = r.id) AS total_unidades,
+               (SELECT COUNT(*) FROM compras_bienes_mensajes m WHERE m.reporte_id = r.id) AS mensajes_count
+        FROM compras_bienes_reportes r
+        ORDER BY r.anio DESC, r.mes DESC, r.id DESC
+    """)).mappings().all()
+    return jsonify([_compras_report_dict(row) for row in rows]), 200
+
+
+@app.post("/api/compras-bienes/reportes")
+@compras_bienes_required_api
+def crear_compras_bienes_reporte():
+    if not _compras_admin():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        _ensure_compras_bienes_tables()
+        anio, mes, observaciones, items = _compras_payload(request.get_json(silent=True) or {})
+        row = db.session.execute(text("""
+            INSERT INTO compras_bienes_reportes (anio, mes, observaciones, creado_por)
+            VALUES (:anio, :mes, :observaciones, :creado_por)
+            RETURNING id
+        """), {"anio": anio, "mes": mes, "observaciones": observaciones, "creado_por": _main_username()}).mappings().first()
+        _insert_compras_items(row["id"], items)
+        db.session.commit()
+        return jsonify(_compras_report_dict(_compras_report_row(row["id"]))), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        if "unique" in str(error).lower():
+            return jsonify({"error": "Ya existe un reporte para ese mes y año"}), 409
+        return jsonify({"error": "No se pudo guardar el reporte"}), 500
+
+
+@app.get("/api/compras-bienes/reportes/<int:reporte_id>")
+@compras_bienes_required_api
+def obtener_compras_bienes_reporte(reporte_id):
+    _ensure_compras_bienes_tables()
+    row = _compras_report_row(reporte_id)
+    if not row:
+        return jsonify({"error": "Reporte no encontrado"}), 404
+    items = db.session.execute(text("""
+        SELECT id, orden, posible_ubicacion, cantidad, descripcion_factura,
+               fecha_compra, estado_relevamiento
+        FROM compras_bienes_items WHERE reporte_id = :id ORDER BY orden, id
+    """), {"id": reporte_id}).mappings().all()
+    messages = db.session.execute(text("""
+        SELECT id, autor, contenido, fecha_creacion
+        FROM compras_bienes_mensajes WHERE reporte_id = :id ORDER BY fecha_creacion, id
+    """), {"id": reporte_id}).mappings().all()
+    result = _compras_report_dict(row)
+    result["items"] = [{**dict(item), "fecha_compra": str(item["fecha_compra"])} for item in items]
+    result["mensajes"] = [{**dict(message), "fecha_creacion": _public_consultation_iso(message["fecha_creacion"])} for message in messages]
+    return jsonify(result), 200
+
+
+@app.put("/api/compras-bienes/reportes/<int:reporte_id>")
+@compras_bienes_required_api
+def actualizar_compras_bienes_reporte(reporte_id):
+    if not _compras_admin():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        _ensure_compras_bienes_tables()
+        anio, mes, observaciones, items = _compras_payload(request.get_json(silent=True) or {})
+        updated = db.session.execute(text("""
+            UPDATE compras_bienes_reportes
+            SET anio = :anio, mes = :mes, observaciones = :observaciones,
+                visto_por_dante_at = NULL, fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = :id RETURNING id
+        """), {"id": reporte_id, "anio": anio, "mes": mes, "observaciones": observaciones}).mappings().first()
+        if not updated:
+            db.session.rollback()
+            return jsonify({"error": "Reporte no encontrado"}), 404
+        db.session.execute(text("DELETE FROM compras_bienes_items WHERE reporte_id = :id"), {"id": reporte_id})
+        _insert_compras_items(reporte_id, items)
+        db.session.commit()
+        return jsonify(_compras_report_dict(_compras_report_row(reporte_id))), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        if "unique" in str(error).lower():
+            return jsonify({"error": "Ya existe un reporte para ese mes y año"}), 409
+        return jsonify({"error": "No se pudo actualizar el reporte"}), 500
+
+
+@app.post("/api/compras-bienes/reportes/<int:reporte_id>/mensajes")
+@compras_bienes_required_api
+def crear_mensaje_compras_bienes(reporte_id):
+    try:
+        _ensure_compras_bienes_tables()
+        content = _compras_text(request.get_json(silent=True) or {}, "contenido", 3000)
+        if not _compras_report_row(reporte_id):
+            return jsonify({"error": "Reporte no encontrado"}), 404
+        row = db.session.execute(text("""
+            INSERT INTO compras_bienes_mensajes (reporte_id, autor, contenido)
+            VALUES (:reporte_id, :autor, :contenido)
+            RETURNING id, autor, contenido, fecha_creacion
+        """), {"reporte_id": reporte_id, "autor": _main_username(), "contenido": content}).mappings().first()
+        db.session.commit()
+        return jsonify({**dict(row), "fecha_creacion": _public_consultation_iso(row["fecha_creacion"])}), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        db.session.rollback()
+        print("Error creando mensaje de compras:", error)
+        return jsonify({"error": "No se pudo enviar el mensaje"}), 500
+
+
+@app.post("/api/compras-bienes/reportes/<int:reporte_id>/leer")
+@compras_bienes_required_api
+def marcar_lectura_compras_bienes(reporte_id):
+    _ensure_compras_bienes_tables()
+    if not _compras_report_row(reporte_id):
+        return jsonify({"error": "Reporte no encontrado"}), 404
+    username = _main_username()
+    db.session.execute(text("""
+        INSERT INTO compras_bienes_lecturas (reporte_id, username, ultima_lectura)
+        VALUES (:reporte_id, :username, CURRENT_TIMESTAMP)
+        ON CONFLICT (reporte_id, username)
+        DO UPDATE SET ultima_lectura = CURRENT_TIMESTAMP
+    """), {"reporte_id": reporte_id, "username": username})
+    if str(username).strip().lower() == "dante":
+        db.session.execute(text("""
+            UPDATE compras_bienes_reportes
+            SET visto_por_dante_at = COALESCE(visto_por_dante_at, CURRENT_TIMESTAMP)
+            WHERE id = :id
+        """), {"id": reporte_id})
+    db.session.commit()
+    return jsonify({"ok": True}), 200
+
+
+@app.get("/api/compras-bienes/notificaciones")
+@compras_bienes_required_api
+def notificaciones_compras_bienes():
+    _ensure_compras_bienes_tables()
+    username = str(_main_username() or "").strip()
+    is_dante = username.lower() == "dante"
+    rows = db.session.execute(text("""
+        SELECT r.id, r.fecha_actualizacion,
+               l.ultima_lectura,
+               (SELECT MAX(m.fecha_creacion) FROM compras_bienes_mensajes m
+                WHERE m.reporte_id = r.id
+                  AND ((:is_dante = 1 AND LOWER(m.autor) <> 'dante')
+                       OR (:is_dante = 0 AND LOWER(m.autor) = 'dante'))) AS ultimo_mensaje
+        FROM compras_bienes_reportes r
+        LEFT JOIN compras_bienes_lecturas l
+          ON l.reporte_id = r.id AND LOWER(l.username) = LOWER(:username)
+    """), {"username": username, "is_dante": 1 if is_dante else 0}).mappings().all()
+    pending = 0
+    for row in rows:
+        activity = row["fecha_actualizacion"] if is_dante else None
+        if row["ultimo_mensaje"] and (activity is None or row["ultimo_mensaje"] > activity):
+            activity = row["ultimo_mensaje"]
+        if activity and (not row["ultima_lectura"] or activity > row["ultima_lectura"]):
+            pending += 1
+    return jsonify({"pendientes": pending}), 200
 
 
 # =============================================================================
