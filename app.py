@@ -4377,12 +4377,20 @@ def ultimos_mobiliarios():
             else "NULL AS historial_movimientos"
         )
         ubicacion_id = request.args.get("ubicacion_id", type=int)
+        anexo_id = request.args.get("anexo_id", type=int)
         if ubicacion_id is not None and _hide_virtual_subdependencias_for_session():
             subdependencia = db.session.get(Subdependencia, ubicacion_id)
             if subdependencia and _is_virtual_subdependencia_name(subdependencia.nombre):
                 return jsonify({"error": "Subdependencia no encontrada"}), 404
-        ubicacion_filter = "AND m.ubicacion_id = %s" if ubicacion_id is not None else ""
-        params = (ubicacion_id,) if ubicacion_id is not None else ()
+        filters = []
+        params = []
+        if ubicacion_id is not None:
+            filters.append("m.ubicacion_id = %s")
+            params.append(ubicacion_id)
+        if anexo_id is not None:
+            filters.append("a.id = %s")
+            params.append(anexo_id)
+        inventory_filter = "" if not filters else "AND " + " AND ".join(filters)
         query = f"""
         SELECT 
             m.id                      AS id_mobiliario,
@@ -4421,17 +4429,24 @@ def ultimos_mobiliarios():
         LEFT JOIN subdependencias sd ON m.ubicacion_id   = sd.id
         LEFT JOIN anexos           a ON sd.id_anexo      = a.id
         WHERE m.id ~ '^[0-9]+$'
-        {ubicacion_filter}
+        {inventory_filter}
         ORDER BY m.id::integer DESC;
         """
 
         conn = db.engine.raw_connection()
         cur  = conn.cursor()
-        cur.execute(query, params)
+        cur.execute(query, tuple(params))
         columns = [col[0] for col in cur.description]
         results = [dict(zip(columns, row)) for row in cur.fetchall()]
         cur.close()
         conn.close()
+
+        if _hide_virtual_subdependencias_for_session():
+            results = [
+                row
+                for row in results
+                if not _is_virtual_subdependencia_name(row.get("subdependencia"))
+            ]
 
         # ✅ Formatear fechas y procesar historial
         for r in results:
