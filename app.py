@@ -1642,10 +1642,22 @@ def _ensure_compras_bienes_tables():
             cantidad INTEGER NOT NULL,
             descripcion_factura TEXT NOT NULL,
             fecha_compra DATE NOT NULL,
+            fecha_listado DATE NOT NULL,
             estado_relevamiento TEXT NOT NULL,
             FOREIGN KEY(reporte_id) REFERENCES compras_bienes_reportes(id) ON DELETE CASCADE
         )
     """))
+    item_columns = {
+        column["name"] for column in inspect(db.engine).get_columns("compras_bienes_items")
+    }
+    if "fecha_listado" not in item_columns:
+        db.session.execute(text(
+            "ALTER TABLE compras_bienes_items ADD COLUMN fecha_listado DATE"
+        ))
+        db.session.execute(text(
+            "UPDATE compras_bienes_items SET fecha_listado = fecha_compra "
+            "WHERE fecha_listado IS NULL"
+        ))
     db.session.execute(text(f"""
         CREATE TABLE IF NOT EXISTS compras_bienes_mensajes (
             id {id_sql},
@@ -1703,15 +1715,22 @@ def _compras_payload(data):
         if cantidad < 1 or cantidad > 100000:
             raise ValueError("La cantidad debe ser mayor a cero")
         fecha = str(raw.get("fecha_compra") or "").strip()
+        # El fallback mantiene compatibles clientes anteriores durante el despliegue.
+        fecha_listado = str(raw.get("fecha_listado") or fecha).strip()
         try:
             datetime.strptime(fecha, "%Y-%m-%d")
         except ValueError:
-            raise ValueError("La fecha de compra es inválida")
+            raise ValueError("La fecha de factura es inválida")
+        try:
+            datetime.strptime(fecha_listado, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("La fecha de listado es inválida")
         items.append({
             "posible_ubicacion": _compras_text(raw, "posible_ubicacion", 250),
             "cantidad": cantidad,
             "descripcion_factura": _compras_text(raw, "descripcion_factura", 2000),
             "fecha_compra": fecha,
+            "fecha_listado": fecha_listado,
             "estado_relevamiento": _compras_text(raw, "estado_relevamiento", 1000),
         })
     return anio, mes, _compras_text(data, "observaciones", 5000, required=False), items
@@ -1748,10 +1767,10 @@ def _insert_compras_items(reporte_id, items):
         db.session.execute(text("""
             INSERT INTO compras_bienes_items (
                 reporte_id, orden, posible_ubicacion, cantidad,
-                descripcion_factura, fecha_compra, estado_relevamiento
+                descripcion_factura, fecha_compra, fecha_listado, estado_relevamiento
             ) VALUES (
                 :reporte_id, :orden, :posible_ubicacion, :cantidad,
-                :descripcion_factura, :fecha_compra, :estado_relevamiento
+                :descripcion_factura, :fecha_compra, :fecha_listado, :estado_relevamiento
             )
         """), {"reporte_id": reporte_id, "orden": index, **item})
 
@@ -1806,7 +1825,7 @@ def obtener_compras_bienes_reporte(reporte_id):
         return jsonify({"error": "Reporte no encontrado"}), 404
     items = db.session.execute(text("""
         SELECT id, orden, posible_ubicacion, cantidad, descripcion_factura,
-               fecha_compra, estado_relevamiento
+               fecha_compra, fecha_listado, estado_relevamiento
         FROM compras_bienes_items WHERE reporte_id = :id ORDER BY orden, id
     """), {"id": reporte_id}).mappings().all()
     messages = db.session.execute(text("""
@@ -1814,7 +1833,14 @@ def obtener_compras_bienes_reporte(reporte_id):
         FROM compras_bienes_mensajes WHERE reporte_id = :id ORDER BY fecha_creacion, id
     """), {"id": reporte_id}).mappings().all()
     result = _compras_report_dict(row)
-    result["items"] = [{**dict(item), "fecha_compra": str(item["fecha_compra"])} for item in items]
+    result["items"] = [
+        {
+            **dict(item),
+            "fecha_compra": str(item["fecha_compra"]),
+            "fecha_listado": str(item["fecha_listado"] or item["fecha_compra"]),
+        }
+        for item in items
+    ]
     result["mensajes"] = [{**dict(message), "fecha_creacion": _public_consultation_iso(message["fecha_creacion"])} for message in messages]
     return jsonify(result), 200
 

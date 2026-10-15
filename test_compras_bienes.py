@@ -28,6 +28,7 @@ class ComprasBienesTests(unittest.TestCase):
                     "cantidad": 1,
                     "descripcion_factura": "CPU I5",
                     "fecha_compra": "2026-02-27",
+                    "fecha_listado": "2026-03-02",
                     "estado_relevamiento": "Identificado",
                 },
                 {
@@ -35,6 +36,7 @@ class ComprasBienesTests(unittest.TestCase):
                     "cantidad": 2,
                     "descripcion_factura": "Monitor 24",
                     "fecha_compra": "2026-02-27",
+                    "fecha_listado": "2026-03-02",
                     "estado_relevamiento": "Encontrado",
                 },
             ],
@@ -42,6 +44,7 @@ class ComprasBienesTests(unittest.TestCase):
         _, _, _, items = backend._compras_payload(payload)
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]["posible_ubicacion"], items[1]["posible_ubicacion"])
+        self.assertEqual(items[0]["fecha_listado"], "2026-03-02")
 
     def test_report_requires_at_least_one_complete_item(self):
         with self.assertRaisesRegex(ValueError, "al menos un bien"):
