@@ -30,6 +30,7 @@ class ComprasBienesTests(unittest.TestCase):
                     "fecha_compra": "2026-02-27",
                     "fecha_listado": "2026-03-02",
                     "estado_relevamiento": "Identificado",
+                    "proveedor": "Proveedor A",
                 },
                 {
                     "posible_ubicacion": "Tesorería",
@@ -45,6 +46,8 @@ class ComprasBienesTests(unittest.TestCase):
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]["posible_ubicacion"], items[1]["posible_ubicacion"])
         self.assertEqual(items[0]["fecha_listado"], "2026-03-02")
+        self.assertEqual(items[0]["proveedor"], "Proveedor A")
+        self.assertIsNone(items[1]["proveedor"])
 
     def test_report_requires_at_least_one_complete_item(self):
         with self.assertRaisesRegex(ValueError, "al menos un bien"):
@@ -58,6 +61,12 @@ class ComprasBienesTests(unittest.TestCase):
             backend.session["username"] = "Dante"
             self.assertTrue(backend._restricted_role_request_allowed("viewer"))
         with backend.app.test_request_context("/api/compras-bienes/reportes", method="POST"):
+            backend.session["username"] = "Dante"
+            self.assertFalse(backend._restricted_role_request_allowed("viewer"))
+        with backend.app.test_request_context("/api/compras-bienes/proveedores", method="GET"):
+            backend.session["username"] = "Dante"
+            self.assertTrue(backend._restricted_role_request_allowed("viewer"))
+        with backend.app.test_request_context("/api/compras-bienes/proveedores", method="POST"):
             backend.session["username"] = "Dante"
             self.assertFalse(backend._restricted_role_request_allowed("viewer"))
         with backend.app.test_request_context("/api/compras-bienes/reportes/1", method="PUT"):

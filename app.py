@@ -1644,6 +1644,7 @@ def _ensure_compras_bienes_tables():
             fecha_compra DATE NOT NULL,
             fecha_listado DATE NOT NULL,
             estado_relevamiento TEXT NOT NULL,
+            proveedor VARCHAR(250),
             FOREIGN KEY(reporte_id) REFERENCES compras_bienes_reportes(id) ON DELETE CASCADE
         )
     """))
@@ -1658,6 +1659,14 @@ def _ensure_compras_bienes_tables():
             "UPDATE compras_bienes_items SET fecha_listado = fecha_compra "
             "WHERE fecha_listado IS NULL"
         ))
+    if "proveedor" not in item_columns:
+        db.session.execute(text("ALTER TABLE compras_bienes_items ADD COLUMN proveedor VARCHAR(250)"))
+    db.session.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS compras_bienes_proveedores (
+            id {id_sql},
+            nombre VARCHAR(250) NOT NULL UNIQUE
+        )
+    """))
     db.session.execute(text(f"""
         CREATE TABLE IF NOT EXISTS compras_bienes_mensajes (
             id {id_sql},
@@ -1732,6 +1741,7 @@ def _compras_payload(data):
             "fecha_compra": fecha,
             "fecha_listado": fecha_listado,
             "estado_relevamiento": _compras_text(raw, "estado_relevamiento", 1000),
+            "proveedor": _compras_text(raw, "proveedor", 250, required=False),
         })
     return anio, mes, _compras_text(data, "observaciones", 5000, required=False), items
 
@@ -1767,12 +1777,63 @@ def _insert_compras_items(reporte_id, items):
         db.session.execute(text("""
             INSERT INTO compras_bienes_items (
                 reporte_id, orden, posible_ubicacion, cantidad,
-                descripcion_factura, fecha_compra, fecha_listado, estado_relevamiento
+                descripcion_factura, fecha_compra, fecha_listado, estado_relevamiento, proveedor
             ) VALUES (
                 :reporte_id, :orden, :posible_ubicacion, :cantidad,
-                :descripcion_factura, :fecha_compra, :fecha_listado, :estado_relevamiento
+                :descripcion_factura, :fecha_compra, :fecha_listado, :estado_relevamiento, :proveedor
             )
         """), {"reporte_id": reporte_id, "orden": index, **item})
+
+
+@app.get("/api/compras-bienes/proveedores")
+@compras_bienes_required_api
+def listar_compras_bienes_proveedores():
+    _ensure_compras_bienes_tables()
+    rows = db.session.execute(text(
+        "SELECT id, nombre FROM compras_bienes_proveedores ORDER BY nombre"
+    )).mappings().all()
+    return jsonify([dict(row) for row in rows]), 200
+
+
+@app.post("/api/compras-bienes/proveedores")
+@compras_bienes_required_api
+def crear_compras_bienes_proveedor():
+    if not _compras_admin():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        _ensure_compras_bienes_tables()
+        nombre = _compras_text(request.get_json(silent=True) or {}, "nombre", 250)
+        existing = db.session.execute(text(
+            "SELECT id, nombre FROM compras_bienes_proveedores WHERE LOWER(nombre) = LOWER(:nombre)"
+        ), {"nombre": nombre}).mappings().first()
+        if existing:
+            return jsonify(dict(existing)), 200
+        row = db.session.execute(text(
+            "INSERT INTO compras_bienes_proveedores (nombre) VALUES (:nombre) RETURNING id, nombre"
+        ), {"nombre": nombre}).mappings().first()
+        db.session.commit()
+        return jsonify(dict(row)), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "No se pudo guardar el proveedor"}), 500
+
+
+@app.delete("/api/compras-bienes/proveedores/<int:proveedor_id>")
+@compras_bienes_required_api
+def eliminar_compras_bienes_proveedor(proveedor_id):
+    if not _compras_admin():
+        return jsonify({"error": "forbidden"}), 403
+    _ensure_compras_bienes_tables()
+    row = db.session.execute(text(
+        "DELETE FROM compras_bienes_proveedores WHERE id = :id RETURNING id"
+    ), {"id": proveedor_id}).first()
+    db.session.commit()
+    if not row:
+        return jsonify({"error": "Proveedor no encontrado"}), 404
+    return jsonify({"ok": True}), 200
 
 
 @app.get("/api/compras-bienes/reportes")
@@ -1825,7 +1886,7 @@ def obtener_compras_bienes_reporte(reporte_id):
         return jsonify({"error": "Reporte no encontrado"}), 404
     items = db.session.execute(text("""
         SELECT id, orden, posible_ubicacion, cantidad, descripcion_factura,
-               fecha_compra, fecha_listado, estado_relevamiento
+               fecha_compra, fecha_listado, estado_relevamiento, proveedor
         FROM compras_bienes_items WHERE reporte_id = :id ORDER BY orden, id
     """), {"id": reporte_id}).mappings().all()
     messages = db.session.execute(text("""
