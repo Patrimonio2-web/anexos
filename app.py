@@ -60,6 +60,7 @@ DEFAULT_FRONTEND_ORIGINS = [
     "https://heritage-management.vercel.app",
     "https://control-personal-legislatura-lr.vercel.app",
     "http://localhost:3000",
+    "http://localhost:3001",
 ]
 FRONTEND_ORIGINS = _split_env_list("FRONTEND_ORIGINS", DEFAULT_FRONTEND_ORIGINS)
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://anexos.onrender.com"
@@ -8181,6 +8182,10 @@ def login_required_personal(f):
 
 
 # ▶️ Ejecutar con python app.py
+from assistant_api import assistant_api, register_assistant
+register_assistant(db, admin_required_api, _ensure_compras_bienes_tables, _ensure_matafuegos_tables)
+app.register_blueprint(assistant_api)
+
 if __name__ == '__main__':
     app.run(debug=not IS_PRODUCTION)
 
