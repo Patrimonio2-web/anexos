@@ -6969,10 +6969,28 @@ def _parse_clase_alta(value):
     return parsed if parsed is not None else 0
 
 
+_alta_estado_carga_column_ready = False
+
+
+def _ensure_alta_estado_carga_column():
+    global _alta_estado_carga_column_ready
+    if _alta_estado_carga_column_ready:
+        return
+    columns = {column["name"] for column in inspect(db.engine).get_columns("movimientos_altas")}
+    if "estado_carga" not in columns:
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(text("ALTER TABLE movimientos_altas ADD COLUMN IF NOT EXISTS estado_carga VARCHAR(10) NOT NULL DEFAULT 'pendiente'"))
+        else:
+            db.session.execute(text("ALTER TABLE movimientos_altas ADD COLUMN estado_carga VARCHAR(10) NOT NULL DEFAULT 'pendiente'"))
+        db.session.commit()
+    _alta_estado_carga_column_ready = True
+
+
 def _alta_to_dict(row):
     id_clase = row["id_clase"] if row["id_clase"] is not None else 0
     return {
         "id": row["id"],
+        "estado_carga": row.get("estado_carga", "pendiente"),
         "fecha_alta": _fecha_iso(row["fecha_alta"]),
         "cantidad": row["cantidad"],
         "concepto": row["concepto"],
@@ -7033,6 +7051,7 @@ def _validar_alta_payload(payload):
 @bp.route('/api/altas', methods=['GET'])
 def api_listar_altas():
     try:
+        _ensure_alta_estado_carga_column()
         mes = request.args.get("mes")
         anio = request.args.get("anio")
         params = {}
@@ -7065,6 +7084,7 @@ def api_listar_altas():
 @bp.route('/api/altas/<int:id>', methods=['GET'])
 def api_obtener_alta(id):
     try:
+        _ensure_alta_estado_carga_column()
         row = db.session.execute(text("""
             SELECT
                 m.*,
@@ -7183,6 +7203,27 @@ def api_eliminar_alta(id):
         if result.rowcount == 0:
             return jsonify({"error": "Alta no encontrada"}), 404
         return jsonify({"mensaje": "Alta eliminada"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/altas/<int:id>/estado-carga', methods=['PATCH'])
+@admin_required_api
+def api_cambiar_estado_carga_alta(id):
+    estado = (request.get_json(silent=True) or {}).get("estado")
+    if estado not in {"pendiente", "aprobada"}:
+        return jsonify({"error": "El estado debe ser pendiente o aprobada"}), 400
+    try:
+        _ensure_alta_estado_carga_column()
+        result = db.session.execute(text("""
+            UPDATE movimientos_altas SET estado_carga = :estado WHERE id = :id
+        """), {"id": id, "estado": estado})
+        if result.rowcount == 0:
+            db.session.rollback()
+            return jsonify({"error": "Alta no encontrada"}), 404
+        db.session.commit()
+        return api_obtener_alta(id)
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500

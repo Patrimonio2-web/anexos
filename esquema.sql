@@ -122,6 +122,7 @@ CREATE INDEX IF NOT EXISTS idx_reparaciones_mobiliario_bien_fecha
 
 CREATE TABLE public.movimientos_altas (
     id integer NOT NULL,
+    estado_carga character varying(10) NOT NULL DEFAULT 'pendiente',
     fecha_alta date,
     cantidad integer,
     concepto text,
